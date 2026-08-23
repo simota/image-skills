@@ -1,0 +1,78 @@
+# What each skill owns, what it does not, and the words that select it.
+#
+# `not:` is the only place a boundary is written. Putting boundaries in
+# descriptions means every skill added rewrites its neighbours, and the
+# marginal cost of an addition stops being O(1).
+#
+# `signals` are the words a request actually uses. Each must appear literally
+# in that skill's description: the listing carries name and description only,
+# so a signal that lives here and nowhere else never reaches the engine.
+
+image-direction:
+  class: doc-write
+  does: [subject, mood, art-style, reference-analysis, composition-intent, brief]
+  not:
+    - what: "wording the request the model actually receives"
+      go: image-prompt
+    - what: "judging a picture that already exists"
+      go: image-review
+    - what: "changing the look of an image already generated"
+      go: image-refine
+  signals: [subject and mood, art style, visual reference, composition intent, image brief,
+            the look is not settled]
+
+image-prompt:
+  class: doc-write
+  does: [prompt-structure, exclusions, aspect, variants, control-surface, prompt-record]
+  not:
+    - what: "deciding what the picture should say in the first place"
+      go: image-direction
+    - what: "running the prompt and keeping the result"
+      go: image-generate
+  signals: [generation prompt, prompt wording, what to exclude, aspect ratio, seed and variants,
+            control the result]
+
+image-generate:
+  class: full
+  does: [invocation, candidate-count, batching, recipe-capture, selection, cost]
+  not:
+    - what: "writing the text that gets sent"
+      go: image-prompt
+    - what: "changing a candidate that came back close"
+      go: image-refine
+    - what: "putting the chosen file into the project"
+      go: image-deliver
+  signals: [run the generation, how many candidates, batch of candidates, the recipe,
+            pick the keeper, pixels must exist]
+
+image-refine:
+  class: full
+  does: [regeneration, region-edit, object-removal, outpainting, upscale, iteration]
+  not:
+    - what: "deciding whether the result is good enough to stop"
+      go: image-review
+    - what: "the first generation of an image that does not exist yet"
+      go: image-generate
+  signals: [edit a region, remove an object, extend the canvas, upscale, regenerate,
+            close but wrong]
+
+image-review:
+  class: read-only
+  does: [artefact-detection, anatomy-and-text, off-brief-drift, severity-ranking, verdict]
+  not:
+    - what: "producing the corrected image"
+      go: image-refine
+    - what: "deciding the aesthetic the picture was aiming at"
+      go: image-direction
+  signals: [artefacts, anatomy and text errors, off-brief drift, ranked verdict, usable or not]
+
+image-deliver:
+  class: full
+  does: [format, responsive-sizes, naming, compression, colour-profile, placement, alt-text]
+  not:
+    - what: "improving the picture before it is exported"
+      go: image-refine
+    - what: "how many pixels the model should be asked for"
+      go: image-prompt
+  signals: [file format, srcset, compression budget, colour profile, file naming,
+            where the file lands]

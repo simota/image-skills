@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image · Agent Skills</title>
+<meta name="description" content="What should this picture say, and did the one that came back say it?">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Image · Agent Skills">
+<meta property="og:description" content="What should this picture say, and did the one that came back say it?">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%96%BC%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#E7E9E4; --surface:#F3F4F0; --surface-2:#DDE0DA;
+  --ink:#141C22; --muted:#5C6A70; --faint:#8A959A;
+  --line:rgba(20,28,34,.16); --line-soft:rgba(20,28,34,.08);
+  --gate:#8C3A6B; --gate-bg:rgba(140,58,107,.10);
+  --engine:#8C6714; --engine-bg:rgba(140,103,20,.10);
+  --shadow:0 1px 0 rgba(20,28,34,.06);
+  --f-display:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --f-body:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#101519; --surface:#171E23; --surface-2:#1F272D;
+    --ink:#DBE2E2; --muted:#8D9B9D; --faint:#6C787B;
+    --line:rgba(219,226,226,.17); --line-soft:rgba(219,226,226,.08);
+    --gate:#D48CB8; --gate-bg:rgba(212,140,184,.13);
+    --engine:#D2A63F; --engine-bg:rgba(210,166,63,.13);
+    --shadow:0 1px 0 rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#101519; --surface:#171E23; --surface-2:#1F272D;
+  --ink:#DBE2E2; --muted:#8D9B9D; --faint:#6C787B;
+  --line:rgba(219,226,226,.17); --line-soft:rgba(219,226,226,.08);
+  --gate:#D48CB8; --gate-bg:rgba(212,140,184,.13);
+  --engine:#D2A63F; --engine-bg:rgba(210,166,63,.13);
+  --shadow:0 1px 0 rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--f-body);
+  font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px 96px}
+
+.mast{padding:56px 0 30px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--gate);margin:0 0 14px}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(38px,6.4vw,72px);
+  line-height:.98;letter-spacing:-.025em;margin:0;text-wrap:balance}
+h1 .sub{display:block;font-size:clamp(15px,2vw,20px);font-weight:600;letter-spacing:.01em;
+  color:var(--muted);margin-top:16px;line-height:1.5}
+.lede{max-width:66ch;color:var(--muted);margin:24px 0 0;font-size:15.5px}
+.facts{display:flex;flex-wrap:wrap;gap:0;margin:30px 0 0;border-top:1px solid var(--line-soft)}
+.fact{flex:1 1 130px;padding:16px 20px 14px;border-right:1px solid var(--line-soft)}
+.fact:last-child{border-right:0}
+.fact b{display:block;font-family:var(--f-display);font-weight:700;font-size:26px;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.fact span{font-size:11.5px;color:var(--faint);font-family:var(--f-mono);letter-spacing:.06em;
+  text-transform:uppercase}
+
+nav.jump{position:sticky;top:0;z-index:20;background:var(--ground);border-bottom:1px solid var(--line);
+  margin-bottom:8px;display:flex;gap:2px;overflow-x:auto;scrollbar-width:thin}
+nav.jump a{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--muted);text-decoration:none;padding:13px 12px;white-space:nowrap;
+  border-bottom:2px solid transparent}
+nav.jump a:hover{color:var(--ink);border-bottom-color:var(--gate)}
+nav.jump a:focus-visible{outline:2px solid var(--gate);outline-offset:-3px}
+
+section{padding:52px 0 8px;border-top:1px solid var(--line-soft);scroll-margin-top:56px}
+section:first-of-type{border-top:0}
+h2{font-family:var(--f-display);font-weight:700;font-size:26px;letter-spacing:-.015em;
+  margin:0 0 6px;display:flex;align-items:baseline;gap:12px;text-wrap:balance}
+h2 .num{font-family:var(--f-mono);font-size:12px;font-weight:600;color:var(--gate);letter-spacing:.1em}
+.sec-note{color:var(--muted);max-width:74ch;margin:0 0 26px;font-size:14.5px}
+h3{font-family:var(--f-display);font-weight:700;font-size:16px;letter-spacing:.01em;margin:30px 0 10px}
+.sub-lab{margin:22px 0 8px;font-size:12px;font-family:var(--f-mono);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--faint);font-weight:600}
+
+figure{margin:0 0 8px;padding:0}
+.scroll{overflow-x:auto;padding-bottom:6px}
+figure svg{display:block;min-width:760px;max-width:100%;height:auto;color:var(--ink)}
+figcaption{color:var(--faint);font-size:12.5px;margin-top:12px;max-width:78ch;line-height:1.65}
+
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+@media(max-width:760px){.cols{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:2px;
+  padding:20px 22px 22px;box-shadow:var(--shadow)}
+.panel h3{margin-top:0}
+.panel ul{margin:0;padding-left:18px}
+.panel li{margin:6px 0;font-size:14px}
+.panel.yes{border-left:3px solid var(--gate)}
+.panel.no{border-left:3px solid var(--line)}
+
+.sk{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:2px;
+  display:grid;grid-template-columns:210px 1fr;box-shadow:var(--shadow)}
+@media(max-width:900px){.card{grid-template-columns:1fr}}
+.card-id{padding:18px 18px;border-right:1px solid var(--line-soft);display:flex;
+  flex-direction:column;gap:8px;align-items:flex-start}
+@media(max-width:900px){.card-id{border-right:0;border-bottom:1px solid var(--line-soft);
+  flex-direction:row;align-items:center;flex-wrap:wrap}}
+.card-id .k{font-family:var(--f-mono);font-size:12px;font-weight:600;color:var(--gate);
+  letter-spacing:.02em;word-break:break-all}
+.card-body{padding:18px 22px;min-width:0}
+.card-body p{margin:0 0 12px;color:var(--muted);font-size:13.5px;line-height:1.7}
+.rows{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.rows li{font-family:var(--f-mono);font-size:11.5px;padding:3px 8px;border:1px solid var(--line);
+  border-radius:2px;color:var(--ink);background:var(--ground)}
+
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:2px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:13.5px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+thead th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);font-weight:600;background:var(--surface-2);border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:0}
+code{font-family:var(--f-mono);font-size:12.5px;background:var(--surface-2);padding:1px 5px;border-radius:2px}
+.tw code{background:transparent;padding:0;color:var(--engine);font-size:12px}
+.num-c{font-variant-numeric:tabular-nums;white-space:nowrap}
+.chain{font-family:var(--f-mono);font-size:12px;color:var(--ink);line-height:1.9}
+.chain b{color:var(--gate);font-weight:600}
+
+.tag{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.05em;padding:2px 7px;
+  border-radius:2px;white-space:nowrap;display:inline-block}
+.tag.a{color:var(--gate);background:var(--gate-bg)}
+.tag.b{color:var(--engine);background:var(--engine-bg)}
+.tag.c{color:var(--muted);background:var(--surface-2)}
+
+pre{font-family:var(--f-mono);font-size:12.5px;line-height:1.7;background:var(--surface);
+  border:1px solid var(--line);border-left:3px solid var(--engine);border-radius:2px;
+  padding:16px 18px;overflow-x:auto;margin:0}
+.callout{border-left:3px solid var(--gate);background:var(--gate-bg);padding:14px 18px;
+  margin:22px 0 0;font-size:14px;line-height:1.7;border-radius:0 2px 2px 0}
+.callout b{font-weight:700}
+.rule-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.rule-list li{padding-left:30px;position:relative;font-size:14px;line-height:1.7;color:var(--muted)}
+.rule-list li::before{content:attr(data-n);position:absolute;left:0;top:2px;
+  font-family:var(--f-mono);font-size:10.5px;color:var(--gate);font-weight:600}
+.rule-list li b{color:var(--ink);font-weight:700}
+
+footer{border-top:1px solid var(--line);margin-top:56px;padding-top:22px;color:var(--faint);
+  font-size:12.5px;line-height:1.8}
+footer code{background:transparent;padding:0}
+a{color:var(--gate)}
+a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow"><a href="../agent-toolkit/" style="color:inherit">Agent Skills</a> / image set</p>
+  <h1>Image<span class="sub">What should this picture say, and did the one that came back say it?</span></h1>
+  <p class="lede">Six skills over image work — deciding what a picture must say, wording the request a generator receives, running it, changing what comes back, judging whether it is usable, and getting the file into a project. None of them generate pixels: that is Codex&amp;rsquo;s own &lt;code&gt;imagegen&lt;/code&gt; skill, and this is the discipline around it.</p>
+  <div class="facts">
+    <div class="fact"><b>6</b><span>skills</span></div>
+    <div class="fact"><b>8</b><span>routes</span></div>
+    <div class="fact"><b>13</b><span>playbooks</span></div>
+    <div class="fact"><b>14</b><span>reference</span></div>
+    <div class="fact"><b>36</b><span>static rules</span></div>
+    <div class="fact"><b>1,106</b><span>listing chars</span></div>
+  </div>
+</header>
+
+<nav class="jump">
+  <a href="#load">Load model</a><a href="#skills">Skills</a><a href="#bounds">Boundaries</a>
+  <a href="#routes">Routes</a><a href="#mech">Mechanism</a><a href="#evidence">Evidence</a>
+  <a href="#tools">Permissions</a><a href="#budgets">Budgets</a><a href="#install">Install</a>
+</nav>
+
+<section id="load">
+  <h2><span class="num">01</span>What is loaded, and when it is paid for</h2>
+  <p class="sec-note">A skill arrives in three stages and each costs something different. Almost
+    every design rule in this repository follows from that asymmetry rather than from taste.</p>
+  
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1180 220" role="img" aria-label="Three loading stages. The listing carries 6 names and descriptions on every turn; a chosen SKILL.md is read in full; playbooks and reference files load only when the situation calls for them.">
+      <text x="30" y="34" font-family="'JetBrains Mono',monospace" font-size="10"
+            fill="currentColor" opacity=".55" letter-spacing=".04em">what the engine is holding, and when</text>
+      
+      <rect x="30" y="60" width="330" height="132" rx="1" fill="none"
+            stroke="currentColor" stroke-width="1.6"
+            />
+      <text x="48" y="88" font-family="Archivo,sans-serif" font-weight="700"
+            font-size="13" fill="currentColor">1 · LISTING</text>
+      <text x="48" y="108" font-family="'JetBrains Mono',monospace" font-size="10"
+            fill="currentColor" opacity=".6">every skill, every turn</text>
+      <text x="48" y="136" font-family="Archivo,sans-serif" font-weight="700"
+            font-size="17" fill="currentColor">6 names + descriptions</text>
+      <text x="48" y="156" font-family="'JetBrains Mono',monospace" font-size="10.5"
+            fill="currentColor" opacity=".6">1,106 characters</text>
+      <text x="48" y="180" font-family="Archivo,sans-serif" font-size="11.5"
+            fill="currentColor" opacity=".72">selection happens here, and on nothing else</text>
+      <rect x="420" y="60" width="330" height="132" rx="1" fill="none"
+            stroke="currentColor" stroke-width="1.2"
+            stroke-dasharray="5 4" opacity=".75"/>
+      <text x="438" y="88" font-family="Archivo,sans-serif" font-weight="700"
+            font-size="13" fill="currentColor">2 · SKILL.MD</text>
+      <text x="438" y="108" font-family="'JetBrains Mono',monospace" font-size="10"
+            fill="currentColor" opacity=".6">one skill, once chosen</text>
+      <text x="438" y="136" font-family="Archivo,sans-serif" font-weight="700"
+            font-size="17" fill="currentColor">≤ 140 lines each</text>
+      <text x="438" y="156" font-family="'JetBrains Mono',monospace" font-size="10.5"
+            fill="currentColor" opacity=".6">6 fixed sections</text>
+      <text x="438" y="180" font-family="Archivo,sans-serif" font-size="11.5"
+            fill="currentColor" opacity=".72">contracts are copied in, not referenced</text>
+      <rect x="810" y="60" width="330" height="132" rx="1" fill="none"
+            stroke="currentColor" stroke-width="1.2"
+            stroke-dasharray="5 4" opacity=".75"/>
+      <text x="828" y="88" font-family="Archivo,sans-serif" font-weight="700"
+            font-size="13" fill="currentColor">3 · DEFERRED</text>
+      <text x="828" y="108" font-family="'JetBrains Mono',monospace" font-size="10"
+            fill="currentColor" opacity=".6">only when the situation calls</text>
+      <text x="828" y="136" font-family="Archivo,sans-serif" font-weight="700"
+            font-size="17" fill="currentColor">13 playbooks · 14 reference</text>
+      <text x="828" y="156" font-family="'JetBrains Mono',monospace" font-size="10.5"
+            fill="currentColor" opacity=".6">budgeted / unbudgeted</text>
+      <text x="828" y="180" font-family="Archivo,sans-serif" font-size="11.5"
+            fill="currentColor" opacity=".72">judgement stays; what rots is dated</text>
+      <g stroke="currentColor" stroke-width="1.3" fill="none" opacity=".7"
+         marker-end="url(#a)"><line x1="365" y1="126" x2="412" y2="126"/><line x1="755" y1="126" x2="802" y2="126"/></g>
+      <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+        orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="currentColor"/></marker></defs>
+    </svg>
+    </div>
+    <figcaption>Cost is not uniform across the three. Stage&nbsp;1 is paid on every turn for every
+      installed skill, which is why a description is budgeted to
+      200 characters and why boundaries are kept out of it.
+      Stage&nbsp;3 is paid only by the run that needs it, which is where anything long or
+      perishable belongs.</figcaption>
+  </figure>
+</section>
+
+<section id="skills">
+  <h2><span class="num">02</span>The 6 skills</h2>
+  <p class="sec-note">Each owns one kind of work and states it in its own <em>Owns</em> section.
+    The tags under it are the facets recorded in
+    <code>image-registry/capabilities.yaml</code>, which is also what the fixtures route
+    against.</p>
+  <div class="sk">
+  <article class="card">
+    <div class="card-id">
+      <span class="k">image-direction</span>
+      <span class="tag b">doc-write</span>
+    </div>
+    <div class="card-body">
+      <p>What the picture is for, what it must say, and what it should look like saying it. It produces a brief a generator can be aimed at and a reviewer can judge against — never the wording that gets sent, and never a picture.</p>
+      <ul class="rows"><li>subject</li><li>mood</li><li>art-style</li><li>reference-analysis</li><li>composition-intent</li><li>brief</li></ul>
+    </div>
+  </article>
+  <article class="card">
+    <div class="card-id">
+      <span class="k">image-prompt</span>
+      <span class="tag b">doc-write</span>
+    </div>
+    <div class="card-body">
+      <p>The request the generator actually receives — its structure, its exclusions, the canvas it asks for, and the set of variants that differ on purpose. It decides what is said, never whether the picture behind it was worth asking for.</p>
+      <ul class="rows"><li>prompt-structure</li><li>exclusions</li><li>aspect</li><li>variants</li><li>control-surface</li><li>prompt-record</li></ul>
+    </div>
+  </article>
+  <article class="card">
+    <div class="card-id">
+      <span class="k">image-generate</span>
+      <span class="tag b">full</span>
+    </div>
+    <div class="card-body">
+      <p>The paid part. It invokes the generator, decides how many attempts the question is worth, records what each run was, opens what comes back, and names the one that survives. It does not write the prompt and does not place the file.</p>
+      <ul class="rows"><li>invocation</li><li>candidate-count</li><li>batching</li><li>recipe-capture</li><li>selection</li><li>cost</li></ul>
+    </div>
+  </article>
+  <article class="card">
+    <div class="card-id">
+      <span class="k">image-refine</span>
+      <span class="tag b">full</span>
+    </div>
+    <div class="card-body">
+      <p>Everything done to a picture after one exists — a targeted edit, a reworked prompt, an extension, an upscale — and the discipline that keeps an iteration from drifting into a different picture. It does not decide whether the result is good enough; that judgement belongs to a reader who did not make the change.</p>
+      <ul class="rows"><li>regeneration</li><li>region-edit</li><li>object-removal</li><li>outpainting</li><li>upscale</li><li>iteration</li></ul>
+    </div>
+  </article>
+  <article class="card">
+    <div class="card-id">
+      <span class="k">image-review</span>
+      <span class="tag a">read-only</span>
+    </div>
+    <div class="card-body">
+      <p>Looking at a picture and saying what is wrong with it, where, how badly, and whether it can ship. <strong>It writes nothing.</strong> That is the guarantee that makes it worth having: a stage that both judged and fixed cannot say which it did first.</p>
+      <ul class="rows"><li>artefact-detection</li><li>anatomy-and-text</li><li>off-brief-drift</li><li>severity-ranking</li><li>verdict</li></ul>
+    </div>
+  </article>
+  <article class="card">
+    <div class="card-id">
+      <span class="k">image-deliver</span>
+      <span class="tag b">full</span>
+    </div>
+    <div class="card-body">
+      <p>The distance between a chosen picture and a file the project can use — format, the sizes the surface needs, compression, colour, name, placement, and the text that stands in for it when it does not load. It changes files, never pictures.</p>
+      <ul class="rows"><li>format</li><li>responsive-sizes</li><li>naming</li><li>compression</li><li>colour-profile</li><li>placement</li><li>alt-text</li></ul>
+    </div>
+  </article></div>
+</section>
+
+<section id="bounds">
+  <h2><span class="num">03</span>Where a skill stops</h2>
+  <p class="sec-note">Boundaries live in one file and never in a description. A description that
+    named its neighbours would spend listing budget advertising them, and adding a skill would
+    mean editing every other one &mdash; so the cost of an addition would stop being O(1).</p>
+  <div class="tw"><table>
+    <thead><tr><th>Skill</th><th>Does not do</th><th>Goes to</th></tr></thead>
+    <tbody>
+      <tr><td><code>image-direction</code></td><td>wording the request the model actually receives</td>
+      <td><code>image-prompt</code></td></tr>
+      <tr><td><code>image-direction</code></td><td>judging a picture that already exists</td>
+      <td><code>image-review</code></td></tr>
+      <tr><td><code>image-direction</code></td><td>changing the look of an image already generated</td>
+      <td><code>image-refine</code></td></tr>
+      <tr><td><code>image-prompt</code></td><td>deciding what the picture should say in the first place</td>
+      <td><code>image-direction</code></td></tr>
+      <tr><td><code>image-prompt</code></td><td>running the prompt and keeping the result</td>
+      <td><code>image-generate</code></td></tr>
+      <tr><td><code>image-generate</code></td><td>writing the text that gets sent</td>
+      <td><code>image-prompt</code></td></tr>
+      <tr><td><code>image-generate</code></td><td>changing a candidate that came back close</td>
+      <td><code>image-refine</code></td></tr>
+      <tr><td><code>image-generate</code></td><td>putting the chosen file into the project</td>
+      <td><code>image-deliver</code></td></tr>
+      <tr><td><code>image-refine</code></td><td>deciding whether the result is good enough to stop</td>
+      <td><code>image-review</code></td></tr>
+      <tr><td><code>image-refine</code></td><td>the first generation of an image that does not exist yet</td>
+      <td><code>image-generate</code></td></tr>
+      <tr><td><code>image-review</code></td><td>producing the corrected image</td>
+      <td><code>image-refine</code></td></tr>
+      <tr><td><code>image-review</code></td><td>deciding the aesthetic the picture was aiming at</td>
+      <td><code>image-direction</code></td></tr>
+      <tr><td><code>image-deliver</code></td><td>improving the picture before it is exported</td>
+      <td><code>image-refine</code></td></tr>
+      <tr><td><code>image-deliver</code></td><td>how many pixels the model should be asked for</td>
+      <td><code>image-prompt</code></td></tr></tbody>
+  </table></div>
+</section>
+
+<section id="routes">
+  <h2><span class="num">04</span>Chains that recur</h2>
+  <p class="sec-note">A chain of names expresses linear work only. Where a stage repeats until a
+    condition holds, the entry carries the condition, the judge, and a hard cycle limit &mdash;
+    without all three, &ldquo;until it looks right&rdquo; has no stopping rule and the loop ends
+    when somebody gets tired.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Route</th><th>Pattern</th><th>When</th><th>Chain</th><th>Condition</th></tr></thead>
+    <tbody>
+      <tr><td><code>illustrate</code></td><td><span class="tag c">linear</span></td>
+      <td>a picture is needed and nothing about it is decided yet</td><td class="chain">image-direction <b>&rarr;</b> image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-review <b>&rarr;</b> image-deliver</td>
+      <td><b>gate</b> &middot; the brief names what the image is judged against before any prompt is written</td></tr>
+      <tr><td><code>one-off</code></td><td><span class="tag c">linear</span></td>
+      <td>the look is already settled and one picture is missing</td><td class="chain">image-prompt <b>&rarr;</b> image-generate</td>
+      <td><b>gate</b> &middot; an existing image or brief is named as the thing this must match</td></tr>
+      <tr><td><code>asset-set</code></td><td><span class="tag c">linear</span></td>
+      <td>a family of images that must read as one set</td><td class="chain">image-direction <b>&rarr;</b> image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-deliver</td>
+      <td><b>gate</b> &middot; what makes them a set is written down before the first is generated</td></tr>
+      <tr><td><code>repair</code></td><td><span class="tag c">linear</span></td>
+      <td>a picture that exists is wrong in a way someone can point at</td><td class="chain">image-review <b>&rarr;</b> image-refine</td>
+      <td><b>gate</b> &middot; each finding names the region it is in before anything is regenerated</td></tr>
+      <tr><td><code>restyle</code></td><td><span class="tag c">linear</span></td>
+      <td>the content is right and the look is not</td><td class="chain">image-direction <b>&rarr;</b> image-refine</td>
+      <td>&mdash;</td></tr>
+      <tr><td><code>ship-existing</code></td><td><span class="tag c">linear</span></td>
+      <td>the picture is chosen and has to reach the project</td><td class="chain">image-deliver</td>
+      <td>&mdash;</td></tr>
+      <tr><td><code>look-check</code></td><td><span class="tag c">report-only</span></td>
+      <td>is this image usable, and what is wrong with it</td><td class="chain">image-review</td>
+      <td><b>stops at</b> &middot; one verdict with each defect located, ranked, and attributed to a cause. Nothing is regenerated</td></tr>
+      <tr><td><code>refine-to-brief</code></td><td><span class="tag c">loop</span></td>
+      <td>iterate a candidate until it meets the brief or the budget stops it</td><td class="chain">image-refine <b>&rarr;</b> image-review</td>
+      <td><b>oracle</b> &middot; no open defect at severity major or above, and one full pass over the image adds none</td></tr></tbody>
+  </table></div>
+</section>
+
+<section id="mech">
+  <h2><span class="num">05</span>The mechanism this set has and its siblings do not</h2>
+  <p class="sec-note">Seven sets share one validator and one contract shape. Each declares exactly
+    one signature mechanism, and that declaration is the whole difference &mdash; which is what
+    keeps 7 copies of the same rules from becoming 7 dialects.</p>
+  <div class="cols">
+    <div class="panel yes">
+      <h3>recipe &middot; <code>_image/RECIPE.md</code></h3>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:14px">A generated picture carries no history inside itself, so seven fields travel beside it — the engine, the model, the prompt verbatim, what was excluded, the size asked for <em>and</em> the size on disk, the inputs, the output. The generator exposes no seed, so a recipe fixes intent and never pixels: that gap is <code>IRREPRODUCIBLE</code>, stated once rather than papered over with a seed nobody has.</p>
+      <ul class="rows"><li>engine</li><li>model</li><li>prompt</li><li>excluded</li><li>size</li><li>inputs</li><li>output</li><li>IRREPRODUCIBLE</li></ul>
+    </div>
+    <div class="panel no">
+      <h3>Owed by 6 of 6</h3>
+      <ul class="rows"><li>image-direction</li><li>image-prompt</li><li>image-generate</li><li>image-refine</li><li>image-review</li><li>image-deliver</li></ul>
+      <p style="margin:14px 0 0;color:var(--muted);font-size:13.5px">A rule states the mechanism
+        inside every skill through a delivered block. A skill that <em>owes</em> it must also name
+        its own half in its own words &mdash; a rule stated everywhere and owned nowhere is a
+        ritual.</p>
+    </div>
+  </div>
+</section>
+
+<section id="evidence">
+  <h2><span class="num">06</span>What counts as done</h2>
+  <p class="sec-note">Reporting completion without meeting this is reporting a wish. The
+    vocabulary is fixed in <code>image-registry/harness.yaml</code> and defined in
+    <code>_image/CONTRACT.md</code>; the validator checks the contract actually
+    defines every word it declares.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Axis</th><th>Vocabulary</th></tr></thead>
+    <tbody>
+      <tr><td>Evidence grades</td><td><code>measured</code> <code>inspected</code> <code>asserted</code></td></tr>
+      <tr><td>Residual classes</td><td><code>BLOCKED</code> <code>OUT-OF-SCOPE</code> <code>DEFERRED</code> <code>UNSPECIFIED</code></td></tr>
+      <tr><td>Statuses</td><td><code>DONE</code> <code>PARTIAL</code> <code>BLOCKED</code></td></tr>
+      <tr><td>Sizing tiers</td><td><code>T0</code> <code>T1</code> <code>T2</code></td></tr>
+      <tr><td>Route patterns</td><td><code>linear</code> <code>loop</code> <code>report-only</code></td></tr>
+      <tr><td>Recipe</td><td><code>engine</code> <code>model</code> <code>prompt</code> <code>excluded</code> <code>size</code> <code>inputs</code> <code>output</code> <code>IRREPRODUCIBLE</code></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout"><b>The completion sweep is never omitted.</b> Before reporting, both halves
+    run and both results are stated: every marker this run introduced appears in the handoff with a
+    class, and every claim made is a claim at its floor. While either pair disagrees, the status is
+    not <code>DONE</code>.</div>
+</section>
+
+<section id="tools">
+  <h2><span class="num">07</span>Permission classes</h2>
+  <p class="sec-note">A class is declared once in the registry and the validator checks each
+    <code>SKILL.md</code> front matter matches it exactly. Where a CLI does not enforce tool
+    grants, the <em>Never</em> lines are discipline and nothing more &mdash; that limit is stated
+    rather than papered over.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Class</th><th>Tools</th><th>Writes</th><th>Skills</th></tr></thead>
+    <tbody>
+      <tr><td><code>read-only</code></td><td><code>Read, Grep, Glob, Bash</code></td>
+      <td>no</td>
+      <td class="num-c">1</td></tr>
+      <tr><td><code>doc-write</code></td><td><code>Read, Grep, Glob, Bash, Write</code></td>
+      <td>yes</td>
+      <td class="num-c">2</td></tr>
+      <tr><td><code>full</code></td><td><code>Read, Grep, Glob, Bash, Write, Edit</code></td>
+      <td>yes</td>
+      <td class="num-c">3</td></tr></tbody>
+  </table></div>
+</section>
+
+<section id="budgets">
+  <h2><span class="num">08</span>Budgets, and the rules that decide them</h2>
+  <p class="sec-note">Every threshold is declared in one place and read from there by
+    <code>image-tools/validate.py</code>. A number written twice is a number that drifts.
+    Raising a limit is the last resort &mdash; merging, deleting, compressing and relocating come
+    first.</p>
+  <div class="cols">
+    <div class="panel">
+      <h3>Declared limits</h3>
+      <div class="tw" style="border:0;background:transparent"><table style="min-width:0">
+        <tbody>
+      <tr><td><code>skill_md_lines</code></td><td class="num-c">140</td></tr>
+      <tr><td><code>description_chars</code></td><td class="num-c">200</td></tr>
+      <tr><td><code>playbook_lines</code></td><td class="num-c">300</td></tr>
+      <tr><td><code>playbooks_per_skill</code></td><td class="num-c">8</td></tr>
+      <tr><td><code>shared_file_lines</code></td><td class="num-c">100</td></tr>
+      <tr><td><code>shared_lines_total</code></td><td class="num-c">560</td></tr>
+      <tr><td><code>skills_max</code></td><td class="num-c">8</td></tr>
+      <tr><td><code>routes_max</code></td><td class="num-c">12</td></tr>
+      <tr><td><code>route_stages_max</code></td><td class="num-c">6</td></tr>
+      <tr><td><code>repo_md_lines_total</code></td><td class="num-c">4200</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h3>Measured now</h3>
+      <div class="tw" style="border:0;background:transparent"><table style="min-width:0"><tbody>
+        <tr><td>skills</td><td class="num-c">6 / 8</td></tr>
+        <tr><td>routes</td><td class="num-c">8 / 12</td></tr>
+        <tr><td>shared contract lines</td><td class="num-c">480 / 560</td></tr>
+        <tr><td>repository markdown</td><td class="num-c">3,456 / 4,200</td></tr>
+        <tr><td>static rules</td><td class="num-c">36</td></tr>
+      </tbody></table></div>
+      <p style="margin:14px 0 0;color:var(--muted);font-size:13.5px">Adding a rule means adding a
+        deliberate violation and watching it fail. A check only ever seen passing may be checking
+        nothing.</p>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <h2><span class="num">09</span>Installing it</h2>
+  <p class="sec-note">Each <code>image-*</code> directory is symlinked individually, so a
+    skills directory keeps whatever else it already carries and a name already taken by a real
+    directory is skipped rather than overwritten.</p>
+<pre>make link                       # into ~/.claude/skills
+make link CLAUDE_DIR=.claude/skills
+
+make check                      # the rules, then proof the rules still fire
+make render                     # after editing a delivered block
+make hooks                      # run the rules on every commit</pre>
+  <ul class="rule-list" style="margin-top:26px">
+    <li data-n="01"><b>Selection happens on the description alone.</b> Every word that selects a
+      skill appears literally in its description, and a rule checks the registry and the
+      description still agree.</li>
+    <li data-n="02"><b>Contracts are delivered, not referenced.</b> A rule kept only in
+      <code>_image/</code> is read on a minority of launches, so the operative part
+      is copied verbatim into every skill and a rule fails if any copy has drifted.</li>
+    <li data-n="03"><b>Knowledge is split by whether it rots.</b> Playbooks hold judgement and are
+      budgeted; reference holds what goes stale, carries no line budget, and states what re-checks
+      it instead of a bare date.</li>
+    <li data-n="04"><b>The fixtures do not model how a model chooses.</b> They catch a missing or
+      duplicated signal. Passing them is not evidence that nothing will be misrouted.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>image-skills &middot; 6 skills &middot; 36 static rules
+     &middot; 3,456 lines of markdown.<br>
+     Every figure on this page is read off the repository by <code>tools/pages.py</code> in
+     <code>agent-toolkit</code>. None of them are typed by hand, and a stale page fails a
+     check rather than sitting there looking current.</p>
+</footer>
+</div>
+</body>
+</html>

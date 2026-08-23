@@ -1,0 +1,48 @@
+# A record of misroutes.
+#
+# This does not reproduce how a model chooses. It is a proxy for finding
+# missing and duplicated signals, and "fixtures pass" does not mean "nothing
+# will be misrouted".
+
+- ask: "we need a hero picture and nobody has decided the art style"
+  expect: image-direction
+- ask: "settle the subject and mood before anyone generates anything"
+  expect: image-direction
+- ask: "here is a visual reference, work out what to take from it"
+  expect: image-direction
+- ask: "write the generation prompt for the banner"
+  expect: image-prompt
+- ask: "the prompt wording keeps giving me the wrong thing"
+  expect: image-prompt
+- ask: "what aspect ratio should I ask for"
+  expect: image-prompt
+- ask: "run the generation and give me something to look at"
+  expect: image-generate
+- ask: "how many candidates should we pay for"
+  expect: image-generate
+- ask: "generate a batch of candidates and pick the keeper"
+  expect: image-generate
+- ask: "this is close but wrong, the hand is broken"
+  expect: image-refine
+- ask: "remove an object from the background"
+  expect: image-refine
+- ask: "extend the canvas so it works as a wide banner"
+  expect: image-refine
+- ask: "is this usable or not"
+  expect: image-review
+- ask: "check it for artefacts before we ship it"
+  expect: image-review
+- ask: "the text in the image is garbled, give me a ranked verdict"
+  expect: image-review
+- ask: "what file format and compression budget should this ship as"
+  expect: image-deliver
+- ask: "generate the srcset sizes and put the file where it lands"
+  expect: image-deliver
+- ask: "the colour profile is wrong when it renders in the browser"
+  expect: image-deliver
+# Neighbours that must keep winning. The set's signals all sit near the word
+# "image", so the boundaries that share a noun are pinned from both sides.
+- ask: "regenerate it, the composition intent was never met"
+  expect: image-direction
+- ask: "decide the file naming for the exported set"
+  expect: image-deliver

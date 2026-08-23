@@ -1,0 +1,53 @@
+# Chains that recur, as control structure rather than prose.
+#
+# A chain of names expresses linear work only. Where a stage repeats until a
+# condition holds, the condition, the judge, and the hard stop are required —
+# without them "until it looks right" has no stopping rule.
+
+illustrate:
+  pattern: linear
+  when: "a picture is needed and nothing about it is decided yet"
+  chain: [image-direction, image-prompt, image-generate, image-review, image-deliver]
+  gate: "the brief names what the image is judged against before any prompt is written"
+
+one-off:
+  pattern: linear
+  when: "the look is already settled and one picture is missing"
+  chain: [image-prompt, image-generate]
+  gate: "an existing image or brief is named as the thing this must match"
+
+asset-set:
+  pattern: linear
+  when: "a family of images that must read as one set"
+  chain: [image-direction, image-prompt, image-generate, image-deliver]
+  gate: "what makes them a set is written down before the first is generated"
+
+repair:
+  pattern: linear
+  when: "a picture that exists is wrong in a way someone can point at"
+  chain: [image-review, image-refine]
+  gate: "each finding names the region it is in before anything is regenerated"
+
+restyle:
+  pattern: linear
+  when: "the content is right and the look is not"
+  chain: [image-direction, image-refine]
+
+ship-existing:
+  pattern: linear
+  when: "the picture is chosen and has to reach the project"
+  chain: [image-deliver]
+
+look-check:
+  pattern: report-only
+  when: "is this image usable, and what is wrong with it"
+  chain: [image-review]
+  stops_at: "one verdict with each defect located, ranked, and attributed to a cause. Nothing is regenerated"
+
+refine-to-brief:
+  pattern: loop
+  when: "iterate a candidate until it meets the brief or the budget stops it"
+  chain: [image-refine, image-review]
+  oracle: "no open defect at severity major or above, and one full pass over the image adds none"
+  checker: other-engine       # resolved at run time to one that is not running this
+  max_cycles: 4               # hand back rather than loop again; each cycle is a paid generation

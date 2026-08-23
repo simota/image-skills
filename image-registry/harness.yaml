@@ -1,0 +1,231 @@
+# Budgets and vocabulary. The validator reads thresholds from here and nowhere
+# else: a number copied into prose becomes a second definition that drifts.
+#
+# Raising a limit is the last resort. Try merging, deleting, compressing, and
+# relocating first (VALUES.md §3).
+
+# One declaration. Every namespaced name derives from it, and a rule checks
+# that they still agree.
+set: image
+prefix: image-              # <set>-
+shared_dir: _image          # _<set>
+
+# Every directory this set owns carries the set name — `<set>-*` or `_<set>` —
+# so that copying any of them into a shared skills directory cannot collide.
+# `skills/` holds everything the CLI reads; the set's own directories still
+# carry the set name.
+skills_dir: skills
+platform_dirs: [.git, .github, .claude, skills, docs]   # named by the platform, not by this set
+
+limits:
+  skill_md_lines: 140         # derived, not chosen: 90 for the skill's own words plus
+                              # the 50 lines of delivered contract every file in this
+                              # set now carries. The last raise (120 -> 128) was the
+                              # same move for a smaller block; the blocks have
+                              # grown since, and the cap had come to govern about
+                              # 78 lines of actual skill. Measured own-content max
+                              # in this set: 75 lines, in image-direction
+  description_chars: 200      # the listing truncates past this
+  playbook_lines: 300
+  playbooks_per_skill: 8
+  shared_file_lines: 100
+  shared_lines_total: 560   # every set sat at 95-98% of the old figure at once,
+                              # which is a budget that has stopped leaving room to
+                              # think rather than seven sets each being careless
+                              # this set's own: RECIPE.md has no sibling, and the
+                              # `budget` a paid generator forces adds a field to
+                              # SIZING and HANDOFF that the other sets never spend
+  skills_max: 8               # 6 in use, 2 spare
+  routes_max: 12
+  route_stages_max: 6
+  repo_md_lines_total: 4200   # measured: 3251. Two spare skills would take it to ~4250
+
+# A listing under this many skills does not need packs. Crossing it is the
+# trigger to split the set into named subsets, not a reason to delete skills.
+listing:
+  packs_needed_above: 20
+
+permission_classes:
+  read-only:
+    tools: "Read, Grep, Glob, Bash"
+    writes: false
+  doc-write:
+    tools: "Read, Grep, Glob, Bash, Write"
+    writes: true
+  full:
+    tools: "Read, Grep, Glob, Bash, Write, Edit"
+    writes: true
+
+# A description naming a neighbour spends listing budget on a competitor's name
+# and puts that name into the material the engine matches against.
+# Boundaries live in capabilities.yaml `not:` instead.
+forbidden_description_terms:
+  - "Not for"
+  - "not for"
+  - "instead of"
+  - "rather than"
+
+# All three CLIs read the same SKILL.md, so any of them may be the one running —
+# the producing engine is a property of the run, not of this file. The caller
+# states which engine is running; when it does not, the runner stops.
+#
+# The generation itself is not one of these. Pixels come from the codex CLI's
+# `image_generation` tool (`image-generate/reference/codex-imagen.md`), which any
+# of the three may shell out to. The engine that ran the generation and the
+# engine that judges the result are different roles, and this set keeps them apart.
+engines:
+  runs_on: [claude, codex, agy]     # two or more, or no run can check itself out
+
+# What a refuting engine attacks in this domain, and what counts as having broken
+# the claim. The tool is the same in every set (`image-tools/refute.py`); the lens
+# is not, and a refuter with no domain framing is a second opinion rather than an
+# adversary.
+refutation:
+  lens: |
+    A claim about a generated image. Ask first whether the file was opened at all —
+    the characteristic failure here is judging an image from the prompt that asked
+    for it, and a prompt is a request, never a description of what came back. Then
+    check whether a stated property (dimensions, aspect, format, byte size, colour
+    profile) was read off the file or assumed from the request, and whether a named
+    defect is visible at the place it is cited rather than recalled from what image
+    models usually get wrong.
+  refuted_when: >-
+    the file was never opened, a stated property does not match the file on disk,
+    or the named defect is not present at the location cited
+
+# The generator this set is built around, and the one place its numbers are
+# written. `image-prompt/reference/sizes.md` states the canvas rules in prose for
+# a reader; `image-tools/figures_check.py` checks that prose against this block,
+# and `image-tools/imgfacts.py` decides legality from it. One declaration, so the
+# page cannot drift from the tool.
+#
+# These are a snapshot of one installed copy on one machine (see that page's
+# `Verified:` line). Nothing re-reads the backing skill.
+generator:
+  skill: "$CODEX_HOME/skills/.system/imagegen"
+  invoke: "codex exec --enable image_generation"
+  # Under $CODEX_HOME. Where the built-in path leaves a file, and the reason
+  # `recipe.py capture` exists: a project asset left here is one cache clear from gone.
+  output_glob: "generated_images/*/exec-*.png"
+  # The fallback CLI path's constraints. The default built-in path takes no size
+  # argument at all, which is why a recipe records the size asked for and the
+  # size on disk as two different things.
+  canvas:
+    max_edge: 3840
+    edge_multiple: 16
+    max_ratio: 3
+    min_pixels: 655360
+    max_pixels: 8294400
+
+# Tools a skill may run. Each is linked individually into the skills that can run
+# it; the tools directory is never linked whole, because a skill holding `Bash`
+# and all of it could edit the harness it is part of. A rule checks each link is
+# present exactly where the skill's class grants a shell, so a missing one is a
+# failure rather than an oversight.
+linked_tools:
+  refute.py: all
+  imgfacts.py: all
+  recipe.py: [image-generate, image-refine, image-deliver]
+  strip.py: [image-deliver]
+
+# A finding a reader has to reassemble in their head is a finding that gets
+# skimmed, and a skimmed report did not happen. This is the one place the
+# trigger and the floor are written; the review skill states them in its own
+# words, its playbook decides the form, and a rule checks the two agree.
+#
+# The same block, with the same keys, is in every set that has a review skill.
+# A set with none says so here rather than leaving the absence to be inferred.
+finding_visuals:
+  playbook: visualise.md          # under the review skill's playbooks/
+  contract: diagram-forms.md      # under its reference/
+  required_of: [image-review]
+
+  # ASCII first: it survives a terminal, a plain-text report, a commit message
+  # and a diff. Mermaid when the shape is genuinely a graph and ASCII would
+  # misalign it. Never both for one finding.
+  forms: [ascii, mermaid]
+
+  # When a diagram is owed. Any one of these is enough, and none of them is
+  # "it would look nice" — a diagram that restates a sentence costs the reader
+  # twice.
+  triggers: [hops, ordering, disagreement, location]
+
+  # What keeps a diagram a finding rather than an illustration.
+  floor: [labelled, derived, bounded]
+
+vocabulary:
+  recipe_fields: [engine, model, prompt, excluded, size, inputs, output, IRREPRODUCIBLE]
+  patterns: [linear, loop, report-only]
+  checkers: [other-engine]
+  evidence_levels: [measured, inspected, asserted]
+  residual_classes: [BLOCKED, OUT-OF-SCOPE, DEFERRED, UNSPECIFIED]
+  statuses: [DONE, PARTIAL, BLOCKED]
+  tiers: [T0, T1, T2]
+
+document_labels: [contract, guidance, deferred]
+# Patterns match the path from the repository root, so they carry `skills/`.
+label_by_path:
+  "skills/_image/ROUTING.md": guidance
+  "skills/_image/*.md": contract
+  "skills/*/SKILL.md": contract
+  "skills/*/playbooks/*.md": guidance
+  "skills/*/reference/*.md": deferred
+
+# Paths that belong to the host project, not to this set.
+external_paths: [".agents/", "CLAUDE.md", "AGENTS.md", "GEMINI.md", "settings.json", "assets/", "public/"]
+
+# Content that goes stale belongs in reference/, which carries no line budget and
+# is checked for freshness instead. A model identifier is the fastest-rotting
+# string in this domain — it belongs beside a `Verified:` line, never in a
+# playbook that is budgeted precisely because it is not supposed to rot.
+rot_patterns:
+  - '\b(19|20)\d{2}-\d{2}\b'
+  - '\bv\d+\.\d+(\.\d+)?\b'
+  - '\b(gpt-image|dall-e|imagen|gemini|sdxl|flux)[- ]?\d'
+
+# reference/ carries no line budget. It carries these headers instead, so a
+# reader can tell what a file claims and when anyone last checked it.
+reference_headers: ["Purpose:", "Read when:", "Verified:"]
+# A `Verified:` date records that someone looked once, and a date has no failure
+# mode. V31 requires the line to name what re-checks it — or to say plainly that
+# nothing does. An unchecked page is fine; an unchecked page that reads like a
+# checked one is not.
+verified_markers:
+  - "no automated check"      # the honest admission, and the common case
+  - "by running"
+  - "produced by running"
+  - "confirmed by running"
+  - "performing the operation"
+  - "quoted from"
+  - "recomputed"
+  - "re-run by"
+  - "re-runs"
+  - "re-derives"
+  - "re-checked"
+  - "re-verified"
+  - "make figures"
+
+# Blocks copied verbatim into every SKILL.md. Naming a shared file is not the
+# same as reaching it: a contract kept only in _image/ goes unread on most
+# launches. render.py writes these back; the validator checks they match.
+#
+# The one mechanism this set has that its siblings do not. The rule that checks
+# it is identical in all of them; this block is the whole difference.
+#
+# `required_of` names the skills that owe the mechanism. Every skill here either
+# produces an image, changes one, judges one, or moves one, and none of those can
+# be redone without the recipe — so every skill owes one. `own_word` is the
+# substring each must carry outside the delivered block.
+signature:
+  name: recipe
+  contract: RECIPE.md
+  vocabulary: recipe_fields
+  required_of: [image-direction, image-prompt, image-generate, image-refine,
+                image-review, image-deliver]
+  own_word: IRREPRODUCIBLE
+
+delivered:
+  sizing:  { section: "Before starting" }
+  recipe:  { section: "Before starting" }
+  values:  { section: "Decide first" }
+  report:  { section: "Verify with" }

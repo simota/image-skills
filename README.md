@@ -194,6 +194,7 @@ finds the file, which is what makes this fail quietly.
 | [`skills/_image/HANDOFF.md`](skills/_image/HANDOFF.md) | What passes between skills, and the checks the receiver runs |
 | [`skills/_image/VALUES.md`](skills/_image/VALUES.md) | The order that decides when two goods conflict, and the escape hatch |
 | [`skills/_image/ROUTING.md`](skills/_image/ROUTING.md) | Guidance. Read when the owner is unclear or the work spans several |
+| [`skills/_image/REPORT.md`](skills/_image/REPORT.md) | What a person reads: the order, the ceiling per tier, and why the recipe is the record |
 
 ## Layout
 

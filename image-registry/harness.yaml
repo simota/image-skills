@@ -18,9 +18,11 @@ skills_dir: skills
 platform_dirs: [.git, .github, .claude, skills, docs]   # named by the platform, not by this set
 
 limits:
-  skill_md_lines: 140         # derived, not chosen: 90 for the skill's own words plus
-                              # the 50 lines of delivered contract every file in this
-                              # set now carries. The last raise (120 -> 128) was the
+  skill_md_lines: 145         # derived, not chosen: 90 for the skill's own words plus
+                              # the 60 lines of delivered contract every file in this
+                              # set now carries, the last ten of them the sixth axis:
+                              # what the run says at the end. The raises before it
+                              # (120 -> 128 -> 140) were the
                               # same move for a smaller block; the blocks have
                               # grown since, and the cap had come to govern about
                               # 78 lines of actual skill. Measured own-content max
@@ -29,10 +31,12 @@ limits:
   playbook_lines: 300
   playbooks_per_skill: 8
   shared_file_lines: 100
-  shared_lines_total: 560   # every set sat at 95-98% of the old figure at once,
-                              # which is a budget that has stopped leaving room to
-                              # think rather than seven sets each being careless
-                              # this set's own: RECIPE.md has no sibling, and the
+  shared_lines_total: 620   # raised by the sixth axis: REPORT.md arrived and
+                              # every set landed at 97-99% of the old figure at once,
+                              # which is a budget that has stopped leaving room to think
+                              # rather than seven sets each being careless. The room
+                              # above the family figure is this set’s own:
+                              # RECIPE.md has no sibling, and the
                               # `budget` a paid generator forces adds a field to
                               # SIZING and HANDOFF that the other sets never spend
   skills_max: 8               # 6 in use, 2 spare
@@ -255,3 +259,9 @@ delivered:
   recipe:  { section: "Before starting" }
   values:  { section: "Decide first" }
   report:  { section: "Verify with" }
+  # The sixth axis. The other five bind what has to be true; this one binds what
+  # reaches the reader, and it is delivered for the same reason as the rest — a
+  # rule about the last step of a run is worth nothing if it is read on two
+  # launches in seven. Ten delivered lines that buy back the thirty a handoff
+  # rendered field by field spends.
+  surface: { section: "Done when" }

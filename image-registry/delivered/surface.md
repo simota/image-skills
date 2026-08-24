@@ -11,3 +11,7 @@
 - **Ceiling: `T0` one line · `T1` six · `T2` ten**, plus the files themselves — linked,
   never described shot by shot. Over it means cutting content, not reformatting it: no
   restatement of the brief, no closing summary, no losing candidates (`_image/REPORT.md`)
+- **Not bigger than it is.** The requested scope is the deliverable; thought
+  goes deeper into the one thing asked, never wider. **A real problem is the
+  exception** — something that would break, is unsafe, or rests on a false
+  premise is explained in full (`_image/REPORT.md`)

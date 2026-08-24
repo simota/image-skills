@@ -3,13 +3,22 @@ Purpose: the edit taxonomy the backing skill keys off, and what each mode is exp
 Read when: classifying a change before making it, or an edit preserved the wrong things.
 Verified: 2026-08-23 — the slugs are quoted from the installed backing skill's
 `SKILL.md`; the preservation notes are from its own guidance plus observed runs.
-No automated check re-reads the installed copy, so a newer version may add slugs.
+The note on the second generator's input parameter was read from its own
+parameter list on 2026-08-24. No automated check re-reads either installed copy,
+so a newer version may add slugs.
 
 # Edit modes
 
 The backing skill classifies every request into a use-case slug and behaves
 differently per slug. Naming the slug explicitly means the classification is a
 decision rather than a guess made downstream.
+
+**The slugs belong to the pixel generator.** The aspect generator has no slug
+vocabulary at all: it takes input images through an `ImagePaths` array and works
+out from the prompt what they are for. Everything below still applies to it as
+*guidance* — the intent distinction, the invariant list, the per-image role
+labels — but as words inside the prompt rather than as a classification the tool
+keys off. That makes the role labels load-bearing there rather than helpful.
 
 ## Intent first
 

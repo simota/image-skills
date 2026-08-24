@@ -5,10 +5,17 @@ asking a generator for it, judging what comes back, and getting the file into a
 project — plus the contracts they share and the budgets that keep the set from
 growing into something nobody can route through.
 
-**None of them generate pixels themselves.** The generation is Codex's own
-`imagegen` skill and its built-in `image_gen` tool. This set is the discipline
-around it: what to ask for, how many times, whether anyone looked, and what has
-to be written down so the picture can be made again.
+**None of them generate pixels themselves.** The generation is one of two
+installed tools — Codex's own `imagegen` skill and its built-in
+`image_generation` tool, or the `generate_image` tool built into the `agy` CLI.
+This set is the discipline around them: what to ask for, how many times, whether
+anyone looked, and what has to be written down so the picture can be made again.
+
+The two do not take the same argument. One takes a pixel canvas subject to four
+constraints; the other takes an aspect ratio off a list of seven and no pixel
+count at all, and writes JPEG. **Which one ran is the first thing a recipe
+settles**, because half the fields beside an image mean something different
+depending on the answer.
 
 ## The skills
 
@@ -30,7 +37,7 @@ history inside itself: open the file six weeks later and nothing in it says
 what was asked for or what it was made from, so the wording has to travel
 beside it.
 
-The generator exposes no seed. Running the same recipe again returns *another*
+Neither generator exposes a seed. Running the same recipe again returns *another*
 image from the same request, not the same image — so a recipe fixes the intent
 and never the pixels. That gap is `IRREPRODUCIBLE`: stated once, never papered
 over with a seed nobody has, and the reason the chosen file is the artifact
@@ -105,11 +112,12 @@ constraint deleted from the prose it reads.
 **Two tools, linked into the skills that can run them.**
 [`imgfacts.py`](image-tools/imgfacts.py) reads what is actually in a file —
 dimensions, format, bytes, alpha, whether a colour profile is declared, and
-whether a canvas is legal for the generator. It is what makes `measured` cheap,
+whether a canvas is legal, or an aspect offered, for the generator that will run
+it. It is what makes `measured` cheap,
 because a grade that costs effort gets skipped.
-[`recipe.py`](image-tools/recipe.py) captures a generated file out of the
-generator's directory and writes its recipe in the same move, then checks that
-recipe against the file later. [`strip.py`](image-tools/strip.py) removes what
+[`recipe.py`](image-tools/recipe.py) captures a generated file out of whichever
+generator's directory holds the newest one and writes its recipe in the same
+move, then checks that recipe against the file later. [`strip.py`](image-tools/strip.py) removes what
 should not ship — Exif, XMP, generation parameters, comments, timestamps — while
 keeping the colour profile, the alpha channel and any content credential the
 project decided to carry.
@@ -138,11 +146,14 @@ skills get which tool, and a rule checks each link is present exactly where the
 skill's class grants a shell, so a missing one fails rather than passing as an
 oversight.
 
-**One declaration for the generator's numbers.** `generator.canvas` in the
-registry holds the four canvas constraints. `imgfacts.py` decides legality from
-it, `image-prompt/reference/sizes.md` states it in prose for a reader, and
-`make figures` checks the prose against the registry — so the tool and the page
-cannot quietly disagree.
+**One declaration for the generators' numbers.** `generators` in the registry
+holds both — the four canvas constraints for one, the seven aspects for the
+other, each tagged with the `control` that separates them. `imgfacts.py` decides
+legality from it, `image-prompt/reference/sizes.md` states both in prose for a
+reader, and `make figures` checks the prose against the registry — so the tools
+and the page cannot quietly disagree. Adding a third generator is a registry
+edit; the tools resolve which is which by `control`, and assert rather than
+picking whichever came first in the file.
 
 **Budgets are enforced, not intended.**
 [`image-registry/harness.yaml`](image-registry/harness.yaml) holds every
@@ -251,8 +262,8 @@ repository writes it, `tools/pages.py --check` fails when it is behind, and
 
 ## What this does not guarantee
 
-- **Nothing here can make a generation reproducible.** The backing tool has no
-  seed. Every claim about repeatability in this repository is about intent
+- **Nothing here can make a generation reproducible.** Neither backing tool has
+  a seed. Every claim about repeatability in this repository is about intent
 - **`allowed-tools` is one CLI's mechanism.** Where a tool grant is not
   enforced, the `Never` lines are discipline and nothing more
 - **No rule can check that a file was actually opened.** The contract says a

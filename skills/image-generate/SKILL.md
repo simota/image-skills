@@ -20,8 +20,10 @@ Phases: `BUDGET → INVOKE → CAPTURE → OPEN → SELECT`.
   `budget`; a run without one is a run with no end
 - **Say what this batch would answer.** A batch launched because the last batch
   disappointed is a batch with no question
-- **Check the size is legal before spending anything.** A run rejected for an
-  invalid canvas costs a round trip and teaches nothing
+- **Check the size is legal before spending anything**, against the generator
+  that will run it. One rejects an invalid canvas; the other has no pixel lever
+  at all and refuses a shape off its list. A round trip spent on the wrong
+  question teaches nothing
 <!-- deliver:sizing -->
 - **Size it before anything else**, first match wins. `T0` — one skill owns it,
   reversible, one image or one value, the question fits in one sentence: answer
@@ -41,10 +43,10 @@ Phases: `BUDGET → INVOKE → CAPTURE → OPEN → SELECT`.
 <!-- deliver:recipe -->
 - **Every image an output names carries its recipe.** `engine`, `model`,
   `prompt` verbatim, `excluded`, `size` asked for and size on disk, `inputs`,
-  `output` path — the run is written down, not remembered. The generator
-  exposes no seed, so a recipe fixes the intent and never the pixels: that gap
-  is `IRREPRODUCIBLE`, stated once in the handoff and never papered over with a
-  seed nobody has (`_image/RECIPE.md`)
+  `output` path — the run is written down, not remembered, and `engine` says
+  which of the two generators ran. Neither exposes a seed, so a recipe fixes the
+  intent and never the pixels: that gap is `IRREPRODUCIBLE`, stated once in the
+  handoff and never papered over with a seed nobody has (`_image/RECIPE.md`)
 <!-- /deliver:recipe -->
 
 ## Decide first
@@ -53,8 +55,10 @@ Phases: `BUDGET → INVOKE → CAPTURE → OPEN → SELECT`.
 |---|---|
 | Deciding how many candidates to run | [batching](playbooks/batching.md) — one for a settled prompt, a spread only while the direction is still moving |
 | Choosing between what came back | [selection](playbooks/selection.md) — against the brief's axes, in a fixed order, before any of them is admired |
-| Invoking the generator | [codex-imagen](reference/codex-imagen.md) — the two modes, what each takes, and where the file lands |
-| Getting a candidate out of the generator's directory | [recipe](recipe.py) `capture` — places the newest generated file and writes its sidecar with the size read off it |
+| Two generators are installed and neither was named | Ask. They take different size arguments and one writes JPEG — the choice is the user's, and the recipe records which one ran |
+| Invoking the pixel-size generator | [codex-imagen](reference/codex-imagen.md) — the two modes, what each takes, and where the file lands |
+| Invoking the aspect-ratio generator | [agy-imagen](reference/agy-imagen.md) — the four parameters, the JPEG it writes, and the error it reports over a file that exists |
+| Getting a candidate out of the generator's directory | [recipe](recipe.py) `capture --generator <name>` — places the newest generated file and writes its sidecar with the size read off it |
 | Writing down what a run was | [recipe-sidecar](reference/recipe-sidecar.md) — the seven fields, and the form they travel in |
 | The generator refused | Report it as `BLOCKED` with the refusal. A reworded prompt is a different recipe and is recorded as one |
 | The file came back a different size than asked | Expected on the default path — it takes no size argument. Record both numbers and hand the resize to the stage that owns files |
@@ -73,7 +77,8 @@ Phases: `BUDGET → INVOKE → CAPTURE → OPEN → SELECT`.
 
 - Always: open every candidate before saying anything about it. A path is not a
   result, and this is the rule the whole set exists to enforce
-- Always: read the dimensions off the file that came back, not off the request
+- Always: read the dimensions and the format off the file that came back, not
+  off the request — one generator writes JPEG and no flag changes that
 - Always: write the recipe at the moment of the run. A recipe reconstructed
   afterwards is a plausible recipe, and it is marked `IRREPRODUCIBLE` twice over
 - Always: get permission first before a batch that exceeds the stated budget

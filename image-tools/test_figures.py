@@ -62,6 +62,15 @@ CASES: list[tuple[str, str, str, str, str]] = [
     ("check_canvas", "vacuous", SIZES,
      "2. Both edges are multiples of 16",
      "2. Both edges land on the grid the model expects"),
+    ("check_aspects", "wrong", REG,
+     '"3:2", "3:4"', '"5:4", "3:4"'),
+    ("check_aspects", "wrong", SIZES,
+     "| `3:2` | landscape |", "| `6:4` | landscape |"),
+    ("check_aspects", "vacuous", SIZES,
+     "| Aspect | What it is for |", "| Ratio | What it is for |"),
+    ("check_aspects", "vacuous", SIZES,
+     "| `9:16` | tall, full-bleed on a phone |",
+     "| tall as a phone | full-bleed |"),
 ]
 
 

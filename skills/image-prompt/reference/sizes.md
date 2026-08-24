@@ -1,15 +1,22 @@
 <!-- image:deferred -->
-Purpose: which canvas sizes the generator accepts, the four constraints a size must satisfy, and the ones known to work.
+Purpose: what size each generator will accept — pixel canvases for one, a fixed list of aspects for the other — and which are known to work.
 Read when: choosing dimensions, or a run has been rejected for an invalid size.
 Verified: 2026-08-23 — the constraints and the size list are quoted from the
-installed backing skill. `make figures` recomputes every row below against those
-constraints, and checks the four constraints themselves against
-`registry/harness.yaml`, which is what `imgfacts.py` decides legality from — so
-the page, the tool and the build cannot disagree. What nothing re-checks is the
-backing skill itself: the constraints are a snapshot of one installed copy, and
-the model they belong to is named in `control-surface.md`.
+installed backing skill; the aspect list was re-read from the running tool on
+2026-08-24 and one 1:1 run measured. `make figures` recomputes every row below
+against those constraints, and checks both the four constraints and the aspect
+list against `registry/harness.yaml`, which is what `imgfacts.py` decides
+legality from — so the page, the tool and the build cannot disagree. What
+nothing re-checks is either backing tool: both are a snapshot of one installed
+copy, and the models they belong to are named in `control-surface.md`.
 
-# Canvas sizes
+# Sizes
+
+**The two generators do not take the same argument, and one of them takes no
+pixel size at all.** Which one is running decides what the paragraph below is
+even about; `control-surface.md` is where they are set side by side.
+
+# Canvas sizes — the pixel path
 
 ## The two paths do not take the same argument
 
@@ -64,6 +71,35 @@ pay for the final aspect once it has stopped.
 
 Each of these is recomputed too: if a rule stops being violated by the size
 listed against it, the check fails rather than passing quietly.
+
+# Aspects — the ratio path
+
+The other generator's `generate_image` takes `AspectRatio` and nothing else: no
+width, no height, no megapixel count. **The seven below are the whole size
+surface**, and a shape not on the list is not a smaller request — it is a
+request that cannot be made.
+
+| Aspect | What it is for |
+|---|---|
+| `1:1` | square; the one measured run came back 1024x1024 |
+| `2:3` | portrait |
+| `3:2` | landscape |
+| `3:4` | portrait, closer to square |
+| `4:3` | landscape, closer to square |
+| `9:16` | tall, full-bleed on a phone |
+| `16:9` | widescreen |
+
+`imgfacts.py --check-aspect 5:4` answers whether a shape is on the list, and
+when it is not it names the nearest one that is. It reduces what it is given
+first, so `1920:1080` and `16:9` are the same question.
+
+Two consequences the pixel path does not have:
+
+- **The returned dimensions are whatever that aspect returns.** They are read
+  off the file, and the recipe records the aspect asked for beside them — there
+  was no pixel count to record
+- **A size larger than what comes back is an upscale afterwards**, not a
+  different request. Plan the delivery rungs from the measured file
 
 ## Choosing one
 

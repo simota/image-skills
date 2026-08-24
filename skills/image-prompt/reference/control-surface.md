@@ -1,11 +1,19 @@
 <!-- image:deferred -->
-Purpose: what the generator actually accepts, so a request does not spend words on levers that do not exist.
+Purpose: what each generator actually accepts, so a request does not spend words on levers that do not exist.
 Read when: deciding what to put in a prompt, or wondering why an instruction was ignored.
 Verified: 2026-08-23 — read off the installed backing skill and confirmed by
-running one generation through the default path. Model names and mode behaviour
-are a snapshot of one machine; no automated check re-reads them.
+running one generation through the default path. The second generator's section
+was added 2026-08-24 from one run through it and its own parameter list. Model
+names and mode behaviour are a snapshot of one machine; no automated check
+re-reads them, and only the aspect list is checked, by `make figures`.
 
-# What the generator will and will not honour
+# What the generators will and will not honour
+
+**Two are installed and their surfaces are not the same shape.** One takes
+pixels, the other takes a ratio off a fixed list. A prompt written for the wrong
+one spends its words on a lever that is not there.
+
+# The pixel generator
 
 The backing skill is Codex's `imagegen`, installed under
 `$CODEX_HOME/skills/.system/imagegen/`. It has exactly two modes and they have
@@ -49,9 +57,35 @@ native transparent background on one older model. Reach for it when the user
 asks for it, or when a transparency request is too complex for local key
 removal — and ask first.
 
+# The aspect generator
+
+The `generate_image` tool built into the `agy` CLI. No API key, no flag, no
+second mode: the model calls it because the prompt asked for an image.
+
+**What it takes:** `Prompt`, an `ImageName` for the filename stem, an optional
+`AspectRatio` from seven fixed shapes, and optional `ImagePaths` for inputs.
+
+**What it does not take:** a pixel size, a seed, quality, an output path, an
+output format, a mask, a transparency flag. `AspectRatio` is the only
+dimensional control and there is no smaller or larger version of a shape.
+
+**Where the file lands:** under the CLI's own conversation directory, **as a
+JPEG**. Not configurable. A lossless or transparent asset is a conversion made
+afterwards, and it is a second operation on the image.
+
+**Consequences worth planning for:**
+
+- A shape not on the list is unavailable, not approximate. Compose for one that
+  is, and crop
+- No seed here either. Every run is a new picture from the same request
+- The run can report an error while having written the file. Look in the
+  directory rather than believing the envelope
+- Batches are one call per variant, same as the other path
+
 ## What controls the picture, in order of effect
 
-Given a surface this small, the prompt is doing nearly all the work.
+Given surfaces this small, the prompt is doing nearly all the work on either
+generator, and the list below does not change between them.
 
 1. **Subject and action** — the largest single lever, and the one most often
    under-specified

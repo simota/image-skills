@@ -22,7 +22,7 @@ decided, not one that does not apply.
 
 | Field | Means | What must appear |
 |---|---|---|
-| `engine` | What was invoked | The command, not the vendor — `codex exec` with image generation enabled |
+| `engine` | What was invoked | The command, not the vendor. Two generators are in use and they take different arguments; which one ran is the first thing this field settles |
 | `model` | What the engine reported using | As reported. Recalled from habit is not reported |
 | `prompt` | The text actually sent | Verbatim. A paraphrase is a different prompt |
 | `excluded` | What the request told it to leave out | The exclusions as sent, or `none` |
@@ -32,12 +32,12 @@ decided, not one that does not apply.
 
 ## `IRREPRODUCIBLE` — the eighth case, and the honest one
 
-The generator this set uses exposes no seed. Running the same recipe again does
-not return the same image; it returns another image from the same request.
+Neither generator this set uses exposes a seed. Running the same recipe again
+does not return the same image; it returns another image from the same request.
 
 So a recipe fixes the **intent** and never the pixels, and the gap is stated,
 once, in the handoff — `IRREPRODUCIBLE`. It is not a residual and it is not a
-defect. It is what this generator is.
+defect. It is what these generators are.
 
 Two things follow. **The chosen file is the artifact**, not the recipe, so the
 file is kept and versioned rather than regenerated on demand. And **a request
@@ -56,7 +56,8 @@ engine: "codex exec (image generation)"
 model: "<as the run reported it>"
 prompt: "<verbatim>"
 excluded: "<as sent, or none>"
-size: { asked: 1536x1024, on_disk: 1536x1024 }   # both, read off the file
+size: { asked: 1536x1024, on_disk: 1536x1024 }   # on_disk read off the file;
+                                                 # on the aspect path `asked` is a ratio
 inputs: [{ path: brand/mark.png, role: "logo to match" }]
 output: { generated: "<generator path>", placed: "assets/hero.png" }
 note: IRREPRODUCIBLE — no seed; this file is the artifact

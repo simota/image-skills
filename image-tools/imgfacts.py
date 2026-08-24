@@ -8,12 +8,20 @@ is a fact rather than a repetition of what the prompt asked for.
     python3 image-tools/imgfacts.py hero.png
     python3 image-tools/imgfacts.py --json assets/*.png
     python3 image-tools/imgfacts.py --check-size 1536x1024
+    python3 image-tools/imgfacts.py --check-aspect 4:5
 
 No image library, deliberately: this runs inside a skill on whatever machine the
 skill is on. It parses headers rather than decoding pixels, so it is fast, it
 never re-encodes anything, and the only import beyond the standard library is
-the PyYAML the rest of the harness already needs — for the canvas constraints,
-which live in the registry so that this and the reference page cannot disagree.
+the PyYAML the rest of the harness already needs — for the generators' size
+constraints, which live in the registry so that this and the reference pages
+cannot disagree.
+
+The two generators constrain size differently and the answer is not the same
+question: one takes pixel dimensions and rejects an illegal canvas, the other
+takes an aspect ratio off a fixed list and takes no pixel count at all. Asking
+`--check-size` about the second would answer about a lever it does not have,
+so the aspect list gets its own check rather than being folded into the canvas one.
 
 What it cannot do is judge the picture. Dimensions, format, bytes, whether there
 is an alpha channel and whether a colour profile is declared are all it knows.
@@ -32,9 +40,25 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-CANVAS = yaml.safe_load(
+GENERATORS = yaml.safe_load(
     (ROOT / "image-registry" / "harness.yaml").read_text(encoding="utf-8")
-)["generator"]["canvas"]
+)["generators"]
+
+
+def _by_control(kind: str) -> dict:
+    """The generators the registry says control size this way, by name."""
+    return {n: g for n, g in GENERATORS.items()
+            if isinstance(g, dict) and g.get("control") == kind}
+
+
+# One generator declares a canvas today. Resolving it by `control:` rather than
+# by name means adding a second one is a registry edit, and the assert is what
+# stops that edit from silently picking whichever came first in the file.
+_canvas = _by_control("canvas")
+assert len(_canvas) == 1, f"expected exactly one canvas generator, found {sorted(_canvas)}"
+CANVAS_GENERATOR = next(iter(_canvas))
+CANVAS = _canvas[CANVAS_GENERATOR]["canvas"]
+ASPECT_GENERATORS = _by_control("aspect")
 
 
 class Unreadable(Exception):
@@ -280,6 +304,34 @@ def nearest_legal(w: int, h: int) -> tuple[int, int] | None:
     return min(pool)[1] if pool else None
 
 
+def aspect_of(w: int, h: int) -> str:
+    """The reduced `W:H` a size is, which is the only size lever an aspect
+    generator has. 1254x1254 and 1024x1024 are the same request to it."""
+    g = math.gcd(w, h)
+    return f"{w // g}:{h // g}"
+
+
+def aspect_offered(name: str) -> list[str]:
+    gen = ASPECT_GENERATORS.get(name)
+    if gen is None:
+        raise KeyError(f"{name} is not a generator that takes an aspect; "
+                       f"the registry lists {sorted(ASPECT_GENERATORS)}")
+    return list(gen["aspects"])
+
+
+def nearest_aspect(ratio: str, name: str) -> str:
+    """The offered aspect closest in shape. Closest is by ratio, not by string:
+    a request for 5:4 is answered with 4:3 and not with the first one listed."""
+    a, b = (int(x) for x in ratio.split(":"))
+    return min(aspect_offered(name),
+               key=lambda o: abs(math.log((a / b) / _ratio(o))))
+
+
+def _ratio(spec: str) -> float:
+    a, b = (int(x) for x in spec.split(":"))
+    return a / b
+
+
 # --- output ------------------------------------------------------------------
 
 def render(f: dict) -> str:
@@ -291,7 +343,7 @@ def render(f: dict) -> str:
     if f["notes"]:
         tail += f"   {', '.join(f['notes'])}"
     if f["breaks"]:
-        tail += ("\n  not a legal generator canvas: breaks "
+        tail += (f"\n  not a legal {CANVAS_GENERATOR} canvas: breaks "
                  + ", ".join(f["breaks"]))
     return head + tail
 
@@ -302,7 +354,34 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--json", action="store_true", help="one object per file")
     p.add_argument("--check-size", metavar="WxH",
                    help="ask whether a canvas is legal, without a file")
+    p.add_argument("--check-aspect", metavar="W:H",
+                   help="ask whether an aspect generator is offered this shape")
+    p.add_argument("--generator", default=None,
+                   help=f"which generator to ask; aspect: {sorted(ASPECT_GENERATORS)}")
     a = p.parse_args(argv)
+
+    if a.check_aspect:
+        name = a.generator or next(iter(sorted(ASPECT_GENERATORS)), "")
+        try:
+            offered = aspect_offered(name)
+            ratio = a.check_aspect if ":" in a.check_aspect else ""
+            w, h = (int(x) for x in ratio.split(":"))
+        except (KeyError, ValueError) as e:
+            print(e if isinstance(e, KeyError) else
+                  f"not an aspect: {a.check_aspect!r} (want W:H)", file=sys.stderr)
+            return 2
+        want = aspect_of(w, h)
+        ok = want in offered
+        near = None if ok else nearest_aspect(want, name)
+        if a.json:
+            print(json.dumps({"aspect": want, "generator": name, "offered": ok,
+                              "nearest_offered": near, "choices": offered}))
+        elif ok:
+            print(f"{want} is one of the {len(offered)} aspects {name} offers")
+        else:
+            print(f"{name} does not offer {want}; nearest offered is {near}. "
+                  f"It takes no pixel size, so this is the whole lever")
+        return 0 if ok else 1
 
     if a.check_size:
         try:

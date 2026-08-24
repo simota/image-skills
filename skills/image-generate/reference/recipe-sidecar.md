@@ -11,16 +11,23 @@ the placement conventions and this copy of the field list do not.
 `_image/RECIPE.md` fixes *what* is recorded. This page is about *where*, and
 about the forms that survive contact with a real repository.
 
-**Do not hand-write one.** `recipe.py capture` takes the newest file the
-generator left, places it where the project wants it, and writes the sidecar
-with the size read off the file rather than the size the prompt asked for:
+**Do not hand-write one.** `recipe.py capture` takes the newest file a generator
+left, places it where the project wants it, and writes the sidecar with the size
+read off the file rather than the size the prompt asked for:
 
 ```sh
 recipe.py capture --to assets/hero.png --prompt-file p.txt \
   --excluded "watermarks, text" --asked 1536x1024
+recipe.py capture --to assets/hero.jpg --prompt-file p.txt \
+  --generator agy --asked 16:9        # the aspect path: a ratio, never pixels
 recipe.py check assets/hero.png        # every field, and the size against the file
 recipe.py check --dir assets/          # and which images have no recipe at all
 ```
+
+`--generator` picks whose output directory is searched and whose invocation goes
+into `engine`. Without it, every declared generator's directory is searched and
+the newest file across all of them wins — a timestamp, rather than a guess about
+which CLI is running.
 
 It refuses to overwrite an existing file: that is a sibling-version decision for
 a person (`naming` in the delivering skill), not something a tool does quietly.
@@ -69,11 +76,28 @@ note: "IRREPRODUCIBLE — no seed. This file is the artifact."
 - **`model`** is what the run reported. If it reported nothing, write
   `unreported` — that is information, and a plausible model name is not
 - **`size.asked`** says which path was used as much as it says a number: on the
-  default path the size was a sentence in the prompt, and saying so explains any
-  disagreement with `on_disk`
+  pixel generator's default path the size was a sentence in the prompt, and on
+  the aspect generator it is a ratio and there was never a pixel count to ask
+  for. Either way it explains any disagreement with `on_disk`
 - **`output.generated`** is kept even after the file is copied. It is how a
   later reader tells a generated asset from a hand-made one
 - **`inputs`** is empty for a fresh generation and never empty for an edit
+
+The same run on the aspect generator differs in three fields, and in nothing
+else:
+
+```yaml
+engine: "agy --print"
+size: { asked: "16:9 (the whole size surface; it takes no pixel count)",
+        on_disk: "1024x1024" }
+output:
+  generated: "~/.gemini/antigravity-cli/brain/a0a5…/landing-header_1787….jpg"
+  placed: "docs/assets/landing-header.jpg"
+```
+
+A `.jpg` extension on `placed` is not an oversight: that path writes JPEG and a
+PNG beside it is a conversion, which is its own operation and its own line in
+the recipe.
 
 ## A chain of edits
 

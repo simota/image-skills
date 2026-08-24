@@ -10,10 +10,15 @@ against the file on disk.
     recipe.py check assets/hero.png
     recipe.py check --dir assets/
 
-`capture` takes the newest file the generator left under $CODEX_HOME, copies it
-where the project wants it, and writes the sidecar with the size read off the
-file rather than the size the prompt asked for. Those two disagree more often
-than anyone expects, which is the whole reason both are recorded.
+`capture` takes the newest file a generator left in its own output directory,
+copies it where the project wants it, and writes the sidecar with the size read
+off the file rather than the size the prompt asked for. Those two disagree more
+often than anyone expects, which is the whole reason both are recorded.
+
+Which generator produced it is not guessed from the environment: with no
+`--generator` and no `--from`, every declared generator's output directory is
+searched and the newest file across all of them wins, so the answer comes from a
+timestamp rather than from an assumption about which CLI is running.
 
 It never overwrites: an existing destination is a sibling version decision for a
 person to make (`image-deliver/playbooks/naming.md`), not something a tool does
@@ -35,7 +40,8 @@ sys.dont_write_bytecode = True
 import imgfacts                                            # noqa: E402
 
 H = yaml.safe_load((ROOT / "image-registry" / "harness.yaml").read_text(encoding="utf-8"))
-GEN = H["generator"]
+GENERATORS = {n: g for n, g in H["generators"].items() if isinstance(g, dict)}
+DEFAULT_GENERATOR = H["generators"]["default"]
 FIELDS = [f for f in H["vocabulary"]["recipe_fields"] if not f.isupper()]
 SIDECAR = ".recipe.yaml"
 
@@ -49,20 +55,39 @@ def _block(dumper, data):
 
 yaml.add_representer(str, _block, Dumper=yaml.SafeDumper)
 
-# The eighth case, and the honest one: this generator exposes no seed, so a
+# The eighth case, and the honest one: neither generator exposes a seed, so a
 # recipe fixes intent and never pixels (`_image/RECIPE.md`).
 NO_SEED = "IRREPRODUCIBLE — no seed; this file is the artifact"
-UNASKED = "not specified; the built-in path takes no size argument"
+
+# What `size.asked` says when nothing asked. Kept per control surface, because
+# "no size argument" and "an aspect, and no pixel count at all" are different
+# facts about the run and a reader six weeks later needs the right one.
+UNASKED = {
+    "canvas": "not specified; the built-in path takes no size argument",
+    "aspect": "not specified; this path takes an aspect ratio, never a pixel size",
+}
 
 
-def codex_home() -> Path:
-    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+def home_of(name: str) -> Path:
+    gen = GENERATORS[name]
+    env = gen.get("home_env")
+    return Path(os.environ.get(env) if env and os.environ.get(env)
+                else os.path.expanduser(gen["home_default"]))
 
 
-def newest_generated() -> Path | None:
-    hits = sorted(codex_home().glob(GEN["output_glob"]),
-                  key=lambda p: p.stat().st_mtime, reverse=True)
-    return hits[0] if hits else None
+def newest_generated(name: str | None = None) -> tuple[str, Path] | None:
+    """The newest file left by `name`, or across every generator when unnamed."""
+    hits = []
+    for n in ([name] if name else GENERATORS):
+        hits += [(n, p) for p in home_of(n).glob(GENERATORS[n]["output_glob"])]
+    if not hits:
+        return None
+    return max(hits, key=lambda h: h[1].stat().st_mtime)
+
+
+def _searched(name: str | None) -> str:
+    return ", ".join(f"{GENERATORS[n]['output_glob']} under {home_of(n)}"
+                     for n in ([name] if name else GENERATORS))
 
 
 def sidecar_of(image: Path) -> Path:
@@ -72,11 +97,19 @@ def sidecar_of(image: Path) -> Path:
 # --- capture -----------------------------------------------------------------
 
 def capture(a: argparse.Namespace) -> int:
-    src = a.source or newest_generated()
-    if src is None:
-        print(f"nothing matches {GEN['output_glob']} under {codex_home()}; "
-              "name the file with --from", file=sys.stderr)
+    if a.generator and a.generator not in GENERATORS:
+        print(f"{a.generator} is not one of {sorted(GENERATORS)}", file=sys.stderr)
         return 2
+    if a.source:
+        src, produced_by = a.source, a.generator or DEFAULT_GENERATOR
+    else:
+        found = newest_generated(a.generator)
+        if found is None:
+            print(f"nothing matches {_searched(a.generator)}; "
+                  "name the file with --from", file=sys.stderr)
+            return 2
+        produced_by, src = found
+    gen = GENERATORS[produced_by]
     if not src.exists():
         print(f"{src}: no such file", file=sys.stderr)
         return 2
@@ -98,11 +131,12 @@ def capture(a: argparse.Namespace) -> int:
         inputs.append({"path": path, "role": role or "unstated"})
 
     doc = {
-        "engine": a.engine or GEN["invoke"],
+        "engine": a.engine or gen["invoke"],
         "model": a.model or "unreported",
         "prompt": a.prompt_file.read_text(encoding="utf-8") if a.prompt_file else a.prompt,
         "excluded": a.excluded or "none",
-        "size": {"asked": a.asked or UNASKED, "on_disk": facts["size"]},
+        "size": {"asked": a.asked or UNASKED[gen["control"]],
+                 "on_disk": facts["size"]},
         "inputs": inputs,
         "output": {"generated": str(src), "placed": str(dest)},
         "note": NO_SEED,
@@ -112,7 +146,7 @@ def capture(a: argparse.Namespace) -> int:
     side.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
                                    default_flow_style=False), encoding="utf-8")
     print(f"{dest}  {facts['size']}  {facts['bytes']:,} bytes")
-    if doc["size"]["asked"] not in (UNASKED, facts["size"]):
+    if doc["size"]["asked"] not in (UNASKED[gen["control"]], facts["size"]):
         print(f"  asked for {doc['size']['asked']}, on disk {facts['size']} — "
               "both recorded")
     print(f"{side}  {len(FIELDS)} fields")
@@ -190,7 +224,10 @@ def main(argv: list[str] | None = None) -> int:
                                        "and write its recipe")
     c.add_argument("--to", required=True, type=Path)
     c.add_argument("--from", dest="source", type=Path,
-                   help="default: the newest file the generator left")
+                   help="default: the newest file any generator left")
+    c.add_argument("--generator", choices=sorted(GENERATORS),
+                   help="which generator produced it; default: whichever left "
+                        "the newest file")
     c.add_argument("--prompt-file", type=Path, help="the text sent, verbatim")
     c.add_argument("--prompt", help="use --prompt-file where the prompt has newlines")
     c.add_argument("--excluded", help="what the request told it to leave out")

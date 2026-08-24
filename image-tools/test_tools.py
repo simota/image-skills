@@ -265,6 +265,42 @@ def test_legality() -> None:
     check("--check-size rejects nonsense", imgfacts.main(["--check-size", "big"]), 2)
 
 
+def test_aspect_legality() -> None:
+    """The other generator's only size lever, and the reduce-then-compare that
+    makes `1920:1080` and `16:9` the same question."""
+    name = sorted(imgfacts.ASPECT_GENERATORS)[0]
+    offered = imgfacts.aspect_offered(name)
+    truthy("the aspect list is not empty", offered)
+    for spec in offered:
+        a, b = (int(x) for x in spec.split(":"))
+        check(f"{spec} is already reduced", imgfacts.aspect_of(a, b), spec)
+    check("a size reduces to its aspect", imgfacts.aspect_of(1920, 1080), "16:9")
+    check("an off-list shape gets the nearest on-list one",
+          imgfacts.nearest_aspect("5:4", name), "4:3")
+    truthy("an unknown generator raises rather than answering",
+           raises(lambda: imgfacts.aspect_offered("nobody"), KeyError))
+
+    check("--check-aspect exits 0 on an offered shape",
+          imgfacts.main(["--check-aspect", "16:9"]), 0)
+    check("--check-aspect reduces before comparing",
+          imgfacts.main(["--check-aspect", "1920:1080"]), 0)
+    check("--check-aspect exits 1 on one that is not offered",
+          imgfacts.main(["--check-aspect", "5:4", "--json"]), 1)
+    check("--check-aspect rejects nonsense",
+          imgfacts.main(["--check-aspect", "wide"]), 2)
+    check("--check-aspect refuses a generator that has no aspect list",
+          imgfacts.main(["--check-aspect", "1:1", "--generator",
+                         imgfacts.CANVAS_GENERATOR]), 2)
+
+
+def raises(fn, kind) -> bool:
+    try:
+        fn()
+    except kind:
+        return True
+    return False
+
+
 # --- recipe ------------------------------------------------------------------
 
 PROMPT = "Use case: stylized-concept\nPrimary request: a red circle"
@@ -339,6 +375,33 @@ def test_recipe(tmp: Path) -> None:
     check("check --dir exits non-zero when something is missing",
           recipe.main(["check", "--dir", str(tmp)]), 1)
     check("capture without a prompt is refused", capture_no_prompt(tmp), 2)
+
+
+def test_recipe_generators(tmp: Path) -> None:
+    """Which generator produced the file changes what the recipe says about it.
+
+    `engine` and the `size.asked` placeholder are both read off the named
+    generator, so a run captured under the wrong one would record a command
+    nobody ran and a reason for the missing size that does not apply to it.
+    """
+    for name, gen in recipe.GENERATORS.items():
+        dest = f"by-{name}.png"
+        check(f"capture --generator {name} writes", capture(tmp, dest, generator=name), 0)
+        side = (tmp / (dest + recipe.SIDECAR)).read_text(encoding="utf-8")
+        truthy(f"{name}'s own invocation is recorded", gen["invoke"] in side)
+        truthy(f"{name}'s missing size says why it is missing",
+               recipe.UNASKED[gen["control"]] in side)
+    check("an unknown generator is refused, not defaulted",
+          capture_unknown_generator(tmp), 2)
+
+
+def capture_unknown_generator(tmp: Path) -> int:
+    try:
+        return recipe.main(["capture", "--to", str(tmp / "y.png"), "--from",
+                            str(tmp / "src.png"), "--prompt", PROMPT,
+                            "--generator", "nobody"])
+    except SystemExit as e:                    # argparse rejects the choice
+        return e.code
 
 
 def capture_no_prompt(tmp: Path) -> int:
@@ -591,7 +654,9 @@ def main() -> int:
         tmp = Path(d)
         test_imgfacts(tmp)
         test_legality()
+        test_aspect_legality()
         test_recipe(tmp)
+        test_recipe_generators(tmp)
         test_strip(tmp)
         test_no_writes_while_reporting(tmp)
         test_cli_surfaces(tmp)
@@ -600,7 +665,9 @@ def main() -> int:
         print("\n".join(failures))
         return 1
     print(f"tools green - imgfacts read PNG, JPEG, WebP and GIF headers; "
-          f"canvas legality checked both ways; recipe round-tripped and caught "
+          f"canvas legality checked both ways and the aspect list both ways; "
+          f"each of {len(recipe.GENERATORS)} generators captured under its own "
+          f"invocation; recipe round-tripped and caught "
           f"each of {len(recipe.FIELDS)} fields missing; strip kept and removed "
           f"the right blocks in 3 formats and refused 3 ways; "
           f"every CLI entry point exercised")

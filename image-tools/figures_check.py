@@ -16,10 +16,14 @@ Two things are checked, and both are arithmetic the same page already states:
 * `image-deliver/reference/export-targets.md` — every density rung is recomputed
   from its own stated base and factor, and the stated source floor is checked
   against the largest rung.
-* the same four constraints, as prose on that page against `generator.canvas` in
-  the registry. The page is written for a reader and the registry is what
-  `imgfacts.py` decides legality from; one declaration means the tool and the
-  page cannot quietly disagree.
+* the same four constraints, as prose on that page against the canvas generator's
+  block in the registry. The page is written for a reader and the registry is
+  what `imgfacts.py` decides legality from; one declaration means the tool and
+  the page cannot quietly disagree.
+* the aspect list on that page against the aspect generator's block, and every
+  aspect on it checked to be in lowest terms — `imgfacts.py --check-aspect`
+  reduces what it is given before comparing, so an aspect listed as `16:10` and
+  registered as `8:5` would be offered by the page and refused by the tool.
 
 Add a checker here whenever a reference page states a number that follows from
 another number on the same page.
@@ -226,6 +230,57 @@ def check_density() -> int:
     return len(rows)
 
 
+def _generators() -> dict:
+    reg = yaml.safe_load((ROOT / "image-registry" / "harness.yaml").read_text())
+    return {n: g for n, g in reg["generators"].items() if isinstance(g, dict)}
+
+
+def _only(control: str) -> tuple[str, dict]:
+    found = {n: g for n, g in _generators().items() if g.get("control") == control}
+    if len(found) != 1:
+        fail("harness.yaml", f"{len(found)} generators declare `control: {control}`; "
+                             "these checks read exactly one")
+        return "", {}
+    return next(iter(found.items()))
+
+
+# Quoted from the page the same way the constraints are, and re-read rather than
+# hard-coded: a list copied into this file is a third definition of it.
+ASPECT_ROW = re.compile(r"^\|\s*`(\d+):(\d+)`\s*\|")
+ASPECT_HEAD = re.compile(r"^\|\s*Aspect\s*\|")
+
+
+def check_aspects() -> int:
+    """The aspects the page offers are the aspects the registry offers, and each
+    is in lowest terms — which is the form `--check-aspect` compares against."""
+    name, gen = _only("aspect")
+    if not gen:
+        return 0
+    page = SKILLS / "image-prompt/reference/sizes.md"
+    raw = table_rows(page.read_text(), ASPECT_HEAD)
+    if not raw:
+        fail("sizes.md", f"no aspect table found; the only size lever {name} has "
+                         "is stated nowhere a reader will find it")
+        return 0
+    listed = []
+    for i, line in raw:
+        m = ASPECT_ROW.match(line)
+        if not m:
+            fail(f"sizes.md:{i}", "row does not state a `W:H` aspect, so nothing "
+                                  f"about it can be recomputed — {line[:60]}")
+            continue
+        a, b = int(m.group(1)), int(m.group(2))
+        if math.gcd(a, b) != 1:
+            fail(f"sizes.md:{i}", f"{a}:{b} is not in lowest terms; --check-aspect "
+                                  f"reduces before comparing and would refuse it")
+        listed.append(f"{a}:{b}")
+    offered = list(gen["aspects"])
+    if listed != offered:
+        fail("sizes.md", f"offers {listed}; the registry's {name} block "
+                         f"offers {offered}")
+    return len(listed)
+
+
 def check_canvas() -> int:
     """The four numbers the page states in prose are the four in the registry.
 
@@ -237,8 +292,10 @@ def check_canvas() -> int:
     lim = _limits(page.read_text())
     if not lim:
         return 0
-    canvas = yaml.safe_load(
-        (ROOT / "image-registry" / "harness.yaml").read_text())["generator"]["canvas"]
+    _, gen = _only("canvas")
+    if not gen:
+        return 0
+    canvas = gen["canvas"]
     stated = {"max edge": [canvas["max_edge"]],
               "multiple of 16": [canvas["edge_multiple"]],
               "ratio": [canvas["max_ratio"]],
@@ -246,7 +303,7 @@ def check_canvas() -> int:
     for name, want in stated.items():
         if lim[name] != want:
             fail("sizes.md", f"states {name} as {lim[name]}; the registry's "
-                             f"generator.canvas says {want}")
+                             f"canvas generator says {want}")
     return len(stated)
 
 
@@ -254,12 +311,14 @@ def main() -> int:
     sizes = check_sizes()
     rungs = check_density()
     canvas = check_canvas()
+    aspects = check_aspects()
     if failures:
         print(f"{len(failures)} mismatch(es):")
         print("\n".join(failures))
         return 1
     print(f"figures green - {sizes} canvas sizes rechecked against their own "
           f"constraints, {canvas} of those constraints matched to the registry, "
+          f"{aspects} aspects matched to it and reduced, "
           f"{rungs} density rungs recomputed")
     return 0
 

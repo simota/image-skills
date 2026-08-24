@@ -38,7 +38,7 @@ limits:
   skills_max: 8               # 6 in use, 2 spare
   routes_max: 12
   route_stages_max: 6
-  repo_md_lines_total: 4200   # measured: 3251. Two spare skills would take it to ~4250
+  repo_md_lines_total: 4200   # measured: 3651. Two spare skills would take it to ~4650
 
 # A listing under this many skills does not need packs. Crossing it is the
 # trigger to split the set into named subsets, not a reason to delete skills.
@@ -69,10 +69,10 @@ forbidden_description_terms:
 # the producing engine is a property of the run, not of this file. The caller
 # states which engine is running; when it does not, the runner stops.
 #
-# The generation itself is not one of these. Pixels come from the codex CLI's
-# `image_generation` tool (`image-generate/reference/codex-imagen.md`), which any
-# of the three may shell out to. The engine that ran the generation and the
-# engine that judges the result are different roles, and this set keeps them apart.
+# The generation itself is not one of these. Pixels come from a generator under
+# `generators:` below, which any of the three may shell out to. The engine that
+# ran the generation and the engine that judges the result are different roles,
+# and this set keeps them apart — including when they happen to be the same CLI.
 engines:
   runs_on: [claude, codex, agy]     # two or more, or no run can check itself out
 
@@ -93,29 +93,55 @@ refutation:
     the file was never opened, a stated property does not match the file on disk,
     or the named defect is not present at the location cited
 
-# The generator this set is built around, and the one place its numbers are
-# written. `image-prompt/reference/sizes.md` states the canvas rules in prose for
-# a reader; `image-tools/figures_check.py` checks that prose against this block,
-# and `image-tools/imgfacts.py` decides legality from it. One declaration, so the
-# page cannot drift from the tool.
+# The generators this set can run, and the one place their numbers are written.
+# `image-prompt/reference/sizes.md` states the canvas and aspect rules in prose
+# for a reader; `image-tools/figures_check.py` checks that prose against this
+# block, and `image-tools/imgfacts.py` decides legality from it. One declaration,
+# so the pages cannot drift from the tool.
 #
-# These are a snapshot of one installed copy on one machine (see that page's
-# `Verified:` line). Nothing re-reads the backing skill.
-generator:
-  skill: "$CODEX_HOME/skills/.system/imagegen"
-  invoke: "codex exec --enable image_generation"
-  # Under $CODEX_HOME. Where the built-in path leaves a file, and the reason
-  # `recipe.py capture` exists: a project asset left here is one cache clear from gone.
-  output_glob: "generated_images/*/exec-*.png"
-  # The fallback CLI path's constraints. The default built-in path takes no size
-  # argument at all, which is why a recipe records the size asked for and the
-  # size on disk as two different things.
-  canvas:
-    max_edge: 3840
-    edge_multiple: 16
-    max_ratio: 3
-    min_pixels: 655360
-    max_pixels: 8294400
+# Neither generator is reimplemented here and neither image API is called
+# directly. `control:` is what separates them and it is the thing a prompt has to
+# know: `canvas` takes pixel dimensions, `aspect` takes a ratio from a fixed list
+# and nothing else. `default` is what `recipe.py` assumes when a run does not say.
+#
+# These are a snapshot of one installed copy of each on one machine (see each
+# reference page's `Verified:` line). Nothing re-reads the backing tools.
+generators:
+  default: codex
+
+  codex:
+    tool: image_generation
+    skill: "$CODEX_HOME/skills/.system/imagegen"
+    invoke: "codex exec --enable image_generation"
+    home_env: CODEX_HOME
+    home_default: "~/.codex"
+    # Where the built-in path leaves a file, and the reason `recipe.py capture`
+    # exists: a project asset left here is one cache clear from gone.
+    output_glob: "generated_images/*/exec-*.png"
+    writes: PNG
+    control: canvas
+    # The fallback CLI path's constraints. The default built-in path takes no
+    # size argument at all, which is why a recipe records the size asked for and
+    # the size on disk as two different things.
+    canvas:
+      max_edge: 3840
+      edge_multiple: 16
+      max_ratio: 3
+      min_pixels: 655360
+      max_pixels: 8294400
+
+  agy:
+    tool: generate_image
+    invoke: "agy --print"
+    # No documented environment override was found for this path; `capture
+    # --from` names the file when an install puts it somewhere else.
+    home_default: "~/.gemini/antigravity-cli"
+    output_glob: "brain/*/*.jpg"
+    writes: JPEG              # PNG only by converting the file afterwards
+    control: aspect
+    # The whole size surface. There is no pixel argument, so a recipe records
+    # the aspect asked for and the dimensions read off the file.
+    aspects: ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9"]
 
 # Tools a skill may run. Each is linked individually into the skills that can run
 # it; the tools directory is never linked whole, because a skill holding `Bash`

@@ -325,6 +325,33 @@ def _(r): sub(r / f"{S}image-review/SKILL.md",
 def _(r): sub(r / "image-registry/harness.yaml", "finding_visuals:", "unused_visuals:")
 
 
+@case("V37")
+def _(r):
+    """A page that leans on a declared source and does not say so."""
+    sub(r / f"{S}image-generate/reference/codex-imagen.md",
+        "Source: codex — the flags and defaults below are that CLI's, and move with its releases.",
+        "Source: none — nothing outside this page can move what it states.")
+
+
+@case("V37-unused")
+def _(r):
+    """A source named in the header that the page never uses."""
+    sub(r / f"{S}image-review/reference/report-template.md",
+        "Source: none — nothing outside this page can move what it states.",
+        "Source: codex — the flags and defaults below are that CLI's, and move with its releases.")
+
+
+@case("V37-silent")
+def _(r):
+    """Neither a source nor the admission that there is none."""
+    sub(r / f"{S}image-review/reference/report-template.md",
+        "Source: none — nothing outside this page can move what it states.", "Source:")
+
+
+@case("V37-none-declared")
+def _(r): sub(r / "image-registry/harness.yaml", "source_authorities:", "unused_authorities:")
+
+
 def main() -> int:
     baseline = run(ROOT)
     if "green" not in baseline:

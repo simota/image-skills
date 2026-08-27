@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: the edit taxonomy the backing skill keys off, and what each mode is expected to preserve.
 Read when: classifying a change before making it, or an edit preserved the wrong things.
+Source: none — nothing outside this page can move what it states.
 Verified: 2026-08-23 — the slugs are quoted from the installed backing skill's
 `SKILL.md`; the preservation notes are from its own guidance plus observed runs.
 The note on the second generator's input parameter was read from its own

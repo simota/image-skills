@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: how to invoke the generator, what each mode takes, where the file lands, and what the invocation cannot do.
 Read when: about to generate, or a run behaved differently from what the prompt asked for.
+Source: codex — the flags and defaults below are that CLI's, and move with its releases.
 Verified: 2026-08-23 — the invocation, the exit behaviour and the output path
 were confirmed by running one generation on macOS with the installed skill. The
 mode rules and the model defaults are quoted from that installed copy; nothing

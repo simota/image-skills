@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: what to do about colour profiles and embedded metadata before a file ships.
 Read when: colour looks different in place than in a viewer, or deciding what to strip.
+Source: none — nothing outside this page can move what it states.
 Verified: 2026-08-23 — the policy table below is what `strip.py` implements, and
 it is re-checked by running `image-tools/test_tools.py`, which keeps and removes
 each named block in PNG, JPEG and WebP. The browser and viewer behaviours below

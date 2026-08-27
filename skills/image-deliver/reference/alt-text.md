@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: what the text replacing an image should say, decided by what the image is for.
 Read when: writing alt text, or deciding whether an image needs any.
+Source: none — nothing outside this page can move what it states.
 Verified: 2026-08-23 — no automated check. The categories below follow the
 long-standing distinction between informative, decorative and functional images
 in accessibility guidance; the wording advice is this repository's own.

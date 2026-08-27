@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: the sizes a surface actually needs, and the rule each one is derived by.
 Read when: emitting more than one size, or deciding what the source has to be.
+Source: none — nothing outside this page can move what it states.
 Verified: 2026-08-23 — every emitted size in the table is recomputed from its own
 stated base and factor by `make figures`, so a number edited into a wrong one
 fails the build rather than ageing quietly.

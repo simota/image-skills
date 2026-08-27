@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: the brief this skill produces, field by field, with what an empty field means.
 Read when: writing a brief, or receiving one and checking it is complete.
+Source: none — nothing outside this page can move what it states.
 Verified: 2026-08-23 — the field list is quoted from `_image/SIZING.md`; nothing
 re-runs it automatically, so a change there has to be copied here by hand.
 

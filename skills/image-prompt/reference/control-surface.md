@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: what each generator actually accepts, so a request does not spend words on levers that do not exist.
 Read when: deciding what to put in a prompt, or wondering why an instruction was ignored.
+Source: agy — the controls it exposes are what this page can promise.
 Verified: 2026-08-23 — read off the installed backing skill and confirmed by
 running one generation through the default path. The second generator's section
 was added 2026-08-24 from one run through it and its own parameter list. Model

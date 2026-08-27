@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: how to invoke the aspect-ratio generator, what its tool takes, where the file lands, and the two things about it that surprise people.
 Read when: generating on this path, or a run reported an error while leaving a file behind.
+Source: agy — the flags and defaults below are that CLI's, and move with its releases.
 Verified: 2026-08-24 — every claim below was produced by running one generation
 on macOS and reading the run's own transcript and the file it wrote; the
 parameter list was re-read from the running tool. The aspect list is re-checked

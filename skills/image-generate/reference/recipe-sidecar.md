@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: the form a recipe travels in, and where to put it so it survives.
 Read when: recording a run, or picking up an image whose origin is unknown.
+Source: codex, agy — the recipe records what each CLI was invoked with, so its fields follow theirs.
 Verified: 2026-08-23 — no automated check reads this page. `recipe.py` writes
 and validates the shape below, and `image-tools/test_tools.py` round-trips it and
 proves each field is required, so the *shape* has a check; this page's prose,

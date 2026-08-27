@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: what size each generator will accept — pixel canvases for one, a fixed list of aspects for the other — and which are known to work.
 Read when: choosing dimensions, or a run has been rejected for an invalid size.
+Source: none — nothing outside this page can move what it states.
 Verified: 2026-08-23 — the constraints and the size list are quoted from the
 installed backing skill; the aspect list was re-read from the running tool on
 2026-08-24 and one 1:1 run measured. `make figures` recomputes every row below

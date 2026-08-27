@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: the shape of a review report, and what each part is for.
 Read when: writing up a review.
+Source: none — nothing outside this page can move what it states.
 Verified: 2026-08-23 — the fields are quoted from `_image/CONTRACT.md` and
 `_image/HANDOFF.md`; a rule in `image-tools/validate.py` re-checks that this
 skill's report block matches the delivered source, so the grading half cannot

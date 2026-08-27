@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: what this class of generator gets wrong, where it hides, and how to tell a defect from a choice.
 Read when: sweeping an image, or a picture reads as wrong and nobody can say why.
+Source: none — nothing outside this page can move what it states.
 Verified: 2026-08-23 — assembled from failures observed in generations run
 against the installed backing skill and from its own guidance on validating
 output. No automated check re-runs this; a newer model will drop some entries and

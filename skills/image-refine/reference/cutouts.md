@@ -1,6 +1,7 @@
 <!-- image:deferred -->
 Purpose: how a transparent-background asset is actually produced, since the default path has no transparency setting.
 Read when: a cutout, sticker, sprite, or logo-on-anything asset is wanted.
+Source: codex — the edit modes below are that CLI's, and move with its releases.
 Verified: 2026-08-23 — the sequence, the helper path and the flags are quoted
 from the installed backing skill. The helper was not run as part of this write-up,
 so treat the flag behaviour as documented rather than observed; no automated check

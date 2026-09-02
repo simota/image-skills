@@ -3,9 +3,9 @@
 
 Binding on every `image-*` skill. The other axes decide what must be true; this
 one decides what reaches the reader. A run that satisfies all of them and
-returns forty lines has still failed: **a report that gets skimmed is a report
+buries the answer has still failed: **a report that gets skimmed is a report
 that did not happen**, and the one thing the reader wanted — is the picture
-usable, and where is it — is the first thing a long report buries.
+usable, and where is it — comes first.
 
 ## Record and view are different objects
 
@@ -27,14 +27,11 @@ noise at the next.**
 |---|---|---|
 | **Start** | What will be done and what is excluded, with the tier if it is not obvious | one line |
 | **A question** | The one decision that is blocked, and the default taken if nobody answers | one question, one line |
-| **Mid-run** | Nothing — unless the reader must act now: a divergence from what was agreed, a path found blocked, work that would grow the scope, a run that keeps missing the brief, or a budget about to be spent | one line each, or silence |
-| **End** | The report below | the ceiling below |
+| **Mid-run** | What changed and what it means for the reader: a divergence from what was agreed, a path found blocked, work that would grow the scope, a run that keeps missing the brief, or a budget about to be spent | one line each |
+| **End** | The report below | in proportion, below |
 
-**Progress is not information.** "generating candidates", "now upscaling",
-"this one looks good" tell the reader nothing they can act on, and they cost
-the same attention as the line that matters. A tool call is already visible;
-narrating it a second time is the commonest way a run fills a screen while
-saying nothing.
+**A mid-run line says what a step changed, not that it ran.** The tool call is
+already visible; what the reader cannot see is whether the plan still holds.
 
 **A question is not a status update.** Ask when guessing wrong would be
 expensive to undo, ask one thing, and say what happens if the answer never
@@ -53,17 +50,14 @@ comes.
 
 A run with nothing unresolved reports lines 1 and 2 and stops.
 
-## Ceiling
+## Proportion
 
-| Tier (`_image/SIZING.md`) | The whole report |
-|---|---|
-| `T0` | one line |
-| `T1` | six lines |
-| `T2` | ten lines, plus the files themselves |
-
-**Over the ceiling means cutting content, not reformatting it.** A table, a
-nested list, and a heading per candidate are the three ways a report grows
-while appearing to have been tightened.
+The report is as long as the answer, the evidence line and the open decisions
+need, and no longer (tiers: `_image/SIZING.md`). A `T0` answer is a line. A
+`T2` chain reports once, not once per stage, and links the files rather than
+describing them shot by shot. **When it is too long, the surplus is content —
+the brief restated, the losing candidates, the recipe in prose — never the
+structure that makes six findings scannable.**
 
 ## The deliverable is not the report
 
@@ -85,14 +79,13 @@ choice is the reader's to make.
 is unsafe, or rests on a false premise, say what is wrong, why, and the
 options, at whatever length that takes. **Cut noise, never risk.**
 
-## Never in a report
+## What the report holds
 
-- A restatement of the brief, or of what the run was about to generate
-- A closing summary of what was just said
-- The prompt, the negative prompt, or the parameters — the recipe holds them
-- Narration of process: how many candidates, which was tried first, which tool
-- Praise for the output. Whether it is usable is a judgement with a grade
-  behind it, not an adjective
+The answer, the sweep line, the open decisions, and where the files are. The
+prompt, the parameters, the candidate count and the order things were tried
+live in the recipe and the handoff, where a reader who wants them goes. Whether
+the picture is usable is a verdict with a grade behind it, said as a verdict.
+The brief is the reader's own and is not read back to them.
 
 ## Asked for more
 

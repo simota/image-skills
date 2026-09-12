@@ -145,8 +145,8 @@ def _(r): sub(r / f"{S}_image/ROUTING.md", "(`_image/SIZING.md`)", "(`SIZING.md`
 
 @case("V20")
 def _(r):
-    f = r / f"{S}_image/CONTRACT.md"
-    f.write_text(f.read_text(encoding="utf-8").replace("asserted", "claimed"), encoding="utf-8")
+    """The definition row becomes a mention; the word is still on the page."""
+    sub(r / f"{S}_image/CONTRACT.md", "| `asserted` |", "| asserted |")
 
 
 @case("V21")
@@ -323,6 +323,11 @@ def _(r): sub(r / f"{S}image-review/SKILL.md",
 
 @case("V36-none-declared")
 def _(r): sub(r / "image-registry/harness.yaml", "finding_visuals:", "unused_visuals:")
+
+
+@case("V38")
+def _(r): sub(r / f"{S}image-prompt/playbooks/exclusions.md", "<!-- image:guidance -->\n",
+              "<!-- image:guidance -->\nverdict: KEEP | DROP\n")
 
 
 @case("V37")

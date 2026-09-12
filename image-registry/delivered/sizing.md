@@ -12,3 +12,7 @@
   Without one, every candidate is arguable and the loop has no exit. `excludes`
   may not be empty and execution waits on an empty `open_questions`
   (`_image/SIZING.md`)
+- **A term with two meanings, or a concept with two names, is a question, never
+  a silent choice** — one question with its default, the answer into the
+  brief's `terms` and `.agents/glossary.md`, and the glossary's names only from
+  then on (`_image/SIZING.md` § Terms)

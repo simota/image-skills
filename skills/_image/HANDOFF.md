@@ -22,6 +22,7 @@ brief:                        # every field of the brief in _image/SIZING.md
   standard: "<what the result is judged against>"
   budget: "<paid generations this is worth>"
   open_questions: []          # must be empty; a non-empty one never travels
+  terms: {}                   # the names this run used, as the glossary spells them
 status: DONE                  # DONE | PARTIAL | BLOCKED  (_image/CONTRACT.md)
 decided: "<what this stage settled, 1-3 lines>"
 recipes:                      # one per image this handoff points at

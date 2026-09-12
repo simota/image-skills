@@ -34,6 +34,8 @@ makes the dialogue mandatory:
 - The work would replace a picture a person already chose
 - Doing it wrong would be expensive to undo — anything already published,
   anything under someone's name, anything depicting a real person or product
+- A term in the request, the brand files or the surface carries two meanings,
+  or one concept goes by two names, and the host's glossary does not settle it
 
 **Looking at what exists is not executing.** The current images, the brand
 files, and the surface the picture lands on answer more questions than the
@@ -53,6 +55,7 @@ baseline: "<what exists now, opened and described>"
 standard: "<what the result is judged against>"   # brief, an existing image, a house style
 budget: "<how many paid generations this is worth>"
 open_questions: []                # execution does not begin until empty
+terms: {}                         # the names this run uses, spelled as the glossary spells them
 ```
 
 - **`standard` is this set's baseline for judgement.** Without one every
@@ -67,6 +70,22 @@ open_questions: []                # execution does not begin until empty
   only thing a downstream skill can check itself against
 - **Execution does not begin while `open_questions` is non-empty.** Deferring an
   unknown to "I'll see what comes back" is how a batch becomes a fishing trip
+
+## Terms — one name per concept, one concept per name
+
+The host's glossary is `.agents/glossary.md` when it exists. Read it before the
+brief is settled and write with its names only — brief, prompt, recipe, report
+alike. A term the work has to coin goes into `terms`, and at `T1` or above it
+is proposed in the dialogue rather than invented on the way.
+
+**An ambiguous or inconsistent term is never resolved by a silent choice.**
+Two meanings for one word, or two names for one concept, is a question
+(`_image/REPORT.md`): one question, with the default named — the spelling the
+brand files and the host already use most. The answer lands in `terms` and is
+appended to the glossary as `term · means · not to be called`, so the next run
+inherits the decision rather than the ambiguity. A `T1` may create the glossary
+for its first settled term; a `T0` never does — it marks what it found
+`OUT-OF-SCOPE` and moves on.
 
 ## Constraints do not loosen mid-run
 

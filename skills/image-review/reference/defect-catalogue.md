@@ -69,8 +69,9 @@ everybody feels them.
 Three questions, in order:
 
 1. **Does the brief forbid it?** Then it is a defect, regardless of appearance
-2. **Would a viewer at shipping size read it as a mistake?** Then it is a
-   defect, whatever the intent was
+2. **Does the brief deliberately require this distortion?** Judge whether it
+   serves that purpose. Report a communication conflict when observed, not an
+   anatomy or texture defect merely because a familiar pattern is present
 3. **Is it merely different from what the reviewer would have done?** Then it is
    direction, and it goes upstream rather than being ranked here
 

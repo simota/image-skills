@@ -18,9 +18,10 @@ Phases: `OPEN → SWEEP → LOCATE → RANK → VERDICT`.
 - **Get the standard.** Without one this is preference with a table around it.
   The brief, an existing image, or a house style — and where none exists, say
   which rung you fell back to
-- **Open the file before reading the prompt.** Knowing what was asked for is how
-  a reviewer sees what was asked for. Form the first impression cold, write it
-  down, and only then look at the intent
+- **Open before reading the prompt when it is still unknown.** Record initial
+  observations, then compare with intent. If you already know the prompt, reopen
+  the pixels and disclose that this is not cold or independent; a skill switch
+  cannot erase context. Use a fresh refuter where independent review is required
 - **Ask what the picture is for.** A defect that nobody will see at the shipping
   size is a note, not a finding
 <!-- deliver:sizing -->
@@ -44,12 +45,12 @@ Phases: `OPEN → SWEEP → LOCATE → RANK → VERDICT`.
   then on (`_image/SIZING.md` § Terms)
 <!-- /deliver:sizing -->
 <!-- deliver:recipe -->
-- **Every image an output names carries its recipe.** `engine`, `model`,
-  `prompt` verbatim, `excluded`, `size` asked for and size on disk, `inputs`,
-  `output` path — the run is written down, not remembered, and `engine` says
-  which of the two generators ran. Neither exposes a seed, so a recipe fixes the
-  intent and never the pixels: that gap is `IRREPRODUCIBLE`, stated once in the
-  handoff and never papered over with a seed nobody has (`_image/RECIPE.md`)
+- **Retained generated candidates carry a recipe**: `engine`, reported `model`
+  (or `unreported`), `prompt` verbatim, `excluded`, `size` requested/on disk,
+  `inputs`, `output`. Capture the request at invocation; persist for candidates
+  shown, kept or passed onward, not immediate discards. References and text-only
+  outputs need no invented generation fields. `IRREPRODUCIBLE` limits exact pixel
+  regeneration, not reuse or editing the source (`_image/RECIPE.md`)
 <!-- /deliver:recipe -->
 
 ## Decide first
@@ -78,11 +79,12 @@ Phases: `OPEN → SWEEP → LOCATE → RANK → VERDICT`.
 
 - Always: open the file. Every finding here is about pixels, and a review
   written from a prompt is a review of a different object
-- Always: locate every finding — region, and what to look for there. A finding
-  nobody else can find again is an opinion
-- Always: check rendered text character by character against what was asked for
-- Always: judge at the size the picture will be seen at, then at full size, and
-  say which findings only exist at one of them
+- Always: locate findings — a region, the whole frame, or named set members —
+  and state the violated criterion; intentional distortion is not itself a defect
+- When literal readable text is required, check it character by character; absent
+  text needs no text check, and intentional lettering follows its stated purpose
+- Judge at the intended size/crop and full size. If use or crop is undecided,
+  bound the verdict to the views checked; do not imply production approval
 - Never: produce the replacement, the corrected prompt, or the edit
 - Never: rank by how strange a defect is. Rank by who will see it
 - Never: pass an image because the batch it came from was worse
@@ -103,10 +105,10 @@ located is a defect that can be re-found). A finding with no location is
   something opened, nothing is drawn that the evidence did not establish, and a
   reader who disagrees can point at the part that is wrong
 <!-- deliver:report -->
-- **Grade every claim**: `measured` (the file was opened and the property read
-  off it) supports completion; `inspected` (opened and reasoned over, nothing
-  measured) only where nothing can be measured and the entry says why;
-  `asserted` never does. **A property taken from the request is `asserted`** —
+- **Grade every claim**: `measured` names the measurement method or a located,
+  repeatable visual observation, not aesthetic certainty. `inspected` is reasoned
+  judgement where measurement cannot settle the decision; say why. Header
+  inspection is **not viewing pixels**. `asserted` never supports completion:
   the prompt asked for 3:2, it does not report what came back
 - **The unit is the decision, not the batch.** Each thing the deliverable
   promised carries a grade or sits in the residuals as `UNSPECIFIED`, and a
@@ -123,9 +125,9 @@ located is a defect that can be re-found). A finding with no location is
 
 ## Done when
 
-The file was opened cold, every finding is located and ranked by who would see
-it, rendered text was checked character by character, the verdict commits, and
-what was not looked at is named.
+The file was viewed, prior prompt exposure disclosed, each finding located and
+ranked for the stated use, required literal text checked, and the verdict bounded
+by the crops, sizes and set members actually seen.
 <!-- deliver:surface -->
 - **Say what the moment needs.** Start: one line naming what will be made and what is
   excluded. Mid-run: write to the reader when the plan changes — a run that keeps missing the

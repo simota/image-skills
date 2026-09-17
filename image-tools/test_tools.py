@@ -360,12 +360,13 @@ def test_recipe(tmp: Path) -> None:
            any("64x32" in p for p in recipe.check_one(tmp / "hero.png")))
     side.write_text(good)
 
-    # a prompt shortened to a summary is not a prompt
-    side.write_text(good.replace(
-        "prompt: |\n  Use case: stylized-concept\n  Primary request: a red circle",
-        "prompt: a red circle"))
-    truthy("a stub prompt is reported",
-           any("verbatim" in p for p in recipe.check_one(tmp / "hero.png")))
+    # Length cannot distinguish a sent prompt from a summary; type can.
+    for value in (17, [], "   "):
+        doc = yaml.safe_load(good)
+        doc["prompt"] = value
+        side.write_text(yaml.safe_dump(doc, sort_keys=False))
+        truthy("non-text/blank prompts are reported",
+               any("non-empty text" in p for p in recipe.check_one(tmp / "hero.png")))
     side.write_text(good)
 
     # an image with no recipe is not silently fine
@@ -375,6 +376,31 @@ def test_recipe(tmp: Path) -> None:
     check("check --dir exits non-zero when something is missing",
           recipe.main(["check", "--dir", str(tmp)]), 1)
     check("capture without a prompt is refused", capture_no_prompt(tmp), 2)
+
+
+def test_recipe_verbatim(tmp: Path) -> None:
+    """Capture must not normalize a request or infer its truth from its length.
+    Synthetic PNG headers test file properties, not visual inspection.
+    """
+    texts = ["red dot", "赤い丸", "first\nsecond", "first\nsecond\n",
+             "first\nsecond\n\n", "first\r\nsecond\r\n", "  red dot  "]
+    for i, text in enumerate(texts):
+        dest = f"verbatim-{i}.png"
+        check(f"short/exact prompt {i} captured", capture(tmp, dest, prompt=text), 0)
+        doc = yaml.safe_load((tmp / (dest + recipe.SIDECAR)).read_text())
+        check(f"submitted prompt {i} survives exactly", doc["prompt"], text)
+        check(f"short/exact prompt {i} validates", recipe.check_one(tmp / dest), [])
+    prompt_file = tmp / "request.txt"
+    raw = "Text: 春\r\nAvoid: text elsewhere\r\n\r\n".encode("utf-8")
+    prompt_file.write_bytes(raw)
+    dest = tmp / "from-prompt-file.png"
+    check("capture prompt file", recipe.main([
+        "capture", "--from", str(tmp / "src.png"), "--to", str(dest),
+        "--prompt-file", str(prompt_file), "--generator", "codex"]), 0)
+    doc = yaml.safe_load(recipe.sidecar_of(dest).read_text())
+    check("file line endings survive exactly", doc["prompt"].encode("utf-8"), raw)
+    check("unreported model is honest absence", doc["model"], "unreported")
+    check("file prompt validates", recipe.check_one(dest), [])
 
 
 def test_recipe_generators(tmp: Path) -> None:
@@ -656,6 +682,7 @@ def main() -> int:
         test_legality()
         test_aspect_legality()
         test_recipe(tmp)
+        test_recipe_verbatim(tmp)
         test_recipe_generators(tmp)
         test_strip(tmp)
         test_no_writes_while_reporting(tmp)
@@ -668,7 +695,7 @@ def main() -> int:
           f"canvas legality checked both ways and the aspect list both ways; "
           f"each of {len(recipe.GENERATORS)} generators captured under its own "
           f"invocation; recipe round-tripped and caught "
-          f"each of {len(recipe.FIELDS)} fields missing; strip kept and removed "
+          f"each of {len(recipe.FIELDS)} fields missing; short/Unicode/CRLF prompts preserved verbatim; strip kept and removed "
           f"the right blocks in 3 formats and refused 3 ways; "
           f"every CLI entry point exercised")
     return 0

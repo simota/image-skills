@@ -25,7 +25,7 @@ brief:                        # every field of the brief in _image/SIZING.md
   terms: {}                   # the names this run used, as the glossary spells them
 status: DONE                  # DONE | PARTIAL | BLOCKED  (_image/CONTRACT.md)
 decided: "<what this stage settled, 1-3 lines>"
-recipes:                      # one per image this handoff points at
+recipes:                      # links/records for retained generated candidates only
   "assets/hero.png": { engine: ..., model: ..., prompt: ..., excluded: ...,
                        size: ..., inputs: ..., output: ... }
 evidence:
@@ -40,9 +40,10 @@ next: "<the skill that should receive this, or none>"
 - **`brief` travels whole and is not modifiable** — every field, not a subset.
   Rewriting it downstream is how scope creeps, and here it is invisible: the
   picture still looks like the thing that was asked for
-- **`recipes` is what makes an image usable by anyone after you**
-  (`_image/RECIPE.md`). A handoff naming a file and not its recipe has passed on
-  a picture nobody can change. Each carries `IRREPRODUCIBLE` where it applies
+- **`recipes` preserves generated-candidate provenance**, not pixel usability
+  (`_image/RECIPE.md`). Inherit existing records by reference. Text-only work and
+  supplied/unknown-origin images do not acquire fictitious recipes;
+  `IRREPRODUCIBLE` limits exact regeneration only
 - **The keys of `evidence` are decisions, not files** (`_image/CONTRACT.md`). A
   batch arriving with one entry is a batch whose decisions were not counted
 - **`spent` travels or the budget means nothing.** The next stage inherits what
@@ -64,8 +65,8 @@ next: "<the skill that should receive this, or none>"
 1. Is a whole `brief` attached, with every field present? A pointer to one is
    not one, and a subset is a brief that lost a constraint in transit
 2. Is `standard` set, and is it something this stage can actually judge against?
-3. Does every image named in the work carry a recipe, and does `output` point at
-   a file that is still there?
+3. Does each retained generated candidate carry/link its recipe and an existing
+   output? Record unknown origin honestly; a referenced photo needs no generation fields
 4. Does `open` hold a `BLOCKED` or `UNSPECIFIED`? Hand back to the human
 5. Is every `evidence` level above `asserted`, and does every claim about a
    picture rest on the file having been opened rather than on the prompt?

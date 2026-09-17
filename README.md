@@ -30,18 +30,18 @@ depending on the answer.
 
 ## The idea the set is built on
 
-**Every image an output names carries the recipe that produced it.** `engine`,
+**Every retained generated candidate carries its recipe.** Capture the request
+at invocation; immediate discards need no persistent recipe. Text-only work and
+references to supplied images need no invented generation fields. `engine`,
 `model`, `prompt` verbatim, `excluded`, `size` asked for and size on disk,
 `inputs`, `output`. A picture is the one deliverable here that carries no
 history inside itself: open the file six weeks later and nothing in it says
 what was asked for or what it was made from, so the wording has to travel
 beside it.
 
-Neither generator exposes a seed. Running the same recipe again returns *another*
-image from the same request, not the same image — so a recipe fixes the intent
-and never the pixels. That gap is `IRREPRODUCIBLE`: stated once, never papered
-over with a seed nobody has, and the reason the chosen file is the artifact
-rather than something regenerated on demand
+A recipe does not establish exact pixel regeneration. `IRREPRODUCIBLE` limits
+that promise, not copying the original or editing it. Check the selected tool's
+current controls rather than treating the generator snapshots as a guarantee
 ([`skills/_image/RECIPE.md`](skills/_image/RECIPE.md)).
 
 ## Evidence, for work whose plan and result look alike
@@ -116,8 +116,9 @@ whether a canvas is legal, or an aspect offered, for the generator that will run
 it. It is what makes `measured` cheap,
 because a grade that costs effort gets skipped.
 [`recipe.py`](image-tools/recipe.py) captures a generated file out of whichever
-generator's directory holds the newest one and writes its recipe in the same
-move, then checks that recipe against the file later. [`strip.py`](image-tools/strip.py) removes what
+generator produced it and writes its recipe in the same move. Prefer the
+returned path and actual generator explicitly; the newest-file fallback does
+not establish invocation provenance. It checks fields and dimensions later. [`strip.py`](image-tools/strip.py) removes what
 should not ship — Exif, XMP, generation parameters, comments, timestamps — while
 keeping the colour profile, the alpha channel and any content credential the
 project decided to carry.
@@ -159,10 +160,10 @@ picking whichever came first in the file.
 [`image-registry/harness.yaml`](image-registry/harness.yaml) holds every
 threshold. `image-tools/validate.py` decides them and CI fails on a violation.
 
-**Generation is the only stage that spends money per attempt**, and it has no
-natural stopping point, so the brief carries a `budget` field its sibling sets
-do not have, `spent` travels in the handoff, and the one iteration loop carries
-a hard cycle limit rather than a stopping condition alone.
+**Generation and generative refinement share a paid-attempt budget.** The brief
+carries `budget`, cumulative `spent` travels in the handoff (including failed or
+refused attempts unless confirmed uncharged), and the loop has a hard cycle
+bound, not a target. Unknown billing is not zero; candidate count is not cost.
 
 ## Names, and why none of them are generic
 
@@ -263,8 +264,8 @@ repository writes it, `tools/pages.py --check` fails when it is behind, and
 
 ## What this does not guarantee
 
-- **Nothing here can make a generation reproducible.** Neither backing tool has
-  a seed. Every claim about repeatability in this repository is about intent
+- **A recipe alone cannot guarantee identical pixel regeneration.** Backing-tool
+  controls are moving targets; the original file can still be reused or edited
 - **`allowed-tools` is one CLI's mechanism.** Where a tool grant is not
   enforced, the `Never` lines are discipline and nothing more
 - **No rule can check that a file was actually opened.** The contract says a

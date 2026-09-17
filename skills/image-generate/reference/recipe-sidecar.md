@@ -12,9 +12,10 @@ the placement conventions and this copy of the field list do not.
 `_image/RECIPE.md` fixes *what* is recorded. This page is about *where*, and
 about the forms that survive contact with a real repository.
 
-**Do not hand-write one.** `recipe.py capture` takes the newest file a generator
-left, places it where the project wants it, and writes the sidecar with the size
-read off the file rather than the size the prompt asked for:
+**Reuse the captured request, not memory.** For a retained candidate,
+`recipe.py capture --from <returned-file> --generator <actual-generator>` copies
+the file and records its measured size. A manifest or an existing run record is
+also valid; do not create duplicate sidecars solely to use this helper:
 
 ```sh
 recipe.py capture --to assets/hero.png --prompt-file p.txt \
@@ -22,13 +23,15 @@ recipe.py capture --to assets/hero.png --prompt-file p.txt \
 recipe.py capture --to assets/hero.jpg --prompt-file p.txt \
   --generator agy --asked 16:9        # the aspect path: a ratio, never pixels
 recipe.py check assets/hero.png        # every field, and the size against the file
-recipe.py check --dir assets/          # and which images have no recipe at all
+recipe.py check --dir generated/       # only a directory of retained generated images
 ```
 
 `--generator` picks whose output directory is searched and whose invocation goes
 into `engine`. Without it, every declared generator's directory is searched and
-the newest file across all of them wins — a timestamp, rather than a guess about
-which CLI is running.
+the newest file across all of them wins. That fallback is not proof of which
+run made the file: prefer the actual returned path and invocation, particularly
+after failure or concurrent work. Unknown-origin photographs do not need a
+generation recipe and should not be sent to this directory-wide checker.
 
 It refuses to overwrite an existing file: that is a sibling-version decision for
 a person (`naming` in the delivering skill), not something a tool does quietly.

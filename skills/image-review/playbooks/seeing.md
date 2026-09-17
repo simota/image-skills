@@ -7,8 +7,10 @@ This is an order that does not.
 
 ## Before the image
 
-Do not read the prompt yet. Knowing what was asked for makes a reader see what
-was asked for — the most reliable way to miss a subject that is subtly wrong.
+Before reading an unknown prompt, observe the pixels. If already exposed, say
+so: reopening helps observation, but does not make the same agent independent.
+Initial observations are provisional until compared with the brief, including
+intentional surreal anatomy, distorted lettering or print artefacts.
 
 ## The passes
 
@@ -31,10 +33,10 @@ the reflections show what is actually in front of them? Does the perspective
 hold across the frame? These read as "something is off" long before anyone can
 name them.
 
-**5 · Text, character by character.** Every glyph, against what was asked for.
-Not "the sign says the right thing" — read it letter by letter. This is where
-this class of model fails most visibly, and it is the failure a viewer notices
-fastest.
+**5 · Text, when literal readability is required.** Compare every required
+glyph with the supplied string. No text is not a failed check. Decorative or
+intentionally distorted lettering is judged against that purpose, not a default
+expectation of perfect typography.
 
 **6 · Now read the brief.** Then go back through and check each axis. Off-brief
 is a defect of the run and it is ranked with the rest.

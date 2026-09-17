@@ -829,6 +829,34 @@ def v38_enumerations_declared():
                             "which harness.yaml vocabulary does not declare")
 
 
+def v39_post_change_review():
+    """Selection is not acceptance: edited results and generated deliveries
+    need a review after the last pixel-changing stage. A prompt/generate
+    candidate-only route remains valid. This checks ordering, not visual quality
+    or a model's interpretation of a request or route condition.
+    """
+    changers = {n for n, c in CAP.items()
+                if {"invocation", "region-edit"} & set(c.get("does", []))}
+    editors = {n for n, c in CAP.items() if "region-edit" in c.get("does", [])}
+    reviewers = {n for n, c in CAP.items() if "verdict" in c.get("does", [])}
+    deliverers = {n for n, c in CAP.items() if "placement" in c.get("does", [])}
+    if not all((changers, editors, reviewers, deliverers)):
+        fail("V39", "completion roles are missing; this check would be vacuous")
+        return
+    for name, route in ROUTES.items():
+        chain = route.get("chain", [])
+        changes = [i for i, stage in enumerate(chain) if stage in changers]
+        delivers = [i for i, stage in enumerate(chain) if stage in deliverers]
+        if not changes or not (delivers or any(s in editors for s in chain)):
+            continue
+        reviews = [i for i, stage in enumerate(chain) if stage in reviewers]
+        last_change = max(changes)
+        boundary = min(delivers) if delivers else len(chain)
+        if not any(last_change < i < boundary for i in reviews):
+            fail("V39", f"route {name} needs review after its last change and "
+                        "before delivery/completion; selection is not approval")
+
+
 RULES = [v1_sizes, v2_description_terms, v3_roster, v4_playbook_orphans,
          v5_playbook_budget, v6_budgets, v7_routes_real, v8_links, v9_signals,
          v10_fixtures, v11_count, v12_prefix, v13_route_budget, v14_patterns,
@@ -844,7 +872,8 @@ RULES = [v1_sizes, v2_description_terms, v3_roster, v4_playbook_orphans,
          v35_signature,
          v36_finding_visuals,
          v37_source_pins_the_rot,
-         v38_enumerations_declared]
+         v38_enumerations_declared,
+         v39_post_change_review]
 
 
 def main() -> int:

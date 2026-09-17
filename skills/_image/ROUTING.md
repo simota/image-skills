@@ -63,10 +63,14 @@ has no stopping rule, and every cycle is paid for.
   `budget`. Every stage receives it whole and it does not change mid-run
   (`_image/SIZING.md`)
 - **A stage's output is a handoff** (`_image/HANDOFF.md`), and the next stage
-  runs the receiver checks before starting — including that every image named
-  carries a recipe
+  runs the receiver checks before starting — including that each retained generated candidate
+  carries or links its existing recipe
 - **Never run a deciding skill on work classified as report-only.** "Take a look
   at this" does not authorise a regeneration, and nor does finding something wrong
 - **A chain wanting a seventh stage is mis-scoped.** Split the request instead
+- **Candidate selection is not approval.** The one-off fast path stops at a
+  candidate; use or publication goes through one-off-ship. A repaired or restyled
+  result is reviewed after the last change, and a set is checked member by member
+  and together. Already approved assets can go straight to delivery
 - Stages run in order. Two skills changing the same image concurrently produces
   two images, not a better one

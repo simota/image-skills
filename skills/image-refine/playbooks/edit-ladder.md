@@ -21,21 +21,21 @@ work**, and move up only after it has failed.
   enough, and it costs nothing
 - **One object wrong, present, or missing** → rung 2
 - **The picture is right but the frame is too tight** → rung 3
-- **The medium, the palette, the mood, or the subject is wrong** → rung 5. Not
-  rung 4: a re-roll on a global fault is gambling, and rung 5 is the same cost
-  with a reason attached
+- **The intended medium, palette or mood is undecided, or the subject changes**
+  → rung 5. A settled whole-frame correction can be an edit; global scope alone
+  does not require reopening the brief
 - **Two rung-2 attempts failed the same way** → the fault is not local. Rung 5
 
-## Rung 4 is not a fix
+## Rung 4 does not inherit approval
 
 A re-prompt returns a *different picture*. The generator has no seed, so
 "regenerate with the hand fixed" means "generate again and hope". Everything
 approved about the previous candidate is back in play, and the new candidate
 needs reviewing from scratch.
 
-That is sometimes correct — but it is a new generation, recorded as one, marked
-`IRREPRODUCIBLE`, and reviewed as one. Calling it a fix is what makes it
-dangerous: an approval quietly carries over to an image nobody approved.
+That can fix the user's problem, but it is a new candidate with its own recipe,
+`IRREPRODUCIBLE` where applicable, and a fresh review. The danger is transferring
+approval without inspection, not using the word "fix".
 
 ## Upscaling
 

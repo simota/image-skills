@@ -55,9 +55,9 @@ def _block(dumper, data):
 
 yaml.add_representer(str, _block, Dumper=yaml.SafeDumper)
 
-# The eighth case, and the honest one: neither generator exposes a seed, so a
-# recipe fixes intent and never pixels (`_image/RECIPE.md`).
-NO_SEED = "IRREPRODUCIBLE — no seed; this file is the artifact"
+# Capture does not establish deterministic regeneration or current seed support.
+# The note limits that claim; it does not prevent reusing this exact source file.
+NO_SEED = "IRREPRODUCIBLE — exact regeneration not established; this file is the artifact"
 
 # What `size.asked` says when nothing asked. Kept per control surface, because
 # "no size argument" and "an aspect, and no pixel count at all" are different
@@ -133,7 +133,7 @@ def capture(a: argparse.Namespace) -> int:
     doc = {
         "engine": a.engine or gen["invoke"],
         "model": a.model or "unreported",
-        "prompt": a.prompt_file.read_text(encoding="utf-8") if a.prompt_file else a.prompt,
+        "prompt": a.prompt_file.read_bytes().decode("utf-8") if a.prompt_file else a.prompt,
         "excluded": a.excluded or "none",
         "size": {"asked": a.asked or UNASKED[gen["control"]],
                  "on_disk": facts["size"]},
@@ -142,7 +142,6 @@ def capture(a: argparse.Namespace) -> int:
         "note": NO_SEED,
     }
     side = sidecar_of(dest)
-    doc["prompt"] = doc["prompt"].rstrip("\n") + "\n"
     side.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
                                    default_flow_style=False), encoding="utf-8")
     print(f"{dest}  {facts['size']}  {facts['bytes']:,} bytes")
@@ -172,9 +171,8 @@ def check_one(image: Path) -> list[str]:
         elif doc[f] in (None, "", {}) and f != "inputs":
             problems.append(f"{side}: {f} is blank — a field nobody decided, "
                             "not one that does not apply")
-    if isinstance(doc.get("prompt"), str) and len(doc["prompt"].strip()) < 20:
-        problems.append(f"{side}: prompt is {len(doc['prompt'].strip())} characters. "
-                        "The field is the text sent, verbatim, not a summary")
+    if not isinstance(doc.get("prompt"), str) or not doc["prompt"].strip():
+        problems.append(f"{side}: prompt must be non-empty text; length cannot prove provenance")
     placed = (doc.get("output") or {}).get("placed")
     if placed and Path(placed) != image:
         problems.append(f"{side}: output.placed is {placed}, beside {image}")

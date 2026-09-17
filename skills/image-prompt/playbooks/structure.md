@@ -59,8 +59,10 @@ Rendered text is where this class of model fails most visibly and most often.
 
 ## Variants
 
-One axis per variant, named. Four prompts differing on four axes tell you
-nothing about any of them, and the pick becomes taste with no lesson in it.
+For causal comparison, vary one named axis. For production search, a variant
+may combine palette, composition and light under one stated objective when that
+is a cheaper plausible path to the target. Record the changed axes; do not infer
+which one caused the outcome. The example below is a controlled comparison.
 
 ```
 v1  base

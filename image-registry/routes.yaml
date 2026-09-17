@@ -12,30 +12,36 @@ illustrate:
 
 one-off:
   pattern: linear
-  when: "the look is already settled and one picture is missing"
+  when: "the look is settled; only an exploratory candidate is wanted, not an asset ready to use"
   chain: [image-prompt, image-generate]
-  gate: "an existing image or brief is named as the thing this must match"
+  gate: "the look or brief is named; report a candidate, never a production usability verdict"
+
+one-off-ship:
+  pattern: linear
+  when: "the look is settled and one image is needed for use or publication"
+  chain: [image-prompt, image-generate, image-review, image-deliver]
+  gate: "review the actual candidate for its intended use before delivery; text, people and brand constraints follow that use"
 
 asset-set:
   pattern: linear
   when: "a family of images that must read as one set"
-  chain: [image-direction, image-prompt, image-generate, image-deliver]
-  gate: "what makes them a set is written down before the first is generated"
+  chain: [image-direction, image-prompt, image-generate, image-review, image-deliver]
+  gate: "name the set constraints first; review every retained member and the set together before delivery"
 
 repair:
   pattern: linear
   when: "a picture that exists is wrong in a way someone can point at"
-  chain: [image-review, image-refine]
-  gate: "each finding names the region it is in before anything is regenerated"
+  chain: [image-review, image-refine, image-review]
+  gate: "locate findings before changing; the final review checks their removal and any new drift"
 
 restyle:
   pattern: linear
   when: "the content is right and the look is not"
-  chain: [image-direction, image-refine]
+  chain: [image-direction, image-refine, image-review]
 
 ship-existing:
   pattern: linear
-  when: "the picture is chosen and has to reach the project"
+  when: "the picture is already approved for the intended use and only delivery remains"
   chain: [image-deliver]
 
 look-check:
@@ -50,4 +56,5 @@ refine-to-brief:
   chain: [image-refine, image-review]
   oracle: "no open defect at severity major or above, and one full pass over the image adds none"
   checker: other-engine       # resolved at run time to one that is not running this
-  max_cycles: 4               # hand back rather than loop again; each cycle is a paid generation
+  max_cycles: 4               # hard bound, not a target; stop sooner on success or budget
+  gate: "inherit all generation/edit attempts and spend; a new defect does not reset this loop or its budget"

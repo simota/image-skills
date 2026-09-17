@@ -1,16 +1,16 @@
 <!-- image:guidance -->
 # How many to run
 
-Generation is the only stage in this family that costs money per attempt and
-the only one with no natural stopping point. Both facts push the same way:
-decide the count before the first run, from the question, not from the results.
+Generation and generative refinement share the paid-attempt budget. Decide
+the count before a run, from the question, not from the results. Failed/refused
+attempts remain in the record; unknown billing is not zero cost.
 
 ## The count follows the question
 
 | The question is | Run | Because |
 |---|---|---|
 | "does this prompt work at all" | 1 | A second copy of an unanswered question answers nothing |
-| "which of these directions" | 1 per direction, one axis apart | The comparison is the point; anything else varying ruins it |
+| "which of these directions" | 1 per retained direction hypothesis | Isolate an axis for causal comparison; a production hypothesis may bundle related axes |
 | "is this reliably good, or was that luck" | 3 of the same prompt | Variance is the thing being measured |
 | "we need a matching set of four" | 1 per member, same prompt skeleton | Consistency comes from the skeleton, not from volume |
 | "none of these are right" | 0 | Two failed batches on one prompt is a prompt problem or a brief problem, and a third batch will not say which |
@@ -25,16 +25,16 @@ which is fine as long as it is named as one.
 
 ## Cheap first
 
-Square is typically fastest and smallest. While the prompt is still moving, run
-square drafts; pay for the final aspect and the final resolution once it has
-stopped moving. A four-way direction test at full resolution is three quarters
-wasted by definition.
+Use a cheaper draft only when the installed controls and cost model actually
+make it cheaper and its composition is informative for the final surface. A
+square draft is not automatically cheaper; an extra draft with no cost or
+learning advantage is an extra paid call. Do not invent prices or size controls.
 
-## Variants differ on one axis
+## Variants follow the question
 
-One axis per variant, named in the record. Four variants differing on four
-things produce a winner nobody can learn from, and the next request starts from
-scratch.
+A controlled comparison isolates one axis. Production search can bundle related
+axes under a stated target and the same budget. Name what changed and why;
+selection can find a usable candidate without proving which change caused it.
 
 ## Stopping
 
@@ -51,6 +51,7 @@ to say what "right" would look like, which is a brief question, not a batch.
 
 ## Recording a batch
 
-Every run gets a recipe, including the ones discarded — the discarded ones are
-how a later reader knows what was already tried. What may be dropped is the
-image files of rejected candidates, not the record that they existed.
+Capture the submitted request at invocation. Persist recipes for retained
+candidates, including all candidates passed to later comparison; immediate
+discards need none. Keep compact attempt/outcome/spend records for discarded,
+failed and refused runs. A file that does not exist cannot have an image recipe.

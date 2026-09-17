@@ -15,8 +15,9 @@ Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
 
 ## Before starting
 
-- **Read what the project already does.** Existing images name the convention:
-  directory, naming, format, and how they are referenced. Match it
+- **Read the target and project policy.** Match storage, naming and formats.
+  If the approved asset already satisfies them, use it as-is: no automatic
+  re-encode, metadata rewrite, duplicate export or repository copy
 - **Get the picture out of the generator's directory first.** A project asset
   living only in the generator's own output folder is one cache clear from gone
 - **Know the surface's real dimensions.** A number chosen because the container
@@ -43,12 +44,12 @@ Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
   then on (`_image/SIZING.md` § Terms)
 <!-- /deliver:sizing -->
 <!-- deliver:recipe -->
-- **Every image an output names carries its recipe.** `engine`, `model`,
-  `prompt` verbatim, `excluded`, `size` asked for and size on disk, `inputs`,
-  `output` path — the run is written down, not remembered, and `engine` says
-  which of the two generators ran. Neither exposes a seed, so a recipe fixes the
-  intent and never the pixels: that gap is `IRREPRODUCIBLE`, stated once in the
-  handoff and never papered over with a seed nobody has (`_image/RECIPE.md`)
+- **Retained generated candidates carry a recipe**: `engine`, reported `model`
+  (or `unreported`), `prompt` verbatim, `excluded`, `size` requested/on disk,
+  `inputs`, `output`. Capture the request at invocation; persist for candidates
+  shown, kept or passed onward, not immediate discards. References and text-only
+  outputs need no invented generation fields. `IRREPRODUCIBLE` limits exact pixel
+  regeneration, not reuse or editing the source (`_image/RECIPE.md`)
 <!-- /deliver:recipe -->
 
 ## Decide first
@@ -58,10 +59,10 @@ Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
 | Choosing a format and a compression level | [format-choice](playbooks/format-choice.md) — decided by what is in the picture, not by habit |
 | Naming files and variants | [naming](playbooks/naming.md) — a name that survives a second version and a second size |
 | Emitting the set of sizes a surface needs | [export-targets](reference/export-targets.md) — the scale rungs, and what each one is derived from |
-| Removing what should not ship with the file | [strip](strip.py) — Exif, XMP, generation parameters and comments go; the profile, the alpha and any content credential stay |
+| Metadata needs changing under publication/privacy policy | [strip](strip.py) reports first. Preserve rendering properties; credentials and other metadata follow project policy, not an automatic export step |
 | Colour looks wrong once it is in the page | [colour-and-metadata](reference/colour-and-metadata.md) — profile, stripping, and what must not be stripped |
 | Writing the text that replaces the image | [alt-text](reference/alt-text.md) — what it is for decides what it says |
-| Measuring what was emitted, and checking the recipes travelled | [imgfacts](imgfacts.py) on every file, [recipe](recipe.py) `check --dir` over the directory |
+| Checking emitted files and provenance | [imgfacts](imgfacts.py) for file properties, visual viewing for pixels, and [recipe](recipe.py) checks only retained generated candidates, not unrelated photographs |
 | The chosen picture is smaller than the surface needs | Do not upscale it here. Hand it back — a resample is a change to the picture |
 | A claim here would be expensive to get wrong | [refute](refute.py) — put it to the engines that did not make it, asked to break it rather than to agree. Unrefuted is n engines finding nothing, never proof |
 | No convention exists in the project | Emit one format and one naming rule, write both down, and say it is now the precedent |
@@ -78,17 +79,19 @@ Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
 
 - Always: open every file you wrote and read its dimensions, format and byte
   size off it. An export pipeline that reports its own intent is reporting a wish
-- Always: keep the source at full size in the repository, and derive the rest
+- Always: preserve the source under the project's authorized retention policy
+  (artifact storage, LFS, or repository); a git copy is not mandatory
 - Always: state the compression budget and what each file actually came in at
 - Always: get permission first before replacing an image already referenced,
   before deleting an original, and before adding a format the project's build
   does not already handle
-- Never: overwrite an existing asset — write a sibling version and let the human
-  retire the old one
+- Unless replacement is authorized and rollback verified, write a sibling.
+  Stable URLs and version-controlled replacements may keep the existing path
 - Never: strip colour metadata without checking what the surface assumes
-- Never: ship a picture whose recipe did not travel with it. The file is the
-  artifact and it is `IRREPRODUCIBLE`; the recipe is the only way back
-- Never: leave alt text to whoever writes the markup
+- Never: lose a retained generated candidate's recipe. Keep its provenance
+  accessible, not necessarily public; `IRREPRODUCIBLE` does not apply to a copy
+- For each known use, supply the alt decision and context; the markup owner
+  verifies final semantics. Unknown future use has no universal asset-level alt
 
 ## Verify with
 
@@ -101,10 +104,10 @@ to make sure it resolves.
 - **Budget overruns are reported as themselves**, not absorbed by quietly
   raising the budget
 <!-- deliver:report -->
-- **Grade every claim**: `measured` (the file was opened and the property read
-  off it) supports completion; `inspected` (opened and reasoned over, nothing
-  measured) only where nothing can be measured and the entry says why;
-  `asserted` never does. **A property taken from the request is `asserted`** —
+- **Grade every claim**: `measured` names the measurement method or a located,
+  repeatable visual observation, not aesthetic certainty. `inspected` is reasoned
+  judgement where measurement cannot settle the decision; say why. Header
+  inspection is **not viewing pixels**. `asserted` never supports completion:
   the prompt asked for 3:2, it does not report what came back
 - **The unit is the decision, not the batch.** Each thing the deliverable
   promised carries a grade or sits in the residuals as `UNSPECIFIED`, and a
@@ -123,7 +126,7 @@ to make sure it resolves.
 
 Every file is opened and measured, the naming follows the project's convention,
 the source is kept, each reference resolves, the recipe travels with the asset,
-and every image has alt text or a stated reason it needs none.
+and every known use has a context-specific alt decision or reason it needs none.
 <!-- deliver:surface -->
 - **Say what the moment needs.** Start: one line naming what will be made and what is
   excluded. Mid-run: write to the reader when the plan changes — a run that keeps missing the

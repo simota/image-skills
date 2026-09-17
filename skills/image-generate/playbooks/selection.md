@@ -7,11 +7,11 @@ first impression is data rather than the verdict.
 
 ## The order
 
-1. **Open all of them.** Every candidate, individually, at full size. This is
-   not a formality — a decision made from a grid of thumbnails is a decision
-   about thumbnails
-2. **Write the first impression of each, in one line, before comparing.** Cold,
-   without the brief in front of you
+1. **View candidates before visual comparison.** A contact sheet may eliminate
+   obvious misses; inspect retained images individually at relevant detail and
+   use size. A technical discard can rely on file facts, not unobserved defects
+2. **Record an initial observation before comparing.** If you already know the
+   prompt or made the image, disclose that this is not a cold, independent view
 3. **Now read the brief's axes.** Score each candidate against each axis: holds,
    partly, fails. Not a number — a word, per axis
 4. **Eliminate on hard axes.** An axis the brief made non-negotiable — the empty

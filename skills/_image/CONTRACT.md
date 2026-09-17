@@ -11,8 +11,8 @@ is about **whether anyone looked**, not about whether a program executed.
 
 | Grade | Means | Supports `DONE`? |
 |---|---|---|
-| `measured` | A property was read off the file — opened and viewed, dimensions or bytes or format read, a defect located in a named region | Yes |
-| `inspected` | Opened and reasoned over, nothing read off it | Only where nothing can be measured, and the entry says why |
+| `measured` | A file/pixel property measured with a named method, or a repeatable visual observation located in the viewed image; say which | Yes, for that observation, not aesthetic certainty |
+| `inspected` | Opened and reasoned over; e.g. an aesthetic judgement against a stated criterion | Yes where measurement cannot settle the decision; say why |
 | `asserted` | The claim stands alone, or comes from the request rather than the result | Never |
 
 **The prompt is a request, never a description of what came back.** "It is 3:2
@@ -22,6 +22,11 @@ pixels. This is the failure the set is built around: image work is the one
 domain where the plan and the artifact look alike in a transcript and are
 routinely different on disk. **A generation nobody opened is not a result — it
 is a file path.**
+
+Header inspection (`imgfacts.py`) is mechanical evidence, **not viewing pixels**.
+A located six-finger observation is repeatable visual evidence, not a numerical
+measurement or a diagnosis from a model stereotype. Composition quality is a
+judgement; a prompt is evidence only of what was requested. Name uncertainty.
 
 ## The unit of evidence is the decision
 

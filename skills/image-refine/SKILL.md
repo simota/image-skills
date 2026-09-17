@@ -16,9 +16,9 @@ Phases: `LOCATE → CLASSIFY → INVARIANTS → CHANGE → COMPARE`.
 
 ## Before starting
 
-- **Locate the defect before touching anything.** "The hand is wrong" is not
-  actionable; "the left hand, lower third, six fingers" is. A change aimed at an
-  unlocated fault is a new generation wearing the word *fix*
+- **Name a falsifiable correction objective before touching anything.** Locate
+  its region(s), or name the whole frame for a settled palette/light correction.
+  An undefined aesthetic goal goes back to direction, not a speculative edit
 - **Write the invariants down.** Everything that must not move is stated before
   the edit and restated in every iteration, because drift is cumulative and
   invisible one step at a time
@@ -45,12 +45,12 @@ Phases: `LOCATE → CLASSIFY → INVARIANTS → CHANGE → COMPARE`.
   then on (`_image/SIZING.md` § Terms)
 <!-- /deliver:sizing -->
 <!-- deliver:recipe -->
-- **Every image an output names carries its recipe.** `engine`, `model`,
-  `prompt` verbatim, `excluded`, `size` asked for and size on disk, `inputs`,
-  `output` path — the run is written down, not remembered, and `engine` says
-  which of the two generators ran. Neither exposes a seed, so a recipe fixes the
-  intent and never the pixels: that gap is `IRREPRODUCIBLE`, stated once in the
-  handoff and never papered over with a seed nobody has (`_image/RECIPE.md`)
+- **Retained generated candidates carry a recipe**: `engine`, reported `model`
+  (or `unreported`), `prompt` verbatim, `excluded`, `size` requested/on disk,
+  `inputs`, `output`. Capture the request at invocation; persist for candidates
+  shown, kept or passed onward, not immediate discards. References and text-only
+  outputs need no invented generation fields. `IRREPRODUCIBLE` limits exact pixel
+  regeneration, not reuse or editing the source (`_image/RECIPE.md`)
 <!-- /deliver:recipe -->
 
 ## Decide first
@@ -76,15 +76,16 @@ Phases: `LOCATE → CLASSIFY → INVARIANTS → CHANGE → COMPARE`.
 
 ## Always / Never
 
-- Always: one change per iteration. Two changes and a better result teaches
-  nothing about either
+- Always: one falsifiable correction objective per iteration. Coupled changes
+  (remove + fill, both hands, several letters) may share a run; check every part
 - Always: open the before and the after and say what moved that should not have
-- Always: record each edit as its own recipe, with the source image as `inputs`
+- Always: record each retained generative edit as its own recipe with source
+  `inputs`; deterministic transforms inherit provenance and record the operation
 - Always: get permission first when the edit would alter a person's appearance,
   a brand mark, or anything already published
 - Never: describe an edit as applied without opening the result
-- Never: re-run a prompt and call it a fix — a regeneration is a different
-  picture, marked `IRREPRODUCIBLE`, and it is not the one that was approved
+- Never: carry approval over to a regenerated picture. It can solve the fault,
+  but is a new candidate; `IRREPRODUCIBLE` and fresh review still apply
 - Never: drop an invariant because the new result is nicer without it
 - Never: upscale to hide a defect. It scales too
 
@@ -100,10 +101,10 @@ that has not been noticed yet.
 - **The chain is stated**: how many iterations, what each changed, and what the
   next one would be for
 <!-- deliver:report -->
-- **Grade every claim**: `measured` (the file was opened and the property read
-  off it) supports completion; `inspected` (opened and reasoned over, nothing
-  measured) only where nothing can be measured and the entry says why;
-  `asserted` never does. **A property taken from the request is `asserted`** —
+- **Grade every claim**: `measured` names the measurement method or a located,
+  repeatable visual observation, not aesthetic certainty. `inspected` is reasoned
+  judgement where measurement cannot settle the decision; say why. Header
+  inspection is **not viewing pixels**. `asserted` never supports completion:
   the prompt asked for 3:2, it does not report what came back
 - **The unit is the decision, not the batch.** Each thing the deliverable
   promised carries a grade or sits in the residuals as `UNSPECIFIED`, and a

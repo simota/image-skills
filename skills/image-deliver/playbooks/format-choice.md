@@ -46,8 +46,9 @@ four are fine. **Quietly raising the budget is not.**
 ## Never re-encode a lossy file
 
 Each generation of lossy encoding compounds the damage of the last, and it is
-irreversible. Derive every output from the source, which is kept at full size
-and full quality in the repository. If the only copy available is already lossy,
+irreversible. Derive needed outputs from the full-quality source retained under
+project policy, not necessarily in git. Skip encoding when the existing file
+already meets the target. If the only copy available is already lossy,
 say so — the result is what it is, and the record explains why.
 
 ## The checks

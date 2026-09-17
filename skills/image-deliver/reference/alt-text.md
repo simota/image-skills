@@ -47,6 +47,9 @@ No → empty alt. Yes → that thing is the alt text.
 
 ## What travels
 
-The alt text, or the explicit decision that it is empty, travels with the file
-and into whatever consumes it. "Alt: (decorative, deliberately empty)" in the
-handoff is a completed decision. Silence is `UNSPECIFIED`.
+The alt decision travels with its usage context, not as a universal property
+of the file. The same image can be informative, decorative or functional in
+different places. Supply the decision for the named target; the markup owner
+checks the actual surrounding text, links and semantics. Unknown future uses
+remain unassigned rather than inheriting a fabricated universal alt. Silence
+about an agreed target is `UNSPECIFIED`; a future target outside scope is not.

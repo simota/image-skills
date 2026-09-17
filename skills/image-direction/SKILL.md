@@ -44,12 +44,12 @@ Phases: `PURPOSE → SURVEY → REFERENCE → DECIDE → BRIEF`.
   then on (`_image/SIZING.md` § Terms)
 <!-- /deliver:sizing -->
 <!-- deliver:recipe -->
-- **Every image an output names carries its recipe.** `engine`, `model`,
-  `prompt` verbatim, `excluded`, `size` asked for and size on disk, `inputs`,
-  `output` path — the run is written down, not remembered, and `engine` says
-  which of the two generators ran. Neither exposes a seed, so a recipe fixes the
-  intent and never the pixels: that gap is `IRREPRODUCIBLE`, stated once in the
-  handoff and never papered over with a seed nobody has (`_image/RECIPE.md`)
+- **Retained generated candidates carry a recipe**: `engine`, reported `model`
+  (or `unreported`), `prompt` verbatim, `excluded`, `size` requested/on disk,
+  `inputs`, `output`. Capture the request at invocation; persist for candidates
+  shown, kept or passed onward, not immediate discards. References and text-only
+  outputs need no invented generation fields. `IRREPRODUCIBLE` limits exact pixel
+  regeneration, not reuse or editing the source (`_image/RECIPE.md`)
 <!-- /deliver:recipe -->
 
 ## Decide first
@@ -104,10 +104,10 @@ like one that was checked.
 - **The brief is `IRREPRODUCIBLE`-aware**: it fixes intent, and intent is all a
   seedless generator can be held to
 <!-- deliver:report -->
-- **Grade every claim**: `measured` (the file was opened and the property read
-  off it) supports completion; `inspected` (opened and reasoned over, nothing
-  measured) only where nothing can be measured and the entry says why;
-  `asserted` never does. **A property taken from the request is `asserted`** —
+- **Grade every claim**: `measured` names the measurement method or a located,
+  repeatable visual observation, not aesthetic certainty. `inspected` is reasoned
+  judgement where measurement cannot settle the decision; say why. Header
+  inspection is **not viewing pixels**. `asserted` never supports completion:
   the prompt asked for 3:2, it does not report what came back
 - **The unit is the decision, not the batch.** Each thing the deliverable
   promised carries a grade or sits in the residuals as `UNSPECIFIED`, and a

@@ -74,8 +74,8 @@ def _(r): sub(r / f"{S}_image/VALUES.md", "## 1. Looking", "z\n" * 200 + "## 1. 
 
 
 @case("V7")
-def _(r): sub(r / "image-registry/routes.yaml", "chain: [image-review, image-refine]",
-              "chain: [image-review, image-nonexistent]")
+def _(r): sub(r / "image-registry/routes.yaml", "chain: [image-review, image-refine, image-review]",
+              "chain: [image-review, image-nonexistent, image-review]")
 
 
 @case("V8")
@@ -299,7 +299,7 @@ def _(r): sub(r / "image-registry/harness.yaml", "linked_tools:", "unlinked_tool
 
 @case("V35")
 def _(r): sub(r / f"{S}image-prompt/SKILL.md",
-              "it is `IRREPRODUCIBLE` regardless", "it cannot be repeated regardless")
+              "states `IRREPRODUCIBLE` when", "states exact regeneration is unavailable when")
 
 
 @case("V36")
@@ -355,6 +355,57 @@ def _(r):
 
 @case("V37-none-declared")
 def _(r): sub(r / "image-registry/harness.yaml", "source_authorities:", "unused_authorities:")
+
+
+@case("V39")
+def _(r):
+    sub(r / "image-registry/routes.yaml",
+        "chain: [image-review, image-refine, image-review]",
+        "chain: [image-review, image-refine]")
+
+
+@case("V39-set")
+def _(r):
+    import yaml
+    f = r / "image-registry/routes.yaml"
+    routes = yaml.safe_load(f.read_text())
+    routes["asset-set"]["chain"].remove("image-review")
+    f.write_text(yaml.safe_dump(routes, sort_keys=False))
+
+
+@case("V39-ship")
+def _(r):
+    sub(r / "image-registry/routes.yaml",
+        "chain: [image-prompt, image-generate, image-review, image-deliver]",
+        "chain: [image-prompt, image-generate, image-deliver]")
+
+
+@case("V39-restyle")
+def _(r):
+    sub(r / "image-registry/routes.yaml",
+        "chain: [image-direction, image-refine, image-review]",
+        "chain: [image-direction, image-refine]")
+
+
+@case("V39-before-change")
+def _(r):
+    sub(r / "image-registry/routes.yaml",
+        "chain: [image-prompt, image-generate, image-review, image-deliver]",
+        "chain: [image-prompt, image-review, image-generate, image-deliver]")
+
+
+@case("V39-after-delivery")
+def _(r):
+    sub(r / "image-registry/routes.yaml",
+        "chain: [image-prompt, image-generate, image-review, image-deliver]",
+        "chain: [image-prompt, image-generate, image-deliver, image-review]")
+
+
+@case("V39-vacuous")
+def _(r):
+    sub(r / "image-registry/capabilities.yaml",
+        "off-brief-drift, severity-ranking, verdict]",
+        "off-brief-drift, severity-ranking]")
 
 
 def main() -> int:

@@ -40,6 +40,11 @@
   expect: image-deliver
 - ask: "the colour profile is wrong when it renders in the browser"
   expect: image-deliver
+# A control request must reach its constraints, not imply the control exists.
+- ask: "reuse the same seed"
+  expect: image-prompt
+- ask: "seed 1234で作って"
+  expect: image-prompt
 # Neighbours that must keep winning. The set's signals all sit near the word
 # "image", so the boundaries that share a noun are pinned from both sides.
 - ask: "regenerate it, the composition intent was never met"

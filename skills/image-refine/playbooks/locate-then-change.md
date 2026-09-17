@@ -26,10 +26,10 @@ against:  brief axis 3 — one light source
 
 Two possibilities, and they lead in opposite directions.
 
-**The fault is global** — the palette, the medium, the composition, the mood.
-These are not edit targets. A global fault means the request was wrong, and the
-work goes back to the prompt or to the brief. Editing toward a global fix is
-how four iterations produce a fifth picture nobody asked for.
+**The target is global.** A settled whole-frame correction (such as the agreed
+palette and lighting) is an edit objective; name the whole frame and the
+invariants. If the desired look itself is undecided, return to direction.
+Global scope alone does not prove that the request was wrong.
 
 **The fault has not been looked for yet.** Go back and look. Full size,
 quadrant by quadrant, then at the shipping size. Most "not quite right" is one
@@ -50,11 +50,14 @@ change only: the reflection in the upper right window
 keep:        the desk, the lamp position, the crop, the palette, the subject's face
 ```
 
-## One change per iteration
+## One falsifiable correction objective per iteration
 
-Two changes and a better result teaches nothing about either, and if the result
-is worse there is nothing to back out. This costs an extra run and saves the
-whole sequence.
+Group coupled operations when that is the cheaper plausible repair: remove an
+object and fill its background, repair both hands, extend while preserving the
+subject position, harmonize colour and lighting, or replace repeated artefacts
+and several letters in one region. State every affected region and invariant.
+Split when independent goals conflict or causal comparison is needed; do not
+claim to have isolated which component caused an improvement in a bundled edit.
 
 ## Compare, do not admire
 

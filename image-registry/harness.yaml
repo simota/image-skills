@@ -264,10 +264,10 @@ verified_markers:
 # The one mechanism this set has that its siblings do not. The rule that checks
 # it is identical in all of them; this block is the whole difference.
 #
-# `required_of` names the skills that owe the mechanism. Every skill here either
-# produces an image, changes one, judges one, or moves one, and none of those can
-# be redone without the recipe — so every skill owes one. `own_word` is the
-# substring each must carry outside the delivered block.
+# `required_of` names skills that must understand the mechanism, not produce
+# a recipe on every call. RECIPE.md scopes creation to retained generated
+# candidates; text-only work and image references do not invent one.
+# `own_word` is the substring each must carry outside the delivered block.
 signature:
   name: recipe
   contract: RECIPE.md

@@ -34,12 +34,11 @@ landing-header-v2.png           a different picture that replaced the first
 
 ## Version suffix, not overwrite
 
-The default is to write a sibling and let a person retire the old file. An
-overwritten asset is a change nobody can review and nobody can undo, and it
-silently changes every surface that referenced it — including the ones nobody
-remembers.
-
-Overwriting is a decision the human makes, in words, in advance.
+Use a sibling unless replacement is authorized and rollback is verified. A
+stable public URL, version-controlled asset, or reproducible build output can
+keep its path; follow and check the affected references. An explicit replacement
+request supplies authorization, not proof of rollback. Check both, without
+asking the same permission twice.
 
 ## Names that cause trouble
 

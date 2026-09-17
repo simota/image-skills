@@ -14,8 +14,8 @@ move — choosing the tier for comfort — so the tier is read on first match.
 | `T2` | Two or more skills own parts of it, or the work spans phases | Route it: settle the brief once, run the chain, one report covers every stage |
 
 `T0` drops the paperwork. It never drops the evidence grades or the recipe — a
-one-line answer about a generated file still says what produced it and whether
-anyone opened it.
+one-line answer about a retained generated file still links its provenance and
+viewing evidence. A reference or text-only answer owes no future generation fields.
 
 **Finding mid-run that the tier was wrong means re-sizing and saying so.** A
 `T0` export that has turned into a restyle is a `T1` that was mis-sized.

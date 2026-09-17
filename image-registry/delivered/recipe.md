@@ -1,6 +1,6 @@
-- **Every image an output names carries its recipe.** `engine`, `model`,
-  `prompt` verbatim, `excluded`, `size` asked for and size on disk, `inputs`,
-  `output` path — the run is written down, not remembered, and `engine` says
-  which of the two generators ran. Neither exposes a seed, so a recipe fixes the
-  intent and never the pixels: that gap is `IRREPRODUCIBLE`, stated once in the
-  handoff and never papered over with a seed nobody has (`_image/RECIPE.md`)
+- **Retained generated candidates carry a recipe**: `engine`, reported `model`
+  (or `unreported`), `prompt` verbatim, `excluded`, `size` requested/on disk,
+  `inputs`, `output`. Capture the request at invocation; persist for candidates
+  shown, kept or passed onward, not immediate discards. References and text-only
+  outputs need no invented generation fields. `IRREPRODUCIBLE` limits exact pixel
+  regeneration, not reuse or editing the source (`_image/RECIPE.md`)

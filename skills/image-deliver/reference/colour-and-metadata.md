@@ -43,8 +43,10 @@ format, alpha or profile moved. A run with neither `--out` nor `--in-place`
 writes nothing at all, which is what makes it usable on a directory you only
 have read access to.
 
-Generated images arrive with metadata of varying usefulness. Strip by default,
-with exceptions.
+First inspect metadata against the publication/privacy policy. Do not rewrite
+a file merely because it is being delivered. When removal is needed, the tool
+uses the conservative defaults below; a project can keep selected metadata by
+using an appropriate processor rather than forcing this helper to fit.
 
 | Keep | Strip |
 |---|---|

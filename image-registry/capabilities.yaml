@@ -29,7 +29,7 @@ image-prompt:
       go: image-direction
     - what: "running the prompt and keeping the result"
       go: image-generate
-  signals: [generation prompt, prompt wording, what to exclude, aspect ratio, seed and variants,
+  signals: [generation prompt, prompt wording, what to exclude, aspect ratio, seed,
             control the result]
 
 image-generate:

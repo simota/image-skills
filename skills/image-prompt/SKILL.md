@@ -1,6 +1,6 @@
 ---
 name: image-prompt
-description: "Writing the generation prompt: prompt wording, what to exclude, aspect ratio, seed and variants, and the levers that control the result. Use before anything is generated."
+description: "Writing the generation prompt: prompt wording, what to exclude, aspect ratio, variants, and seed limits. Use to word a decided picture or check what can control the result."
 allowed-tools: Read, Grep, Glob, Bash, Write
 ---
 <!-- image:contract -->
@@ -44,12 +44,12 @@ Phases: `CLASSIFY → STRUCTURE → CONSTRAIN → SIZE → VARY → RECORD`.
   then on (`_image/SIZING.md` § Terms)
 <!-- /deliver:sizing -->
 <!-- deliver:recipe -->
-- **Every image an output names carries its recipe.** `engine`, `model`,
-  `prompt` verbatim, `excluded`, `size` asked for and size on disk, `inputs`,
-  `output` path — the run is written down, not remembered, and `engine` says
-  which of the two generators ran. Neither exposes a seed, so a recipe fixes the
-  intent and never the pixels: that gap is `IRREPRODUCIBLE`, stated once in the
-  handoff and never papered over with a seed nobody has (`_image/RECIPE.md`)
+- **Retained generated candidates carry a recipe**: `engine`, reported `model`
+  (or `unreported`), `prompt` verbatim, `excluded`, `size` requested/on disk,
+  `inputs`, `output`. Capture the request at invocation; persist for candidates
+  shown, kept or passed onward, not immediate discards. References and text-only
+  outputs need no invented generation fields. `IRREPRODUCIBLE` limits exact pixel
+  regeneration, not reuse or editing the source (`_image/RECIPE.md`)
 <!-- /deliver:recipe -->
 
 ## Decide first
@@ -60,11 +60,11 @@ Phases: `CLASSIFY → STRUCTURE → CONSTRAIN → SIZE → VARY → RECORD`.
 | Deciding what to forbid, and how | [exclusions](playbooks/exclusions.md) — a negative that names a thing beats one that names a feeling |
 | Choosing dimensions, or being told a size is invalid | [sizes](reference/sizes.md) — the four constraints a size must satisfy, and the ones that are known good |
 | Checking a canvas before a run is paid for | [imgfacts](imgfacts.py) `--check-size 1536x1024` — the four constraints, and the nearest legal size when one fails |
-| Working out what the engine will and will not honour | [control-surface](reference/control-surface.md) — the built-in path takes a prompt and little else |
-| Producing a set of variants | Change one axis per variant and say which. Four prompts differing on four axes tell you nothing about any of them |
+| Checking controls, including seed reuse | [control-surface](reference/control-surface.md) is a snapshot; confirm the selected installed tool/schema before promising a control. A seed routing signal is not seed support |
+| Producing variants | Isolating an effect: one axis. Searching for a usable result: coupled axes may vary under one stated objective and budget; do not claim causal attribution |
 | Exact text must appear in the image | Quote it verbatim, spell hard words letter by letter, and say where it sits. Then plan to check it against the file — rendered text is where these models fail most visibly |
 | A claim here would be expensive to get wrong | [refute](refute.py) — put it to the engines that did not make it, asked to break it rather than to agree. Unrefuted is n engines finding nothing, never proof |
-| A transparent background is wanted | It is not a prompt setting on the default path. Ask for a flat chroma-key background and hand the removal to the stage that owns files |
+| A transparent background is wanted | Check the selected tool's current controls. If a cutout is needed, it changes pixels and goes to refinement; a PNG conversion alone cannot remove a background |
 <!-- deliver:values -->
 - Ties break by `_image/VALUES.md`, read top to bottom: looking over assuming ·
   the brief over the best picture · one image well over four nearly · the
@@ -86,8 +86,8 @@ Phases: `CLASSIFY → STRUCTURE → CONSTRAIN → SIZE → VARY → RECORD`.
   person, or a brand
 - Never: ask the built-in path for a pixel size and treat it as agreed. The
   canvas is a request; what comes back is measured off the file
-- Never: pile on adjectives to fix a result. One targeted change per iteration,
-  or nothing is learned
+- Never: pile on adjectives without a correction objective. Related changes
+  can share a run; isolate one axis only when the question needs causal comparison
 - Never: leave the exclusions to be inferred from the positive description
 
 ## Verify with
@@ -100,12 +100,13 @@ file comes back).
 - **The size is checked before it is sent**, not after a run fails: `measured`
   by [imgfacts](imgfacts.py), which reads those four rules from the registry
 - **The record is the recipe's `prompt` field**, verbatim, and the run that uses
-  it is `IRREPRODUCIBLE` regardless — the words are all that carries forward
+  states `IRREPRODUCIBLE` when exact pixel regeneration is not supported; this
+  does not prevent reusing the original file or editing it
 <!-- deliver:report -->
-- **Grade every claim**: `measured` (the file was opened and the property read
-  off it) supports completion; `inspected` (opened and reasoned over, nothing
-  measured) only where nothing can be measured and the entry says why;
-  `asserted` never does. **A property taken from the request is `asserted`** —
+- **Grade every claim**: `measured` names the measurement method or a located,
+  repeatable visual observation, not aesthetic certainty. `inspected` is reasoned
+  judgement where measurement cannot settle the decision; say why. Header
+  inspection is **not viewing pixels**. `asserted` never supports completion:
   the prompt asked for 3:2, it does not report what came back
 - **The unit is the decision, not the batch.** Each thing the deliverable
   promised carries a grade or sits in the residuals as `UNSPECIFIED`, and a
@@ -123,8 +124,8 @@ file comes back).
 ## Done when
 
 The use case is named, the spec is labelled, the exclusions are verbatim from
-the brief, the size satisfies every stated constraint, each variant names its
-one axis, and the exact text sent is written down.
+the brief, the size satisfies the applicable constraints, variants name their
+objective and changed axes, and the exact text sent is written down.
 <!-- deliver:surface -->
 - **Say what the moment needs.** Start: one line naming what will be made and what is
   excluded. Mid-run: write to the reader when the plan changes — a run that keeps missing the

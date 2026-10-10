@@ -19,7 +19,7 @@ HOST_DIRS  := $(CLAUDE_DIR) $(CODEX_DIR) $(AGY_DIR)
 .PHONY: help check validate test figures figures-test tools-test engines refute render hooks link unlink status
 
 help:
-	@echo "make check        validate + test + figures + figures-test (what CI runs)"
+	@echo "make check        validate + test + figures + figures-test + tools-test (what CI runs)"
 	@echo "make validate     static rules over the corpus"
 	@echo "make test         prove every rule still fires"
 	@echo "make figures      recompute the numbers the reference layer states"
@@ -54,17 +54,20 @@ engines:
 	@python3 image-tools/engine.py --selftest
 
 refute:
-	@test -n "$(CLAIMS)" || { echo "usage: make refute CLAIMS=claims.json RUNNING=claude"; exit 2; }
-	@python3 image-tools/refute.py --running "$(or $(RUNNING),claude)" "$(CLAIMS)"
+	@# RUNNING is stated, never defaulted: a default would send work from codex
+	@# or agy back to the engine that made it.
+	@test -n "$(CLAIMS)" && test -n "$(RUNNING)" || { echo "usage: make refute CLAIMS=claims.json RUNNING=<claude|codex|agy>"; exit 2; }
+	@python3 image-tools/refute.py --running "$(RUNNING)" "$(CLAIMS)"
 
 render:
 	@python3 image-tools/render.py
 
+# Asked of git rather than assumed: in a worktree or a submodule `.git` is a
+# file, and core.hooksPath may point somewhere else entirely.
 hooks:
-	@mkdir -p .git/hooks
-	@cp image-tools/githooks/pre-commit .git/hooks/pre-commit
-	@chmod +x .git/hooks/pre-commit
-	@echo "pre-commit installed"
+	@hooks=$$(git rev-parse --git-path hooks) && mkdir -p "$$hooks" && \
+		cp image-tools/githooks/pre-commit "$$hooks/pre-commit" && \
+		chmod +x "$$hooks/pre-commit" && echo "pre-commit installed in $$hooks"
 
 # A skill is a directory holding a SKILL.md, under skills/ where the plugin
 # format expects it. The prefix alone is not the test: image-registry/ and
@@ -80,6 +83,8 @@ link:
 			name=$$(basename "$$path"); target="$$dir/$$name"; \
 			if [ -e "$$target" ] && [ ! -L "$$target" ]; then \
 				echo "  skip $$name (a real path is already there)"; \
+			elif [ -L "$$target" ] && [ "$$(readlink "$$target")" != "$(REPO)/$$path" ]; then \
+				echo "  skip $$name (links to $$(readlink "$$target"), not here)"; \
 			else \
 				ln -sfn "$(REPO)/$$path" "$$target"; echo "  link $$name"; \
 			fi; \
@@ -92,7 +97,9 @@ unlink:
 		echo "$$dir"; \
 		for path in $(SKILL_DIRS); do \
 			name=$$(basename "$$path"); target="$$dir/$$name"; \
-			if [ -L "$$target" ]; then rm "$$target"; echo "  unlink $$name"; fi; \
+			if [ -L "$$target" ] && [ "$$(readlink "$$target")" = "$(REPO)/$$path" ]; then \
+				rm "$$target"; echo "  unlink $$name"; \
+			elif [ -L "$$target" ]; then echo "  skip $$name (not this repo's link)"; fi; \
 		done; \
 	done
 
@@ -101,7 +108,10 @@ status:
 		echo "$$dir"; \
 		for path in $(SKILL_DIRS); do \
 			name=$$(basename "$$path"); target="$$dir/$$name"; \
-			if [ -L "$$target" ]; then echo "  linked   $$name"; \
+			if [ -L "$$target" ] && [ "$$(readlink "$$target")" = "$(REPO)/$$path" ]; then \
+				if [ -e "$$target" ]; then echo "  linked   $$name"; \
+				else echo "  dangling $$name"; fi; \
+			elif [ -e "$$target" ] || [ -L "$$target" ]; then echo "  foreign  $$name"; \
 			else echo "  unlinked $$name"; fi; \
 		done; \
 	done

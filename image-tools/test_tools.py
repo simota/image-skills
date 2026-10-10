@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import struct
 import sys
 import tempfile
@@ -31,7 +32,10 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.dont_write_bytecode = True
 import imgfacts                                            # noqa: E402
+import engine                                              # noqa: E402
 import recipe                                              # noqa: E402
+import refute                                              # noqa: E402
+import render                                              # noqa: E402
 import strip                                               # noqa: E402
 
 failures: list[str] = []
@@ -310,7 +314,8 @@ def capture(tmp: Path, dest: str, replace: bool = False, **kw) -> int:
     src = tmp / "src.png"
     src.write_bytes(png(64, 32))
     args = ["capture", "--to", str(tmp / dest), "--from", str(src),
-            "--prompt", kw.pop("prompt", PROMPT)]
+            "--prompt", kw.pop("prompt", PROMPT),
+            "--generator", kw.pop("generator", recipe.DEFAULT_GENERATOR)]
     for k, v in kw.items():
         args += [f"--{k.replace('_', '-')}", str(v)]
     if replace:
@@ -437,6 +442,87 @@ def capture_no_prompt(tmp: Path) -> int:
     except SystemExit as e:                    # argparse .error() exits 2
         return e.code
     return 0
+
+
+def test_recipe_hardening(tmp: Path) -> None:
+    """Capture writes nothing it cannot finish, and check reads what it is given."""
+    import os
+    d = tmp / "hard"
+    d.mkdir()
+    src = d / "src.png"
+    src.write_bytes(png(64, 32))
+
+    def cap(*extra: str) -> int:
+        return recipe.main(["capture", "--from", str(src), *extra])
+
+    check("a prompt file that is missing is refused",
+          cap("--to", str(d / "a.png"), "--generator", "codex",
+              "--prompt-file", str(d / "nope.txt")), 2)
+    check("and nothing was placed for the retry to trip over",
+          (d / "a.png").exists(), False)
+    (d / "latin1.txt").write_bytes(b"caf\xe9")
+    check("a prompt file that is not UTF-8 is refused",
+          cap("--to", str(d / "a.png"), "--generator", "codex",
+              "--prompt-file", str(d / "latin1.txt")), 2)
+    check("a blank prompt is refused at capture, not left for check",
+          cap("--to", str(d / "a.png"), "--generator", "codex", "--prompt", "   "), 2)
+    check("--from outside every generator's directory needs --generator",
+          cap("--to", str(d / "a.png"), "--prompt", PROMPT), 2)
+    check("a PNG placed under .jpg is refused",
+          cap("--to", str(d / "a.jpg"), "--generator", "codex", "--prompt", PROMPT), 2)
+    check("a directory is not a destination",
+          cap("--to", str(d), "--generator", "codex", "--prompt", PROMPT, "--replace"), 2)
+    check("the generated file is not its own destination",
+          cap("--to", str(src), "--generator", "codex", "--prompt", PROMPT, "--replace"), 2)
+    recipe.sidecar_of(d / "b.png").write_text("engine: x\n", encoding="utf-8")
+    check("an orphan recipe is not overwritten silently",
+          cap("--to", str(d / "b.png"), "--generator", "codex", "--prompt", PROMPT), 2)
+
+    home = d / "codex-home"
+    out = home / "generated_images" / "s1"
+    out.mkdir(parents=True)
+    (out / "exec-1.png").write_bytes(png(32, 32))
+    (out / "exec-2.png").symlink_to(out / "gone.png")      # dangling: not a hit
+    old = os.environ.get("CODEX_HOME")
+    os.environ["CODEX_HOME"] = str(home)
+    try:
+        check("a dangling link in the output directory does not crash the search",
+              recipe.newest_generated("codex")[1].name, "exec-1.png")
+        check("a file under a generator's directory is attributed to it",
+              recipe.generator_holding(out / "exec-1.png"), "codex")
+    finally:
+        if old is None:
+            os.environ.pop("CODEX_HOME")
+        else:
+            os.environ["CODEX_HOME"] = old
+
+    check("capture writes", cap("--to", str(d / "c.png"), "--generator", "codex",
+                                "--prompt", PROMPT), 0)
+    side = recipe.sidecar_of(d / "c.png")
+    good = side.read_text(encoding="utf-8")
+    here = Path.cwd()
+    try:
+        os.chdir(d)
+        check("the same file checked from its own directory is still the same file",
+              recipe.check_one(Path("c.png")), [])
+    finally:
+        os.chdir(here)
+    check("and checked by absolute path", recipe.check_one((d / "c.png").resolve()), [])
+
+    for text, says in (("just a string\n", "mapping"), ("- a: 1\n- b: 2\n", "mapping"),
+                       (good.replace("size:", "size: 64x32\nold_size:"), "size must"),
+                       (good.replace("note:", "old_note:"), "IRREPRODUCIBLE")):
+        side.write_text(text, encoding="utf-8")
+        truthy(f"a malformed recipe is reported ({says}), not a traceback",
+               any(says in p for p in recipe.check_one(d / "c.png")))
+    side.write_text(good, encoding="utf-8")
+
+    for i, text in enumerate(("a\x85b\nc", "a\u2028b\nc", "a\rb\nc")):
+        dest = d / f"nel-{i}.png"
+        check(f"capture with a YAML line-break character {i}",
+              cap("--to", str(dest), "--generator", "codex", "--prompt", text), 0)
+        doc = yaml.safe_load(recipe.sidecar_of(dest).read_text(encoding="utf-8"))
+        check(f"the prompt with that character {i} survives exactly", doc["prompt"], text)
 
 
 def tags_of(raw: bytes) -> set[str]:
@@ -763,6 +849,108 @@ def test_strip_leaks(tmp: Path) -> None:
     truthy("a truncated WebP is refused", refuses(f, Opt(), "truncated"))
 
 
+# --- engine, refute, render -------------------------------------------------
+
+FAKE = """#!/usr/bin/env python3
+import json, os, sys
+argv = sys.argv[1:]
+prompt = sys.stdin.read()
+with open(os.environ["FAKE_LOG"], "a") as log:
+    log.write(json.dumps({"argv": argv, "stdin": prompt}) + "\\n")
+answer = os.environ["FAKE_ANSWER"]
+if "-o" in argv:                                   # codex writes a file
+    open(argv[argv.index("-o") + 1], "w").write(answer)
+else:                                              # claude and agy print an envelope
+    print(json.dumps({"structured_output": json.loads(answer)}))
+"""
+
+
+@contextlib.contextmanager
+def fake_engines(tmp: Path, answer):
+    import os
+    bin_dir = tmp / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    for name in engine.ENGINES["runs_on"]:
+        f = bin_dir / name
+        f.write_text(FAKE, encoding="utf-8")
+        f.chmod(0o755)
+    log = tmp / "fake.log"
+    log.write_text("", encoding="utf-8")
+    saved = {k: os.environ.get(k) for k in ("PATH", "FAKE_LOG", "FAKE_ANSWER")}
+    os.environ.update(PATH=f"{bin_dir}{os.pathsep}{saved['PATH']}",
+                      FAKE_LOG=str(log), FAKE_ANSWER=json.dumps(answer))
+    try:
+        yield log
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def test_engine(tmp: Path) -> None:
+    """A checker that answered outside its schema did not answer."""
+    good = {"refuted": False, "reason": "r", "what_would_settle_it": "w"}
+    for name in engine.ENGINES["runs_on"]:
+        with fake_engines(tmp, good):
+            check(f"{name}: a conforming answer comes back",
+                  engine.run(name, "-starts with a dash", refute.SCHEMA), good)
+        with fake_engines(tmp, dict(good, refuted="false")):
+            truthy(f"{name}: the string 'false' is not a boolean",
+                   raises(lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError))
+        with fake_engines(tmp, {"reason": "r"}):
+            truthy(f"{name}: a missing required key is an error, not a KeyError",
+                   raises(lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError))
+        with fake_engines(tmp, None):
+            truthy(f"{name}: a null answer is an error, not a TypeError",
+                   raises(lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError))
+    with fake_engines(tmp, good) as log:
+        engine.run("codex", "-p --help", refute.SCHEMA)
+        engine.run("claude", "-p --help", refute.SCHEMA)
+        calls = [json.loads(x) for x in log.read_text().splitlines()]
+        check("codex and claude receive the prompt on stdin, verbatim",
+              [c["stdin"] for c in calls], ["-p --help", "-p --help"])
+        truthy("and never as an argument", all("-p --help" not in c["argv"] for c in calls))
+
+    nested = {"type": "object", "properties": {
+        "a": {"anyOf": [{"type": "object", "properties": {"x": {"type": "string"}}},
+                        {"type": "null"}]},
+        "b": {"type": ["object", "null"], "properties": {"y": {"type": "integer"}}},
+        "c": {"type": "array", "items": [{"type": "object", "properties": {}}]}}}
+    closed = engine.strict(nested)
+    check("strict closes an object inside anyOf",
+          closed["properties"]["a"]["anyOf"][0]["additionalProperties"], False)
+    check("strict closes a nullable object", closed["properties"]["b"]["additionalProperties"], False)
+    check("strict closes list-form items", closed["properties"]["c"]["items"][0]["additionalProperties"], False)
+    check("strict requires every property", closed["required"], ["a", "b", "c"])
+
+    check("engine.py with no --running stops rather than running anything",
+          exits(lambda: engine.main(["codex", "--prompt-file", "p", "--schema", "s"])), 2)
+
+    claims = tmp / "claims.json"
+    claims.write_text(json.dumps([{"id": "c1", "claim": "the file is 1536x1024"}]))
+    with fake_engines(tmp, good):
+        check("refute exits 0 when every claim was read", refute.main(["--running", "claude", str(claims)]), 0)
+    with fake_engines(tmp, None):
+        check("refute exits 1 when a claim went unchecked",
+              refute.main(["--running", "claude", str(claims)]), 1)
+        check("and with --json too",
+              refute.main(["--running", "claude", "--json", str(claims)]), 1)
+    for bad in ("[]", '[{"id": "x"}]', '["text"]', "not json"):
+        claims.write_text(bad)
+        check(f"refute rejects the claims file {bad!r} before asking anyone",
+              refute.main(["--running", "claude", str(claims)]), 2)
+
+    skill = tmp / "SKILL.md"
+    key = next(iter(render.H["delivered"]))
+    skill.write_text(f"# x\n\n<!-- deliver:{key} -->\nold\n", encoding="utf-8")
+    truthy("render refuses an open marker with no close, rather than duplicating",
+           raises(lambda: render.render(skill), SystemExit))
+    check("and leaves the file as it was", skill.read_text(encoding="utf-8"),
+          f"# x\n\n<!-- deliver:{key} -->\nold\n")
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -798,11 +986,13 @@ def main() -> int:
         test_recipe(tmp)
         test_recipe_verbatim(tmp)
         test_recipe_generators(tmp)
+        test_recipe_hardening(tmp)
         test_strip(tmp)
         test_no_writes_while_reporting(tmp)
         test_malformed_input(tmp)
         test_strip_leaks(tmp)
         test_cli_surfaces(tmp)
+        test_engine(tmp)
     if failures:
         print(f"{len(failures)} failure(s):")
         print("\n".join(failures))

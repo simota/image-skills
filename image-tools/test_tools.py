@@ -615,21 +615,25 @@ def test_no_writes_while_reporting(tmp: Path) -> None:
     f = tmp / "ro.png"
     f.write_bytes(png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")))
     seen = []
-    real = Path.write_bytes
+    real = strip._write_atomically
 
-    def spy(self, data):
-        seen.append(str(self))
-        return real(self, data)
+    def spy(dest, data):
+        seen.append(str(dest))
+        return real(dest, data)
 
-    Path.write_bytes = spy
+    strip._write_atomically = spy
+    listing = sorted(tmp.iterdir())
     try:
         check("reporting exits 0", strip.main([str(f)]), 0)
         check("reporting writes nothing", seen, [])
+        check("reporting leaves the directory as it was", sorted(tmp.iterdir()), listing)
         check("--out writes exactly one file",
               strip.main([str(f), "--out", str(tmp / "sub" / "o.png")]), 0)
         check("and that file is the destination", seen, [str(tmp / "sub" / "o.png")])
+        check("and leaves no temporary file beside it",
+              sorted(x.name for x in (tmp / "sub").iterdir()), ["o.png"])
     finally:
-        Path.write_bytes = real
+        strip._write_atomically = real
     truthy("the destination is a real image",
            imgfacts.probe(tmp / "sub" / "o.png")["size"] == "16x16")
 
@@ -647,6 +651,116 @@ def test_no_writes_while_reporting(tmp: Path) -> None:
     check("--in-place is idempotent", strip.main([str(f), "--in-place"]), 0)
     check("nothing left to remove the second time", f.read_bytes(), after)
     check("an unreadable file exits 1", strip.main([str(tmp / "junk.png")]), 1)
+
+
+def test_malformed_input(tmp: Path) -> None:
+    """Cut-short and odd files. Each case here was a traceback or a confident
+    wrong answer before a review built the bytes and ran them."""
+    def unreadable(name: str, raw: bytes) -> None:
+        truthy(f"{name} is Unreadable, not a crash or an answer",
+               raises(lambda: imgfacts.probe_bytes(raw), imgfacts.Unreadable))
+
+    sof = b"\xff\xd8\xff\xc0\x00\x04\x08\x00"
+    unreadable("a JPEG frame header too short to hold a size", sof)
+    unreadable("a GIF shorter than its screen descriptor", b"GIF89a\x10\x00")
+    vp8x = webp_vp8x(16, 16, alpha=False, icc=False)
+    unreadable("a VP8X header cut short", vp8x[:21])
+    vp8l = webp_vp8l(16, 16, alpha=False)
+    unreadable("a VP8L chunk with no data", vp8l[:20])
+    unreadable("a VP8L chunk with no signature byte", vp8l[:20] + b"\x00" + vp8l[21:])
+    f = tmp / "cut.webp"
+    f.write_bytes(vp8x[:21])
+    check("imgfacts exits 1 on a cut-short file, without a traceback",
+          imgfacts.main([str(f)]), 1)
+    check("strip exits 1 on it too", strip.main([str(f)]), 1)
+
+    for frame, note in ((0xC0, "baseline"), (0xC1, "sequential"),
+                        (0xCE, "progressive"), (0xC3, "lossless")):
+        body = b"\x08" + struct.pack(">HH", 8, 8) + b"\x01\x01\x11\x00"
+        raw = (b"\xff\xd8" + bytes([0xFF, frame]) + struct.pack(">H", len(body) + 2)
+               + body + b"\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00")
+        truthy(f"SOF {frame:#x} is labelled {note}",
+               note in imgfacts.probe_bytes(raw)["notes"])
+
+    # A graphic control extension is in every animated GIF, for the delay; only
+    # its transparency bit says alpha. The colour table holds the extension's
+    # introducer by chance, which a byte search mistook for one.
+    head = (b"GIF89a" + struct.pack("<HH", 4, 4) + b"\x80\x00\x00"
+            + b"\x21\xf9\x04\x01\x21\xf9")
+    frame = b"\x2c" + b"\x00" * 8 + b"\x00" + b"\x02\x02\x4c\x01\x00"
+    gce = lambda flags: b"\x21\xf9\x04" + bytes([flags]) + b"\x00\x00\x00\x00"
+    check("a GIF whose extension sets no transparency has no alpha",
+          imgfacts.probe_bytes(head + gce(0) + frame + b"\x3b")["alpha"], False)
+    check("one that sets it has alpha",
+          imgfacts.probe_bytes(head + gce(1) + frame + b"\x3b")["alpha"], True)
+    check("and a later frame setting it counts",
+          imgfacts.probe_bytes(head + frame + gce(1) + frame + b"\x3b")["alpha"], True)
+
+    for size in ("16x0", "0x16", "-16x16"):
+        check(f"--check-size {size} is not a size",
+              imgfacts.main([f"--check-size={size}"]), 2)
+    for aspect in ("0:1", "1:0", "0:0"):
+        check(f"--check-aspect {aspect} is not an aspect",
+              imgfacts.main([f"--check-aspect={aspect}"]), 2)
+    for w, h in ((16, 16), (100000, 100000), (64, 32)):
+        n = imgfacts.nearest_legal(w, h)
+        truthy(f"nearest_legal({w},{h}) answers however far off the request is", n)
+        if n:
+            check(f"nearest_legal({w},{h}) is legal", imgfacts.illegal(*n), set())
+            check(f"nearest_legal({w},{h}) keeps the shape",
+                  imgfacts.aspect_of(*n), imgfacts.aspect_of(w, h))
+
+
+def test_strip_leaks(tmp: Path) -> None:
+    """What a stripper must not let through, and what it must not take away."""
+    f = tmp / "leak.jpg"
+    second = jpeg_with(8, 8, [(0xE1, b"Exif\x00\x00" + exif(None) + b"GPSSECRET")])
+    f.write_bytes(jpeg_with(16, 16, []) + second)
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("an appended second JPEG and its Exif are gone", b"GPSSECRET" not in out)
+    truthy("and the removal is reported", any("after EOI" in d for d in dropped))
+    truthy("the image itself still ends at EOI", out.endswith(b"\xff\xd9"))
+
+    # A progressive file puts segments between its scans; the policy applies
+    # there too, and the scans themselves survive byte for byte.
+    scan = b"\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00"
+    entropy = b"AB\xff\x00CD\xff\xd0EF"            # a stuffed byte and a restart
+    com = b"\xff\xfe" + struct.pack(">H", 2 + 6) + b"SECRET"
+    dht = b"\xff\xc4" + struct.pack(">H", 2 + 3) + b"\x00\x01\x02"
+    raw = jpeg_with(16, 16, [])[:-2] + dht + com + scan + entropy + b"\xff\xd9"
+    f.write_bytes(raw)
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("a comment between scans is removed", b"SECRET" not in out)
+    truthy("a table between scans stays", dht in out)
+    truthy("entropy data with stuffing and restarts survives intact",
+           entropy in out and out.count(scan) == 2)
+
+    thumb = (0xE0, b"JFXX\x00\x10" + b"THUMBNAILDATA")
+    jfif = (0xE0, b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00")
+    f.write_bytes(jpeg_with(16, 16, [jfif, thumb]))
+    out, _, _ = strip.strip(f, Opt())
+    truthy("a JFXX thumbnail in APP0 is removed", b"THUMBNAILDATA" not in out)
+    truthy("the JFIF APP0 stays", b"JFIF\x00" in out)
+
+    f = tmp / "hdr.png"
+    f.write_bytes(png(16, 16, extra=raw_chunk(b"cICP", b"\x09\x10\x00\x01")
+                      + raw_chunk(b"cLLI", b"\x00" * 8)))
+    out, _, before = strip.strip(f, Opt())
+    truthy("cICP stays: it is the colour space", "cICP" in tags_of(out))
+    truthy("cLLI stays with it", "cLLI" in tags_of(out))
+    check("imgfacts reports cICP", before["colour"], "cICP declared")
+
+    f = tmp / "cut.png"
+    whole = png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v"))
+    f.write_bytes(whole[:-30])
+    truthy("a truncated PNG is refused, not written short",
+           refuses(f, Opt(), "truncated"))
+    f.write_bytes(whole[:-12])
+    truthy("a PNG with no IEND is refused", refuses(f, Opt(), "IEND"))
+    f = tmp / "cut.webp"
+    full = webp_with(16, 16, 0, [(b"EXIF", exif(None) * 4)])
+    f.write_bytes(full[:-6])
+    truthy("a truncated WebP is refused", refuses(f, Opt(), "truncated"))
 
 
 def exits(fn) -> int:
@@ -686,6 +800,8 @@ def main() -> int:
         test_recipe_generators(tmp)
         test_strip(tmp)
         test_no_writes_while_reporting(tmp)
+        test_malformed_input(tmp)
+        test_strip_leaks(tmp)
         test_cli_surfaces(tmp)
     if failures:
         print(f"{len(failures)} failure(s):")

@@ -1,7 +1,8 @@
 <!-- image:deferred -->
 Purpose: what each generator actually accepts, so a request does not spend words on levers that do not exist.
 Read when: deciding what to put in a prompt, or wondering why an instruction was ignored.
-Source: agy — the controls it exposes are what this page can promise.
+Source: codex, agy — the controls each exposes are what this page can promise, and
+they move with those tools' releases.
 Verified: 2026-08-23 — read off the installed backing skill and confirmed by
 running one generation through the default path. The second generator's section
 was added 2026-08-24 from one run through it and its own parameter list. Model
@@ -22,7 +23,8 @@ very different control surfaces.
 
 ## Default: the built-in tool
 
-Invoked as the `image_gen` tool inside a Codex session. No API key. This is the
+Invoked as the built-in image generation tool (`image_gen`, enabled by the
+`image_generation` feature) inside a `codex` session. No API key. This is the
 path almost every request takes.
 
 **What it takes:** a prompt. That is the whole surface.

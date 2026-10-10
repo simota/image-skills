@@ -22,6 +22,7 @@ baseline: "<what exists now, opened and described>"
 standard: "<what the result is judged against>"
 budget: "<paid generations this is worth>"
 open_questions: []
+terms: {}
 
 # direction adds these three; the four stages downstream read them
 subject: "<noun phrase · action · setting · framing · light · negative space>"
@@ -43,6 +44,7 @@ references:
 | `subject` | The generator invents one |
 | `crops` | The picture is composed for one container and clipped by the others |
 | `references` | Fine. Most briefs have none, and a brief with none is not worse |
+| `terms` | Fine when no term was coined or disputed |
 
 ## Worked example
 
@@ -66,6 +68,7 @@ subject: "a worn wooden desk at an angle · nothing happening · a small room at
 crops: ["16:9, composed for", "1:1 centre crop must still hold the lamp"]
 references: []
 open_questions: []
+terms: {}
 ```
 
 ## Checking one you received
@@ -75,5 +78,6 @@ open_questions: []
    every claim below it `asserted`
 3. Can each axis be falsified? Read it back and ask what would disprove it
 4. Is `excludes` non-empty?
-5. Does `standard` name something that exists and can be opened?
+5. Does `standard` name something that exists and can be opened, or is it
+   declared a stated intent because nothing exists?
 6. Is `open_questions` empty? Execution does not start otherwise

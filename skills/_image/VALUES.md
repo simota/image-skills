@@ -64,7 +64,7 @@ appears to be — it stopped being the agent's to make.
 |---|---|
 | The candidate is beautiful and off-brief | §2 — it does not ship. Raise the divergence, do not rewrite the brief |
 | Four candidates, none right, budget for one more run | §4 — say what the next run would answer. No answer, no run |
-| The generator refuses and a reword would pass | §1 — report the refusal. A reworded prompt is a different recipe, recorded as one |
+| The generator refuses and a reword would pass | `BLOCKED` (`_image/CONTRACT.md` § Status) — report the refusal. A reworded prompt is a different recipe, recorded as one |
 | The result resembles a real person | §5's carve-out, then §6 — stop and hand back |
 
 ## The escape hatch
@@ -81,6 +81,6 @@ cost more output than the decision itself; a rule names an artifact this project
 does not have and inventing one would be the only way to comply; or two
 contracts in `_image/` give conflicting instructions for this exact case.
 
-When it fires: do the work, state which rule was suspended and why, and mark the
-gap as `#TODO(agent): OUT-OF-SCOPE`. Suspending a rule silently is the failure
-this section exists to prevent.
+When it fires: do the work, say which rule was suspended and why, and log the gap
+in `open` as `OUT-OF-SCOPE` (with `Write`, also `#TODO(agent): OUT-OF-SCOPE — <action>`).
+Suspending a rule silently is the failure this section exists to prevent.

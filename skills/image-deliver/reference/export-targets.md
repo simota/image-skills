@@ -10,9 +10,10 @@ fails the build rather than ageing quietly.
 
 ## One source, everything derived
 
-The picture is kept once, at full size, at full quality, in the repository.
-Every shipped file is derived from it by a stated rule. Deriving from a derived
-file compounds encoding damage and loses the ability to re-emit at a new size.
+The picture is kept once, at full size, at full quality, under the project's
+retention policy (repository, LFS or artifact storage). Every shipped file is
+derived from it by a stated rule. Deriving from a derived file compounds
+encoding damage and loses the ability to re-emit at a new size.
 
 ## Density rungs
 

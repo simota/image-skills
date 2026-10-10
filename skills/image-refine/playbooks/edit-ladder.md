@@ -9,7 +9,7 @@ work**, and move up only after it has failed.
 
 | Rung | What it is | What it risks |
 |---|---|---|
-| 1 · Crop or scale | Reframe what already exists, or resample it | Resolution. Nothing else. Not really an edit |
+| 1 · Crop or scale | Reframe what already exists, or resample it | Resolution. Nothing else. Still a change to the picture, which is why delivery hands upscales here |
 | 2 · Region edit | Change one named area, everything else declared invariant | Local blending, edge seams |
 | 3 · Extend | Outpaint the canvas outward | The new area matches the old one badly; lighting continuity |
 | 4 · Re-prompt with invariants | Generate again from a modified request, invariants restated | Everything. It is a new picture, and it will not match the approved one |
@@ -28,10 +28,11 @@ work**, and move up only after it has failed.
 
 ## Rung 4 does not inherit approval
 
-A re-prompt returns a *different picture*. The generator has no seed, so
-"regenerate with the hand fixed" means "generate again and hope". Everything
-approved about the previous candidate is back in play, and the new candidate
-needs reviewing from scratch.
+A re-prompt returns a *different picture*. No exact regeneration is confirmed (a
+snapshot, recorded in image-prompt's control-surface reference), so "regenerate
+with the hand fixed" means "generate again and hope". Everything approved about
+the previous candidate is back in play, and the new candidate needs reviewing
+from scratch.
 
 That can fix the user's problem, but it is a new candidate with its own recipe,
 `IRREPRODUCIBLE` where applicable, and a fresh review. The danger is transferring

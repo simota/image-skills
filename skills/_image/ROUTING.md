@@ -41,7 +41,7 @@ goes. These rows say *how to tell which case you are in*.
 | prompt vs generate | Is the question about the words or about the run? Words → prompt. How many, what it costs, which one → generate |
 | generate vs refine | Does an image exist that is worth starting from? No → generate. Yes → refine |
 | refine vs review | **review judges, refine changes.** A run that both judged and fixed cannot say which it did first |
-| review vs direction | Does a picture exist? Exists → review. Being decided → direction. A verdict of `usable, off-brief` is review handing it back to direction |
+| review vs direction | Does a picture exist? Exists → review. Being decided → direction. An off-brief finding, whatever the verdict, is review handing it back to direction |
 | refine vs deliver | Is the problem in the picture or in the file? Picture → refine. Format, size, placement → deliver |
 | anything vs review | review never produces the replacement. It says what is wrong and hands the fix to the owner |
 

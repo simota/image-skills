@@ -30,10 +30,11 @@ Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
   brief first. `T2` — two or more skills own parts of it: route it. `T0` drops
   the paperwork, never the evidence. Mis-sized mid-run means re-sizing and saying so
 - **A dialogue comes first** when the deliverable's shape is not uniquely
-  determined, what counts as achieved does not fit in one sentence, the request
-  carries a word with no achievement condition ("nicer", "cleaner", "premium",
-  "more professional"), or the work replaces a picture a person already chose.
-  Looking at what exists is not executing
+  determined, what counts as achieved does not fit in one sentence, a word has no
+  achievement condition ("nicer", "cleaner", "more professional", "make it pop",
+  "modern"), the work replaces a picture a person already chose, or doing it wrong
+  would be expensive to undo (published, under someone's name, a real person or
+  product). Looking at what exists is not executing
 - **Settle `standard` in that dialogue** — what the image is judged against.
   Without one, every candidate is arguable and the loop has no exit. `excludes`
   may not be empty and execution waits on an empty `open_questions`
@@ -85,13 +86,13 @@ Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
 - Always: get permission first before replacing an image already referenced,
   before deleting an original, and before adding a format the project's build
   does not already handle
-- Unless replacement is authorized and rollback verified, write a sibling.
-  Stable URLs and version-controlled replacements may keep the existing path
+- Always: write a sibling unless replacement is authorized and rollback is
+  verified. Stable URLs and version-controlled replacements may keep the path
 - Never: strip colour metadata without checking what the surface assumes
 - Never: lose a retained generated candidate's recipe. Keep its provenance
   accessible, not necessarily public; `IRREPRODUCIBLE` does not apply to a copy
-- For each known use, supply the alt decision and context; the markup owner
-  verifies final semantics. Unknown future use has no universal asset-level alt
+- Always: supply the alt decision and context for each known use; the markup
+  owner verifies final semantics. Unknown future use has no universal asset-level alt
 
 ## Verify with
 
@@ -118,8 +119,8 @@ to make sure it resolves.
   and appears in the handoff's `open`; a run holding `Write` also leaves a
   `#TODO(agent):` marker carrying that class in the document it produced
 - **Never omit the sweep** — markers against `open`, promised decisions against
-  graded ones: `swept, 0 markers; 6 decisions / 6 graded`. While either pair
-  disagrees the status is not `DONE` (`_image/CONTRACT.md`)
+  graded ones: `swept, 0 markers / 0 in open; 6 decisions / 6 graded`. While
+  either pair disagrees the status is not `DONE` (`_image/CONTRACT.md`)
 <!-- /deliver:report -->
 
 ## Done when

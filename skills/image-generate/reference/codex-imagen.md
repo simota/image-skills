@@ -83,5 +83,6 @@ without the other.
 ## Cost and time
 
 Each call is billed and takes tens of seconds. Square is typically fastest.
-There is no dry run, so the cheapest way to test a prompt is a small square
-draft, not a full-resolution final.
+There is no dry run. Whether a smaller square draft costs less than the final
+depends on the installed cost model (see `playbooks/batching.md`); do not
+assume it.

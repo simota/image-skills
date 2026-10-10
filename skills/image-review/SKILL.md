@@ -17,7 +17,7 @@ Phases: `OPEN → SWEEP → LOCATE → RANK → VERDICT`.
 
 - **Get the standard.** Without one this is preference with a table around it.
   The brief, an existing image, or a house style — and where none exists, say
-  which rung you fell back to
+  which of those you fell back to
 - **Open before reading the prompt when it is still unknown.** Record initial
   observations, then compare with intent. If you already know the prompt, reopen
   the pixels and disclose that this is not cold or independent; a skill switch
@@ -31,10 +31,11 @@ Phases: `OPEN → SWEEP → LOCATE → RANK → VERDICT`.
   brief first. `T2` — two or more skills own parts of it: route it. `T0` drops
   the paperwork, never the evidence. Mis-sized mid-run means re-sizing and saying so
 - **A dialogue comes first** when the deliverable's shape is not uniquely
-  determined, what counts as achieved does not fit in one sentence, the request
-  carries a word with no achievement condition ("nicer", "cleaner", "premium",
-  "more professional"), or the work replaces a picture a person already chose.
-  Looking at what exists is not executing
+  determined, what counts as achieved does not fit in one sentence, a word has no
+  achievement condition ("nicer", "cleaner", "more professional", "make it pop",
+  "modern"), the work replaces a picture a person already chose, or doing it wrong
+  would be expensive to undo (published, under someone's name, a real person or
+  product). Looking at what exists is not executing
 - **Settle `standard` in that dialogue** — what the image is judged against.
   Without one, every candidate is arguable and the loop has no exit. `excludes`
   may not be empty and execution waits on an empty `open_questions`
@@ -60,7 +61,7 @@ Phases: `OPEN → SWEEP → LOCATE → RANK → VERDICT`.
 | Working through an image methodically | [seeing](playbooks/seeing.md) — an order of looking that does not start where the eye wants to |
 | Deciding how much a defect matters | [severity](playbooks/severity.md) — ranked by what a viewer of this surface would notice, not by how odd it is up close |
 | Naming what you are looking at | [defect-catalogue](reference/defect-catalogue.md) — the failures this class of generator produces, and where they hide |
-| A finding spans places, an order, or a region | [visualise](playbooks/visualise.md) — a reader who has to reassemble it will skim it. ASCII by default, and the drawing carries the finding's rung, never a better one |
+| A finding spans places, an order, or a region | [visualise](playbooks/visualise.md) — a reader who has to reassemble it will skim it. ASCII by default, and the drawing carries the finding's evidence grade, never a better one |
 | Writing the report | [report-template](reference/report-template.md) |
 | Stating a dimension, a format or a byte size | [imgfacts](imgfacts.py) — read it off the file; a property carried over from the request is `asserted` |
 | The image is fine but is not what was asked for | That is a finding, ranked with the rest. Off-brief is a defect of the run, not of the picture |
@@ -81,10 +82,10 @@ Phases: `OPEN → SWEEP → LOCATE → RANK → VERDICT`.
   written from a prompt is a review of a different object
 - Always: locate findings — a region, the whole frame, or named set members —
   and state the violated criterion; intentional distortion is not itself a defect
-- When literal readable text is required, check it character by character; absent
-  text needs no text check, and intentional lettering follows its stated purpose
-- Judge at the intended size/crop and full size. If use or crop is undecided,
-  bound the verdict to the views checked; do not imply production approval
+- Always: check required literal text character by character; absent text
+  needs no text check, and intentional lettering follows its stated purpose
+- Always: judge at the intended size/crop and full size. If use or crop is
+  undecided, bound the verdict to the views checked; do not imply production approval
 - Never: produce the replacement, the corrected prompt, or the edit
 - Never: rank by how strange a defect is. Rank by who will see it
 - Never: pass an image because the batch it came from was worse
@@ -99,8 +100,8 @@ located is a defect that can be re-found). A finding with no location is
 - **The verdict is one line and it commits**: usable, usable with the listed
   fixes, or not usable — with what would change it
 - **What was not seen is stated**: the crops not checked, the sizes not viewed,
-  the members of a set not opened. A review is `IRREPRODUCIBLE` too if nobody
-  can tell what it covered
+  the members of a set not opened. An `IRREPRODUCIBLE` image cannot be re-made;
+  a review can always say what it covered, so it does
 - **Every diagram is `labelled`, `derived` and `bounded`** — each mark names
   something opened, nothing is drawn that the evidence did not establish, and a
   reader who disagrees can point at the part that is wrong
@@ -119,8 +120,8 @@ located is a defect that can be re-found). A finding with no location is
   and appears in the handoff's `open`; a run holding `Write` also leaves a
   `#TODO(agent):` marker carrying that class in the document it produced
 - **Never omit the sweep** — markers against `open`, promised decisions against
-  graded ones: `swept, 0 markers; 6 decisions / 6 graded`. While either pair
-  disagrees the status is not `DONE` (`_image/CONTRACT.md`)
+  graded ones: `swept, 0 markers / 0 in open; 6 decisions / 6 graded`. While
+  either pair disagrees the status is not `DONE` (`_image/CONTRACT.md`)
 <!-- /deliver:report -->
 
 ## Done when

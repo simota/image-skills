@@ -60,11 +60,11 @@ terms: {}                         # the names this run uses, spelled as the glos
 
 - **`standard` is this set's baseline for judgement.** Without one every
   candidate is arguable, and the iteration loop has no exit. Where none exists,
-  say which rung you fell back to
+  say which you fell back to: the brief, an existing image, or a house style
 - **`axes` may not collapse to one.** "Looks good" is a single oracle, and there
   is always a reading of it that can be declared satisfied. Subject, composition,
   technical cleanliness and fitness for the surface are four, and they trade
-- **`budget` is a field this family has and its siblings do not**, because
+- **`budget` is a field image work needs and most other work does not**, because
   generation spends money per attempt and has no natural stopping point
 - **`excludes` may not be empty.** Writing down what will not be decided is the
   only thing a downstream skill can check itself against

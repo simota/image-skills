@@ -19,6 +19,7 @@ act on it without opening a conversation.
 ## Verdict
 
 <usable | usable with the listed fixes | not usable> — <one sentence>
+Status: PARTIAL — 1 UNSPECIFIED
 
 Judged against: <the standard, named>
 Seen at: <shipping size, and full size>
@@ -48,8 +49,9 @@ Not seen: <crops not checked, members not opened, sizes not viewed>
 
 - { what: "alt text is unwritten", class: UNSPECIFIED, marker: "docs/assets/README.md", written: false }
 
-swept, 0 markers / 0 in open; 7 decisions / 7 graded
-next: image-refine for findings 1–2; finding 3 is a note
+swept, 1 marker / 1 in open; 7 decisions / 6 graded
+next: the human, for the UNSPECIFIED alt text; then image-refine for findings
+1–2; finding 3 is a note
 ```
 
 ## What each part is for
@@ -59,8 +61,8 @@ commits — "it depends" means the standard was never settled, and that is itsel
 the finding.
 
 **Judged against**, or the report is preference. Name the brief, the existing
-image, or the house style, and where none existed say which rung you fell back
-to.
+image, or the house style, and where none existed say which of those you fell
+back to.
 
 **Not seen** is the part reviewers skip and receivers need. A review that
 covered one crop of one member of a set has said nothing about the others, and

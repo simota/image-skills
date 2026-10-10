@@ -42,7 +42,7 @@ comes.
 1. **The answer, one line.** The status, what was produced, and where it is. A
    reader who stops after this line has the result
 2. **The evidence, one line.** The sweep (`_image/CONTRACT.md`), which already
-   carries the counts: `swept, 0 markers; 9 decisions / 9 graded`
+   carries the counts: `swept, 0 markers / 0 in open; 9 decisions / 9 graded`
 3. **What is unresolved** — one line per residual that needs a human decision.
    `BLOCKED` and `UNSPECIFIED` always. `DEFERRED` and `OUT-OF-SCOPE` are in the
    handoff and named here only if the reader would act on them today

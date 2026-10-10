@@ -36,10 +36,11 @@ damage is invisible at shipping size.
 with no recorded result is a number carried forward until nobody remembers
 whether it was chosen.
 
-## The budget
+## The compression budget
 
-A budget is a number in the brief, not a feeling: *this header is worth under
-200KB*. When the encode lands over it, the choices are a smaller pixel size, a
+A compression budget is a number recorded with the target in the delivery
+record, not a feeling: *this header is worth under 200KB*. It is not the brief's
+`budget`, which counts paid generations. When the encode lands over it, the choices are a smaller pixel size, a
 lower quality, a different format, or an explicit decision to exceed it. All
 four are fine. **Quietly raising the budget is not.**
 
@@ -55,6 +56,6 @@ say so — the result is what it is, and the record explains why.
 
 - Every emitted file opened, and its format, dimensions and byte size read off it
 - The worst region compared against the source at shipping size
-- The budget stated, and what each file actually came in at
+- The compression budget stated, and what each file actually came in at
 - Transparency, where it exists, verified in the alpha channel rather than by
   the file looking right against white

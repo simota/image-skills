@@ -53,7 +53,7 @@ gone. The backing skill states this as a rule, and it is the single most common
 way an image task ends up half-done.
 
 `recipe.py capture` is the copy-out, and it writes the recipe in the same move —
-see `recipe-sidecar.md`. Doing it by hand is how the recipe gets written later,
+see `reference/recipe-sidecar.md`. Doing it by hand is how the recipe gets written later,
 from memory, which `_image/RECIPE.md` calls not a recipe at all.
 
 ## What the invocation does not accept

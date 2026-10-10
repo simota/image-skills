@@ -22,10 +22,10 @@ sys.dont_write_bytecode = True                     # no __pycache__ in the tools
 import validate                                    # noqa: E402  — for RULES only
 
 
-def run(root: Path) -> str:
+def run(root: Path) -> tuple[int, str]:
     r = subprocess.run([sys.executable, str(root / "image-tools" / "validate.py")],
                        capture_output=True, text=True)
-    return r.stdout + r.stderr
+    return r.returncode, r.stdout + r.stderr
 
 
 S = "skills/"          # everything the CLI reads lives here
@@ -37,13 +37,19 @@ def sub(path: Path, old: str, new: str) -> None:
     path.write_text(t.replace(old, new, 1), encoding="utf-8")
 
 
-# Each case mutates a copy, then expects that rule id in the output.
+# Each case mutates a copy, then expects that rule id in the output — and, where
+# `says` is given, a failure line of that rule containing it. The id alone
+# cannot tell which branch fired, so a mutation that trips two branches proves
+# neither: deleting either one still leaves the id in the output.
 CASES: dict[str, callable] = {}
+SAYS: dict[str, str] = {}
 
 
-def case(rule):
+def case(rule, says: str | None = None):
     def deco(fn):
         CASES[rule] = fn
+        if says:
+            SAYS[rule] = says
         return fn
     return deco
 
@@ -408,9 +414,59 @@ def _(r):
         "off-brief-drift, severity-ranking]")
 
 
+@case("V10-empty", says="vacuous")
+def _(r): (r / "image-registry/fixtures.yaml").write_text("{}\n", encoding="utf-8")
+
+
+@case("V13-stages", says="stages")
+def _(r):
+    sub(r / "image-registry/routes.yaml",
+        "chain: [image-direction, image-prompt, image-generate, image-review, image-deliver]",
+        "chain: [image-direction, image-prompt, image-generate, image-review, "
+        "image-refine, image-review, image-deliver]")
+
+
+@case("V19-reference", says="does not resolve")
+def _(r):
+    f = r / f"{S}image-prompt/reference/sizes.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee `_image/NOPE.md`.\n",
+                 encoding="utf-8")
+
+
+@case("V22-code-on-line", says="residual class")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n#" + "TODO(agent): tidy `this` up later\n", encoding="utf-8")
+
+
+@case("V26-bare", says="not a skill")
+def _(r):
+    t = (r / "image-registry/capabilities.yaml").read_text(encoding="utf-8")
+    import re as _re
+    m = _re.search(r"go: (image-[a-z]+)", t)
+    (r / "image-registry/capabilities.yaml").write_text(
+        t.replace(m.group(0), "go: refine", 1), encoding="utf-8")
+
+
+@case("V27-nested", says="outside the repo")
+def _(r):
+    (r / f"{S}image-prompt/playbooks/leak.md").symlink_to("/etc/hostname")
+
+
+@case("V38-comment", says="MAYBE")
+def _(r):
+    sub(r / f"{S}_image/HANDOFF.md", "DONE | PARTIAL | BLOCKED", "DONE | PARTIAL | BLOCKED | MAYBE")
+
+
+@case("V39-verb", says="no skill does")
+def _(r):
+    sub(r / "image-registry/harness.yaml", "reviews: [verdict]", "reviews: [verdict, judgement]")
+
+
 def main() -> int:
-    baseline = run(ROOT)
-    if "green" not in baseline:
+    code, baseline = run(ROOT)
+    if code != 0:
         print("the working tree is already failing; fix that first:\n" + baseline)
         return 1
 
@@ -421,9 +477,10 @@ def main() -> int:
             shutil.copytree(ROOT, copy, symlinks=True,
                             ignore=shutil.ignore_patterns(".git", "__pycache__"))
             mutate(copy)
-            out = run(copy)
+            _, out = run(copy)
             expect = rule.split("-")[0]
-            if not re.search(rf"^\s*{expect}: ", out, re.M):
+            says = re.escape(SAYS.get(rule, ""))
+            if not re.search(rf"^\s*{expect}: .*{says}", out, re.M):
                 bad.append(rule)
                 print(f"  {rule} did not fire\n{out}")
 

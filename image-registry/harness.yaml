@@ -187,6 +187,15 @@ finding_visuals:
   # What keeps a diagram a finding rather than an illustration.
   floor: [labelled, derived, bounded]
 
+# Which `does:` verbs in capabilities.yaml make a skill a changer of pixels, an
+# editor of an existing picture, a reviewer, or a deliverer. V39 orders routes by
+# these, and fails if a verb listed here is no longer one any skill does.
+completion_roles:
+  changes: [invocation, region-edit]
+  edits: [region-edit]
+  reviews: [verdict]
+  delivers: [placement]
+
 vocabulary:
   recipe_fields: [engine, model, prompt, excluded, size, inputs, output, IRREPRODUCIBLE]
   patterns: [linear, loop, report-only]
@@ -206,7 +215,13 @@ label_by_path:
   "skills/*/reference/*.md": deferred
 
 # Paths that belong to the host project, not to this set.
-external_paths: [".agents/", "CLAUDE.md", "AGENTS.md", "GEMINI.md", "settings.json", "assets/", "public/"]
+external_paths: [".agents/", "CLAUDE.md", "AGENTS.md", "GEMINI.md", "settings.json", "assets/", "public/",
+                 # the backing imagegen skill's own files, named where a page quotes it
+                 "references/", "scripts/",
+                 # this harness, named for maintainers in a page's header; no skill reads it
+                 "image-tools/",
+                 # example files in a reader's project, on the recipe page
+                 "hero.png", "images.yaml"]
 
 # Content that goes stale belongs in reference/, which carries no line budget and
 # is checked for freshness instead. A model identifier is the fastest-rotting

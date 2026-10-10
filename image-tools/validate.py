@@ -56,6 +56,7 @@ LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 # the directory the file writing it lives in.
 TICK_PATH_RE = re.compile(r"`([^`\s]*(?:/[^`\s]*|\.(?:md|yaml|py)))`")
 MARKER_RE = re.compile(r"#" + r"TODO\(agent\):")
+QUOTED_MARKER_RE = re.compile(r"`[^`]*#" + r"TODO\(agent\):[^`]*`")
 
 
 def read(p: Path) -> str:
@@ -189,7 +190,7 @@ def _norm(s: str) -> str:
 def v9_signals():
     seen: dict[str, str] = {}
     for name, c in CAP.items():
-        sigs = c.get("signals", [])
+        sigs = c.get("signals") or []
         if not sigs:
             fail("V9", f"{name} declares no signals")
         for s in sigs:
@@ -200,8 +201,11 @@ def v9_signals():
 
 
 def v10_fixtures():
-    pairs = [(_norm(s), name) for name, c in CAP.items() for s in c.get("signals", [])]
-    for entry in FIX if isinstance(FIX, list) else []:
+    pairs = [(_norm(s), name) for name, c in CAP.items() for s in c.get("signals") or []]
+    if not isinstance(FIX, list) or not FIX:
+        fail("V10", "fixtures.yaml holds no list of fixtures; this check would be vacuous")
+        return
+    for entry in FIX:
         ask, expect = _norm(entry["ask"]), entry["expect"]
         hits = [(len(sig), owner) for sig, owner in pairs if sig in ask]
         if not hits:
@@ -228,6 +232,11 @@ def v12_prefix():
 def v13_route_budget():
     if len(ROUTES) > LIM["routes_max"]:
         fail("V13", f"{len(ROUTES)} routes (max {LIM['routes_max']})")
+    for name, r in ROUTES.items():
+        chain = r.get("chain") or []
+        if len(chain) > LIM["route_stages_max"]:
+            fail("V13", f"route {name} has {len(chain)} stages "
+                        f"(max {LIM['route_stages_max']})")
 
 
 def v14_patterns():
@@ -302,8 +311,9 @@ def v19_paths_resolve():
     probe = SKILL_DIRS[0]
     shared = sorted((SKILLS_ROOT / SHARED).glob("*.md"))
     for d in SKILL_DIRS:
+        # reference/ is read by the skill too, so its paths resolve the same way
         readable = [d / "SKILL.md"] + sorted((d / "playbooks").glob("*.md")) \
-            if (d / "playbooks").exists() else [d / "SKILL.md"]
+            + sorted((d / "reference").glob("*.md"))
         for f in readable:
             _check_paths(f, d, f"{d.name}/{f.relative_to(d)}")
     for f in shared:                      # checked once, against one skill dir
@@ -379,7 +389,9 @@ def v22_markers_classified():
         if ".git" in f.parts or f.parts[-2:-1] == ("delivered",):
             continue
         for i, line in enumerate(read(f).splitlines(), 1):
-            if MARKER_RE.search(line) and "`" not in line:
+            # Exempt only a marker quoted inside backticks — one that is being
+            # talked about. A live marker on a line with other code is still live.
+            if MARKER_RE.search(line) and not QUOTED_MARKER_RE.search(line):
                 if not any(c in line for c in VOCAB["residual_classes"]):
                     fail("V22", f"{f.relative_to(ROOT)}:{i} marker carries no residual class")
 
@@ -433,23 +445,33 @@ def v25_playbook_rot():
 
 def v26_boundaries_real():
     for name, c in CAP.items():
-        for entry in c.get("not", []):
-            go = entry.get("go", "")
-            if go.startswith(PREFIX) and go not in SKILLS:
-                fail("V26", f"{name} `not:` sends work to {go}, which does not exist")
+        for entry in c.get("not") or []:
+            go = entry.get("go")
+            if go not in SKILLS:
+                fail("V26", f"{name} `not:` sends work to {go!r}, which is not a skill "
+                            "in this set")
 
 
 def v27_symlinks_stay_inside():
     """What a skill reaches must live in this repo, and must actually be there."""
     for d in SKILL_DIRS:
-        for entry in sorted(d.iterdir()):
-            if not entry.is_symlink():
-                continue
+        for entry in sorted(_links_under(d)):
             target = (entry.parent / entry.readlink()).resolve()
+            rel = entry.relative_to(d.parent)
             if not target.exists():
-                fail("V27", f"{d.name}/{entry.name} is a broken symlink")
+                fail("V27", f"{rel} is a broken symlink")
             elif ROOT.resolve() not in target.parents and target != ROOT.resolve():
-                fail("V27", f"{d.name}/{entry.name} points outside the repo ({target})")
+                fail("V27", f"{rel} points outside the repo ({target})")
+
+
+def _links_under(d: Path):
+    """Every symlink inside a skill, at any depth, without following any — a
+    link in playbooks/ reaches as far as one beside SKILL.md."""
+    for entry in d.iterdir():
+        if entry.is_symlink():
+            yield entry
+        elif entry.is_dir():
+            yield from _links_under(entry)
 
 
 def v28_namespace_agrees():
@@ -815,18 +837,36 @@ def v38_enumerations_declared():
     Declared words are what V20 and V22 reach; the rest is what drifts.
     """
     declared = {w for words in VOCAB.values() for w in words}
+    seen = 0
     for f in sorted(SKILLS_ROOT.rglob("*.md")):
         if ".git" in f.parts:
             continue
         for i, line in enumerate(read(f).splitlines(), 1):
-            m = ENUM_RE.search(line)
-            if not m:
-                continue
-            words = [w.strip() for w in m.group(1).split("|")]
-            missing = [w for w in words if w not in declared]
-            if missing:
-                fail("V38", f"{f.relative_to(ROOT)}:{i} switches on {', '.join(missing)}, "
-                            "which harness.yaml vocabulary does not declare")
+            for m in _enumerations(line):
+                seen += 1
+                words = [w.strip() for w in m.split("|")]
+                missing = [w for w in words if w not in declared]
+                if missing:
+                    fail("V38", f"{f.relative_to(ROOT)}:{i} switches on "
+                                f"{', '.join(missing)}, which harness.yaml vocabulary "
+                                "does not declare")
+    if not seen:
+        fail("V38", "no enumeration matched anywhere in the corpus; the pattern has "
+                    "drifted from how pages write one, and this check is vacuous")
+
+
+def _enumerations(line: str) -> list[str]:
+    """The enumerations on a line: in the text, and in a trailing comment — the
+    place a schema line usually lists its values — with backticks and a closing
+    parenthetical removed, both of which hid the one real enumeration here."""
+    out = []
+    text, _, comment = line.partition("#")
+    for part in (text, comment) if comment else (text,):
+        part = re.sub(r"\s*\([^()]*\)\s*$", "", part.replace("`", "")).strip()
+        m = ENUM_RE.search(part)
+        if m:
+            out.append(m.group(1))
+    return out
 
 
 def v39_post_change_review():
@@ -835,11 +875,21 @@ def v39_post_change_review():
     candidate-only route remains valid. This checks ordering, not visual quality
     or a model's interpretation of a request or route condition.
     """
-    changers = {n for n, c in CAP.items()
-                if {"invocation", "region-edit"} & set(c.get("does", []))}
-    editors = {n for n, c in CAP.items() if "region-edit" in c.get("does", [])}
-    reviewers = {n for n, c in CAP.items() if "verdict" in c.get("does", [])}
-    deliverers = {n for n, c in CAP.items() if "placement" in c.get("does", [])}
+    roles = H.get("completion_roles") or {}
+
+    def holding(role: str) -> set[str]:
+        verbs = set(roles.get(role) or [])
+        return {n for n, c in CAP.items() if verbs & set(c.get("does") or [])}
+
+    changers, editors = holding("changes"), holding("edits")
+    reviewers, deliverers = holding("reviews"), holding("delivers")
+    # Every declared verb must still be one some skill does: a verb renamed in
+    # capabilities.yaml would otherwise drop out of its role without a word.
+    done = {v for c in CAP.values() for v in c.get("does") or []}
+    for role, verbs in roles.items():
+        for v in verbs or []:
+            if v not in done:
+                fail("V39", f"completion role {role} names {v!r}, which no skill does")
     if not all((changers, editors, reviewers, deliverers)):
         fail("V39", "completion roles are missing; this check would be vacuous")
         return

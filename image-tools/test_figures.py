@@ -51,6 +51,10 @@ CASES: list[tuple[str, str, str, str, str]] = [
      "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 768x512 | 1.5 | 1152x769 |"),
     ("check_density", "wrong", RUNGS,
      "Source must be at least: 2304x1536", "Source must be at least: 1536x1024"),
+    # the label says one density and the factor computes another; the emitted
+    # size agrees with the factor, so only the label comparison can catch it
+    ("check_density", "wrong", RUNGS,
+     "| `@2x` | 768x512 | 2.0 | 1536x1024 |", "| `@2x` | 768x512 | 1.5 | 1152x768 |"),
     ("check_density", "vacuous", RUNGS,
      "Source must be at least: 2304x1536", "The source should be big enough."),
     ("check_density", "vacuous", RUNGS,

@@ -52,7 +52,7 @@ size or path control** — the backing skill says so explicitly, and switching
 without being asked is a decision made on the user's behalf.
 
 It defaults to `gpt-image-2`, which is also the model the size constraints in
-`sizes.md` describe. It exposes what the built-in path does not: model,
+`reference/sizes.md` describe. It exposes what the built-in path does not: model,
 `quality`, explicit size, masks, output format, `--out` / `--out-dir`, and
 native transparent background on one older model. Reach for it when the user
 asks for it, or when a transparency request is too complex for local key

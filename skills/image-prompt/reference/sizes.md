@@ -9,13 +9,13 @@ against those constraints, and checks both the four constraints and the aspect
 list against `registry/harness.yaml`, which is what `imgfacts.py` decides
 legality from — so the page, the tool and the build cannot disagree. What
 nothing re-checks is either backing tool: both are a snapshot of one installed
-copy, and the models they belong to are named in `control-surface.md`.
+copy, and the models they belong to are named in `reference/control-surface.md`.
 
 # Sizes
 
 **The two generators do not take the same argument, and one of them takes no
 pixel size at all.** Which one is running decides what the paragraph below is
-even about; `control-surface.md` is where they are set side by side.
+even about; `reference/control-surface.md` is where they are set side by side.
 
 # Canvas sizes — the pixel path
 

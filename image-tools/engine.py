@@ -24,7 +24,11 @@ that verified nothing (DESIGN §5.4b).
 Engine quirks, re-checked by `make engines` rather than dated:
 
 * `codex exec` rejects a schema without `additionalProperties: false`, at every
-  level. Schemas are normalised here so callers write ordinary JSON Schema.
+  level, and one whose `required` does not list every property. Schemas are
+  normalised here so callers write ordinary JSON Schema.
+* The prompt goes on stdin for codex and claude, never as an argument: a prompt
+  that starts with `-` is read as a flag, and a long one overflows the argument
+  list before the engine ever sees it.
 * `agy --print` returns an envelope; the validated object is `structured_output`.
 * `claude -p --json-schema` validates the object and returns it in the envelope's
   `structured_output`; `result` carries the same object as a string.
@@ -50,21 +54,61 @@ class EngineError(RuntimeError):
     """The engine did not answer. Never a verdict."""
 
 
-def strict(schema: dict) -> dict:
-    """Every object closed, which is what codex requires and agy tolerates."""
+def strict(schema):
+    """Every object closed and every property required, at every depth —
+    including inside `anyOf`/`oneOf`/`allOf`, list-form `items`, and a nullable
+    `type: [object, null]`. That is what codex requires and agy tolerates."""
+    if isinstance(schema, list):
+        return [strict(v) for v in schema]
     if not isinstance(schema, dict):
         return schema
-    out = {k: strict(v) if isinstance(v, dict) else v for k, v in schema.items()}
-    if out.get("type") == "object":
+    out = {k: strict(v) if isinstance(v, (dict, list)) else v for k, v in schema.items()}
+    kind = out.get("type")
+    if kind == "object" or (isinstance(kind, list) and "object" in kind):
         out["additionalProperties"] = False
         out["properties"] = {k: strict(v) for k, v in (out.get("properties") or {}).items()}
-    if isinstance(out.get("items"), dict):
-        out["items"] = strict(out["items"])
+        out["required"] = list(out["properties"])
     return out
+
+
+_TYPES = {"object": dict, "array": list, "string": str, "boolean": bool,
+          "integer": int, "number": (int, float), "null": type(None)}
+
+
+def conforms(got, schema: dict, where: str = "answer") -> list[str]:
+    """What is wrong with `got` against the parts of `schema` this set uses:
+    `type`, `required` and `properties`. Not a full validator, and not a
+    lenient one either — `"false"` is not a boolean, and reading it as one
+    turned a pass into a refutation."""
+    wrong = []
+    kinds = schema.get("type")
+    if kinds is not None:
+        kinds = kinds if isinstance(kinds, list) else [kinds]
+        ok = any(isinstance(got, _TYPES[k]) and not (
+                     k in ("integer", "number") and isinstance(got, bool))
+                 for k in kinds if k in _TYPES)
+        if not ok:
+            return [f"{where} is {type(got).__name__}, not {'/'.join(kinds)}"]
+    if isinstance(got, dict):
+        for key in schema.get("required") or []:
+            if key not in got:
+                wrong.append(f"{where} has no {key}")
+        for key, sub in (schema.get("properties") or {}).items():
+            if key in got and isinstance(sub, dict):
+                wrong += conforms(got[key], sub, f"{where}.{key}")
+    return wrong
 
 
 def run(engine: str, prompt: str, schema: dict) -> dict:
     """Ask `engine` for one object matching `schema`. Raises rather than guessing."""
+    got = _ask(engine, prompt, schema)
+    wrong = conforms(got, schema)
+    if wrong:
+        raise EngineError(f"{engine} answered outside the schema: {'; '.join(wrong)}")
+    return got
+
+
+def _ask(engine: str, prompt: str, schema: dict):
     known = ENGINES.get("runs_on") or []
     if engine not in known:
         raise EngineError(f"{engine} is not one of {known}")
@@ -76,16 +120,16 @@ def run(engine: str, prompt: str, schema: dict) -> dict:
         if engine == "codex":
             out = d / "answer.json"
             argv = ["codex", "exec", "--output-schema", str(s), "-o", str(out),
-                    "--sandbox", "read-only", "--skip-git-repo-check", prompt]
-            r = _spawn(engine, argv)
+                    "--sandbox", "read-only", "--skip-git-repo-check", "-"]
+            r = _spawn(engine, argv, prompt)
             body = out.read_text(encoding="utf-8") if out.exists() else ""
             if not body.strip():
                 raise EngineError(f"codex wrote no answer.\n{_tail(r)}")
             return _parse(engine, body)
         if engine == "claude":
-            argv = ["claude", "-p", prompt, "--output-format", "json",
+            argv = ["claude", "-p", "--output-format", "json",
                     "--json-schema", json.dumps(schema)]
-            r = _spawn(engine, argv)
+            r = _spawn(engine, argv, prompt)
             envelope = _parse(engine, r.stdout)
             if "structured_output" not in envelope:
                 raise EngineError(f"claude returned no structured_output "
@@ -103,13 +147,18 @@ def run(engine: str, prompt: str, schema: dict) -> dict:
     raise EngineError(f"no invocation is known for {engine}")
 
 
-def _spawn(engine: str, argv: list[str]) -> subprocess.CompletedProcess:
+def _spawn(engine: str, argv: list[str], stdin: str | None = None
+           ) -> subprocess.CompletedProcess:
     try:
-        return subprocess.run(argv, capture_output=True, text=True, timeout=TIMEOUT)
+        return subprocess.run(argv, input=stdin, capture_output=True, text=True,
+                              timeout=TIMEOUT,
+                              stdin=None if stdin is not None else subprocess.DEVNULL)
     except FileNotFoundError:
         raise EngineError(f"{engine} is not on PATH") from None
     except subprocess.TimeoutExpired:
         raise EngineError(f"{engine} did not answer within {TIMEOUT}s") from None
+    except OSError as e:                      # e.g. an argument list too long
+        raise EngineError(f"{engine} could not be started: {e}") from None
 
 
 def _parse(engine: str, body: str) -> dict:
@@ -169,16 +218,19 @@ def selftest() -> int:
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("engine", nargs="?", help="the checker; omit to resolve from --running")
     ap.add_argument("--running", help="the engine running this harness — required, never guessed")
     ap.add_argument("--prompt-file")
     ap.add_argument("--schema")
     ap.add_argument("--selftest", action="store_true")
-    a = ap.parse_args()
-    if a.selftest or not (a.engine or a.running):
+    a = ap.parse_args(argv)
+    if a.selftest:
         return selftest()
+    if not a.running:
+        # Not even with a checker named: the exclusion is what makes it a check.
+        ap.error("--running is required: state the engine running this harness")
     if not (a.prompt_file and a.schema):
         print("need --prompt-file and --schema", file=sys.stderr)
         return 2

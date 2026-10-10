@@ -1,10 +1,11 @@
 <!-- image:deferred -->
 Purpose: which words in a direction survive into a prompt and move an image, and which are decoration.
 Read when: writing the look half of a brief, or wondering why a described mood did not arrive.
-Source: none — nothing outside this page can move what it states.
+Source: codex — the claims below come from its backing skill's guidance and runs, and
+move with its model.
 Verified: 2026-08-23 — the categories are re-checked by running a prompt with and
 without each word class and comparing; the specific claims below come from the
-backing skill's own prompting guidance and from generations run against it.
+codex backing skill's own prompting guidance and from generations run against it.
 
 # Words that move an image, and words that do not
 

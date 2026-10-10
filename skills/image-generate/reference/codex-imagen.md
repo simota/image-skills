@@ -52,9 +52,10 @@ project will reference is copied out; one left there is one cache clear from
 gone. The backing skill states this as a rule, and it is the single most common
 way an image task ends up half-done.
 
-`recipe.py capture` is the copy-out, and it writes the recipe in the same move —
-see `recipe-sidecar.md`. Doing it by hand is how the recipe gets written later,
-from memory, which `_image/RECIPE.md` calls not a recipe at all.
+`recipe.py capture --from <the returned path> --generator codex` is the
+copy-out, and it writes the recipe in the same move — see
+`reference/recipe-sidecar.md`. Doing it by hand is how the recipe gets written
+later, from memory, which `_image/RECIPE.md` calls not a recipe at all.
 
 ## What the invocation does not accept
 
@@ -82,5 +83,6 @@ without the other.
 ## Cost and time
 
 Each call is billed and takes tens of seconds. Square is typically fastest.
-There is no dry run, so the cheapest way to test a prompt is a small square
-draft, not a full-resolution final.
+There is no dry run. Whether a smaller square draft costs less than the final
+depends on the installed cost model (see `playbooks/batching.md`); do not
+assume it.

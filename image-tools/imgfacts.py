@@ -94,11 +94,15 @@ def _png(b: bytes) -> dict:
     if "tRNS" in chunks:
         alpha = True                             # indexed or keyed transparency
     return {"format": "PNG", "width": w, "height": h, "alpha": alpha,
-            "colour": _profile(chunks & {"iCCP", "sRGB", "cHRM", "gAMA"}),
+            "colour": _profile(chunks & {"cICP", "iCCP", "sRGB", "cHRM", "gAMA"}),
             "notes": [f"{kind}, {depth}-bit"]}
 
 
 def _profile(tags: set[str]) -> str:
+    # cICP outranks every other colour chunk when a decoder honours it, and it
+    # is what an HDR (PQ/HLG) file states its colour space in.
+    if "cICP" in tags:
+        return "cICP declared"
     if "iCCP" in tags:
         return "ICC embedded"
     if "sRGB" in tags:
@@ -112,18 +116,28 @@ def _profile(tags: set[str]) -> str:
 
 SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
        0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+SOF_PROGRESSIVE = {0xC2, 0xC6, 0xCA, 0xCE}
+SOF_LOSSLESS = {0xC3, 0xC7, 0xCB, 0xCF}
 # Markers that carry no length field. Reading two bytes of "length" from one of
 # these walks the parser off into the middle of a segment.
 JPEG_STANDALONE = {0x01, 0xD8, 0xD9} | set(range(0xD0, 0xD8))
 
 
-def jpeg_segments(raw: bytes):
+def jpeg_segments(raw: bytes, through_scans: bool = False):
     """Walk a JPEG's markers, and stop where the entropy-coded data starts.
 
     Yields `(marker, start, end, body)` per segment, with `body` None for a
     standalone marker. `start` includes any `0xFF` fill bytes that preceded the
     marker — the standard allows them, and a copier that emits `raw[start:end]`
     keeps the file byte-identical where it keeps a segment at all.
+
+    With `through_scans`, the walk continues past each scan: the entropy-coded
+    data is yielded as `(None, start, end, None)`, the segments a progressive
+    file puts between scans follow as usual, and the walk ends at EOI. Whatever
+    lies after EOI — an appended second JPEG with its own Exif, say — is not
+    part of this image, and a caller can see where it starts from EOI's `end`.
+    A reader needs none of that; a stripper that copied everything after the
+    first scan verbatim shipped all of it.
 
     Shared by the reader and the stripper on purpose: two parsers of one format
     is two chances to disagree about it, and they did.
@@ -143,6 +157,8 @@ def jpeg_segments(raw: bytes):
         if marker in JPEG_STANDALONE:
             yield marker, i, j + 2, None
             i = j + 2
+            if marker == 0xD9 and through_scans:
+                return
             continue
         if j + 4 > len(raw):
             return
@@ -150,8 +166,26 @@ def jpeg_segments(raw: bytes):
         end = j + 2 + seg
         yield marker, i, end, raw[j + 4:end]
         if marker == 0xDA:                      # the rest is entropy data
-            return
+            if not through_scans:
+                return
+            k = _entropy_end(raw, end)
+            yield None, end, k, None
+            end = k
         i = end
+
+
+def _entropy_end(raw: bytes, i: int) -> int:
+    """Where a scan's entropy-coded data stops: the first `0xFF` that is not a
+    stuffed zero or a restart marker. The end of the file if nothing is."""
+    while True:
+        k = raw.find(b"\xff", i)
+        if k < 0 or k + 1 >= len(raw):
+            return len(raw)
+        nxt = raw[k + 1]
+        if nxt == 0x00 or 0xD0 <= nxt <= 0xD7:
+            i = k + 2
+            continue
+        return k
 
 
 def _jpeg(b: bytes) -> dict:
@@ -160,9 +194,13 @@ def _jpeg(b: bytes) -> dict:
         if body is None or marker == 0xDA:
             continue
         if marker in SOF and size is None:
+            if len(body) < 5:
+                raise Unreadable("JPEG frame header too short to state a size")
             h, w = struct.unpack(">HH", body[1:5])
             size = (w, h)
-            notes.append("progressive" if marker in (0xC2, 0xC6, 0xCA) else "baseline")
+            notes.append("progressive" if marker in SOF_PROGRESSIVE
+                         else "lossless" if marker in SOF_LOSSLESS
+                         else "baseline" if marker == 0xC0 else "sequential")
         elif marker == 0xE2 and body.startswith(b"ICC_PROFILE\x00"):
             colour = "ICC embedded"
         elif marker == 0xE1 and body.startswith(b"Exif\x00\x00"):
@@ -177,6 +215,10 @@ def _jpeg(b: bytes) -> dict:
 
 def _webp(b: bytes) -> dict:
     tag = b[12:16]
+    # A header cut short reads as zeros, and zero plus one is a confident 1x1.
+    need = {b"VP8X": 30, b"VP8L": 25, b"VP8 ": 30}.get(tag)
+    if need and len(b) < need:
+        raise Unreadable(f"WebP {tag.decode('latin-1').strip()} header is truncated")
     if tag == b"VP8X":
         flags = b[20]
         w = int.from_bytes(b[24:27], "little") + 1
@@ -186,6 +228,8 @@ def _webp(b: bytes) -> dict:
                 "colour": "ICC embedded" if flags & 0x20 else "none declared",
                 "notes": ["extended"] + (["animated"] if flags & 0x02 else [])}
     if tag == b"VP8L":
+        if b[20] != 0x2F:
+            raise Unreadable("WebP lossless frame with no signature byte")
         bits = int.from_bytes(b[21:25], "little")
         return {"format": "WebP", "width": (bits & 0x3FFF) + 1,
                 "height": ((bits >> 14) & 0x3FFF) + 1,
@@ -203,10 +247,35 @@ def _webp(b: bytes) -> dict:
 # --- GIF ---------------------------------------------------------------------
 
 def _gif(b: bytes) -> dict:
+    if len(b) < 13:
+        raise Unreadable("GIF with no logical screen descriptor")
     w, h = struct.unpack("<HH", b[6:10])
-    return {"format": "GIF", "width": w, "height": h,
-            "alpha": b"\x21\xf9" in b[:4096],    # a graphic control extension
+    return {"format": "GIF", "width": w, "height": h, "alpha": _gif_transparent(b),
             "colour": "none declared", "notes": [b[:6].decode("latin-1")]}
+
+
+def _gif_transparent(b: bytes) -> bool:
+    """Whether any graphic control extension sets its transparency flag.
+
+    The extension's presence is not the answer: an animated GIF carries one per
+    frame for the delay alone. Walked block by block, because the colour tables
+    are raw bytes that can contain the extension's introducer by chance.
+    """
+    i = 13 + ((3 << ((b[10] & 7) + 1)) if b[10] & 0x80 else 0)
+    while i < len(b):
+        if b[i] == 0x21 and i + 1 < len(b):                # extension
+            if b[i + 1] == 0xF9 and i + 3 < len(b) and b[i + 3] & 1:
+                return True
+            i += 2
+        elif b[i] == 0x2C and i + 10 < len(b):             # image descriptor
+            packed = b[i + 9]
+            i += 10 + ((3 << ((packed & 7) + 1)) if packed & 0x80 else 0) + 1
+        else:                                              # trailer, or damage
+            return False
+        while i < len(b) and b[i]:                         # data sub-blocks
+            i += b[i] + 1
+        i += 1
+    return False
 
 
 READERS = [(PNG_SIG, _png), (b"\xff\xd8\xff", _jpeg), (b"GIF8", _gif)]
@@ -226,12 +295,17 @@ def probe_bytes(raw: bytes, name: str = "<bytes>") -> dict:
     """
     path = Path(name)
     out = None
-    for sig, fn in READERS:
-        if raw.startswith(sig):
-            out = fn(raw)
-            break
-    if out is None and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
-        out = _webp(raw)
+    try:
+        for sig, fn in READERS:
+            if raw.startswith(sig):
+                out = fn(raw)
+                break
+        if out is None and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+            out = _webp(raw)
+    except (struct.error, IndexError) as e:
+        # A reader that ran off the end of a cut-short file. That is a fact
+        # about the file, and it is reported as one rather than as a traceback.
+        raise Unreadable(f"{path.name}: truncated or malformed header ({e})") from e
     if out is None:
         raise Unreadable(f"{path.name}: not a PNG, JPEG, WebP or GIF")
     w, h = out["width"], out["height"]
@@ -287,19 +361,23 @@ def nearest_legal(w: int, h: int) -> tuple[int, int] | None:
     the limit means.
     """
     m = CANVAS["edge_multiple"]
-    if max(w, h) / min(w, h) > CANVAS["max_ratio"]:
+    if w <= 0 or h <= 0 or max(w, h) / min(w, h) > CANVAS["max_ratio"]:
         return None
     aspect, want = w / h, w * h
     inside, outside = [], []
-    for scale in (s / 100 for s in range(10, 1001)):
-        cw = max(m, round(w * scale / m) * m)
-        ch = max(m, round(h * scale / m) * m)
-        if illegal(cw, ch):
-            continue
-        drift = abs(cw / ch - aspect) / aspect
-        (inside if drift <= ASPECT_TOLERANCE else outside).append(
-            ((abs(cw * ch - want), drift) if drift <= ASPECT_TOLERANCE
-             else (drift, abs(cw * ch - want)), (cw, ch)))
+    # The whole grid. A range of scales around the request answered "nothing
+    # is legal" for 16x16 and for 100000x100000, and the two heights nearest
+    # the aspect per width missed the legal one just under the edge limit.
+    # Sixty thousand candidates is still instant.
+    grid = range(m, CANVAS["max_edge"] + 1, m)
+    for cw in grid:
+        for ch in grid:
+            if illegal(cw, ch):
+                continue
+            drift = abs(cw / ch - aspect) / aspect
+            (inside if drift <= ASPECT_TOLERANCE else outside).append(
+                ((abs(cw * ch - want), drift) if drift <= ASPECT_TOLERANCE
+                 else (drift, abs(cw * ch - want)), (cw, ch)))
     pool = inside or outside
     return min(pool)[1] if pool else None
 
@@ -361,11 +439,17 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
 
     if a.check_aspect:
-        name = a.generator or next(iter(sorted(ASPECT_GENERATORS)), "")
+        if a.generator is None and len(ASPECT_GENERATORS) > 1:
+            print(f"--check-aspect needs --generator: the registry declares "
+                  f"{sorted(ASPECT_GENERATORS)}, and their lists differ", file=sys.stderr)
+            return 2
+        name = a.generator or next(iter(ASPECT_GENERATORS), "")
         try:
             offered = aspect_offered(name)
             ratio = a.check_aspect if ":" in a.check_aspect else ""
             w, h = (int(x) for x in ratio.split(":"))
+            if w <= 0 or h <= 0:
+                raise ValueError(ratio)
         except (KeyError, ValueError) as e:
             print(e if isinstance(e, KeyError) else
                   f"not an aspect: {a.check_aspect!r} (want W:H)", file=sys.stderr)
@@ -386,6 +470,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.check_size:
         try:
             w, h = (int(x) for x in a.check_size.lower().split("x"))
+            if w <= 0 or h <= 0:
+                raise ValueError(a.check_size)
         except ValueError:
             print(f"not a size: {a.check_size!r} (want WxH)", file=sys.stderr)
             return 2

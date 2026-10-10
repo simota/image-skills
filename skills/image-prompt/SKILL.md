@@ -30,10 +30,11 @@ Phases: `CLASSIFY → STRUCTURE → CONSTRAIN → SIZE → VARY → RECORD`.
   brief first. `T2` — two or more skills own parts of it: route it. `T0` drops
   the paperwork, never the evidence. Mis-sized mid-run means re-sizing and saying so
 - **A dialogue comes first** when the deliverable's shape is not uniquely
-  determined, what counts as achieved does not fit in one sentence, the request
-  carries a word with no achievement condition ("nicer", "cleaner", "premium",
-  "more professional"), or the work replaces a picture a person already chose.
-  Looking at what exists is not executing
+  determined, what counts as achieved does not fit in one sentence, a word has no
+  achievement condition ("nicer", "cleaner", "more professional", "make it pop",
+  "modern"), the work replaces a picture a person already chose, or doing it wrong
+  would be expensive to undo (published, under someone's name, a real person or
+  product). Looking at what exists is not executing
 - **Settle `standard` in that dialogue** — what the image is judged against.
   Without one, every candidate is arguable and the loop has no exit. `excludes`
   may not be empty and execution waits on an empty `open_questions`
@@ -99,7 +100,7 @@ file comes back).
 
 - **The size is checked before it is sent**, not after a run fails: `measured`
   by [imgfacts](imgfacts.py), which reads those four rules from the registry
-- **The record is the recipe's `prompt` field**, verbatim, and the run that uses
+- **The record is the recipe's `prompt` field**, verbatim, and the run that uses it
   states `IRREPRODUCIBLE` when exact pixel regeneration is not supported; this
   does not prevent reusing the original file or editing it
 <!-- deliver:report -->
@@ -117,8 +118,8 @@ file comes back).
   and appears in the handoff's `open`; a run holding `Write` also leaves a
   `#TODO(agent):` marker carrying that class in the document it produced
 - **Never omit the sweep** — markers against `open`, promised decisions against
-  graded ones: `swept, 0 markers; 6 decisions / 6 graded`. While either pair
-  disagrees the status is not `DONE` (`_image/CONTRACT.md`)
+  graded ones: `swept, 0 markers / 0 in open; 6 decisions / 6 graded`. While
+  either pair disagrees the status is not `DONE` (`_image/CONTRACT.md`)
 <!-- /deliver:report -->
 
 ## Done when

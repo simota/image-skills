@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import struct
 import sys
 import tempfile
@@ -31,7 +32,10 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.dont_write_bytecode = True
 import imgfacts                                            # noqa: E402
+import engine                                              # noqa: E402
 import recipe                                              # noqa: E402
+import refute                                              # noqa: E402
+import render                                              # noqa: E402
 import strip                                               # noqa: E402
 
 failures: list[str] = []
@@ -265,6 +269,14 @@ def test_legality() -> None:
     check("--check-size rejects nonsense", imgfacts.main(["--check-size", "big"]), 2)
 
 
+def test_nearest_legal_at_the_edge() -> None:
+    """The nearest legal canvas can sit just under the edge limit, below both
+    grid heights nearest the aspect. A review found 2251x5653 answered with
+    1520x3824 when 1536x3840 is legal, the same shape, and nearer in area."""
+    check("the legal height under max_edge is considered",
+          imgfacts.nearest_legal(2251, 5653), (1536, 3840))
+
+
 def test_aspect_legality() -> None:
     """The other generator's only size lever, and the reduce-then-compare that
     makes `1920:1080` and `16:9` the same question."""
@@ -288,6 +300,16 @@ def test_aspect_legality() -> None:
           imgfacts.main(["--check-aspect", "5:4", "--json"]), 1)
     check("--check-aspect rejects nonsense",
           imgfacts.main(["--check-aspect", "wide"]), 2)
+    saved = dict(imgfacts.ASPECT_GENERATORS)
+    imgfacts.ASPECT_GENERATORS["second"] = {"aspects": ["5:4"]}
+    try:
+        check("with two aspect generators, --check-aspect asks which is meant",
+              imgfacts.main(["--check-aspect", "5:4"]), 2)
+        check("and answers once it is told",
+              imgfacts.main(["--check-aspect", "5:4", "--generator", "second"]), 0)
+    finally:
+        imgfacts.ASPECT_GENERATORS.clear()
+        imgfacts.ASPECT_GENERATORS.update(saved)
     check("--check-aspect refuses a generator that has no aspect list",
           imgfacts.main(["--check-aspect", "1:1", "--generator",
                          imgfacts.CANVAS_GENERATOR]), 2)
@@ -310,7 +332,8 @@ def capture(tmp: Path, dest: str, replace: bool = False, **kw) -> int:
     src = tmp / "src.png"
     src.write_bytes(png(64, 32))
     args = ["capture", "--to", str(tmp / dest), "--from", str(src),
-            "--prompt", kw.pop("prompt", PROMPT)]
+            "--prompt", kw.pop("prompt", PROMPT),
+            "--generator", kw.pop("generator", recipe.DEFAULT_GENERATOR)]
     for k, v in kw.items():
         args += [f"--{k.replace('_', '-')}", str(v)]
     if replace:
@@ -437,6 +460,87 @@ def capture_no_prompt(tmp: Path) -> int:
     except SystemExit as e:                    # argparse .error() exits 2
         return e.code
     return 0
+
+
+def test_recipe_hardening(tmp: Path) -> None:
+    """Capture writes nothing it cannot finish, and check reads what it is given."""
+    import os
+    d = tmp / "hard"
+    d.mkdir()
+    src = d / "src.png"
+    src.write_bytes(png(64, 32))
+
+    def cap(*extra: str) -> int:
+        return recipe.main(["capture", "--from", str(src), *extra])
+
+    check("a prompt file that is missing is refused",
+          cap("--to", str(d / "a.png"), "--generator", "codex",
+              "--prompt-file", str(d / "nope.txt")), 2)
+    check("and nothing was placed for the retry to trip over",
+          (d / "a.png").exists(), False)
+    (d / "latin1.txt").write_bytes(b"caf\xe9")
+    check("a prompt file that is not UTF-8 is refused",
+          cap("--to", str(d / "a.png"), "--generator", "codex",
+              "--prompt-file", str(d / "latin1.txt")), 2)
+    check("a blank prompt is refused at capture, not left for check",
+          cap("--to", str(d / "a.png"), "--generator", "codex", "--prompt", "   "), 2)
+    check("--from outside every generator's directory needs --generator",
+          cap("--to", str(d / "a.png"), "--prompt", PROMPT), 2)
+    check("a PNG placed under .jpg is refused",
+          cap("--to", str(d / "a.jpg"), "--generator", "codex", "--prompt", PROMPT), 2)
+    check("a directory is not a destination",
+          cap("--to", str(d), "--generator", "codex", "--prompt", PROMPT, "--replace"), 2)
+    check("the generated file is not its own destination",
+          cap("--to", str(src), "--generator", "codex", "--prompt", PROMPT, "--replace"), 2)
+    recipe.sidecar_of(d / "b.png").write_text("engine: x\n", encoding="utf-8")
+    check("an orphan recipe is not overwritten silently",
+          cap("--to", str(d / "b.png"), "--generator", "codex", "--prompt", PROMPT), 2)
+
+    home = d / "codex-home"
+    out = home / "generated_images" / "s1"
+    out.mkdir(parents=True)
+    (out / "exec-1.png").write_bytes(png(32, 32))
+    (out / "exec-2.png").symlink_to(out / "gone.png")      # dangling: not a hit
+    old = os.environ.get("CODEX_HOME")
+    os.environ["CODEX_HOME"] = str(home)
+    try:
+        check("a dangling link in the output directory does not crash the search",
+              recipe.newest_generated("codex")[1].name, "exec-1.png")
+        check("a file under a generator's directory is attributed to it",
+              recipe.generator_holding(out / "exec-1.png"), "codex")
+    finally:
+        if old is None:
+            os.environ.pop("CODEX_HOME")
+        else:
+            os.environ["CODEX_HOME"] = old
+
+    check("capture writes", cap("--to", str(d / "c.png"), "--generator", "codex",
+                                "--prompt", PROMPT), 0)
+    side = recipe.sidecar_of(d / "c.png")
+    good = side.read_text(encoding="utf-8")
+    here = Path.cwd()
+    try:
+        os.chdir(d)
+        check("the same file checked from its own directory is still the same file",
+              recipe.check_one(Path("c.png")), [])
+    finally:
+        os.chdir(here)
+    check("and checked by absolute path", recipe.check_one((d / "c.png").resolve()), [])
+
+    for text, says in (("just a string\n", "mapping"), ("- a: 1\n- b: 2\n", "mapping"),
+                       (good.replace("size:", "size: 64x32\nold_size:"), "size must"),
+                       (good.replace("note:", "old_note:"), "IRREPRODUCIBLE")):
+        side.write_text(text, encoding="utf-8")
+        truthy(f"a malformed recipe is reported ({says}), not a traceback",
+               any(says in p for p in recipe.check_one(d / "c.png")))
+    side.write_text(good, encoding="utf-8")
+
+    for i, text in enumerate(("a\x85b\nc", "a\u2028b\nc", "a\rb\nc")):
+        dest = d / f"nel-{i}.png"
+        check(f"capture with a YAML line-break character {i}",
+              cap("--to", str(dest), "--generator", "codex", "--prompt", text), 0)
+        doc = yaml.safe_load(recipe.sidecar_of(dest).read_text(encoding="utf-8"))
+        check(f"the prompt with that character {i} survives exactly", doc["prompt"], text)
 
 
 def tags_of(raw: bytes) -> set[str]:
@@ -615,21 +719,25 @@ def test_no_writes_while_reporting(tmp: Path) -> None:
     f = tmp / "ro.png"
     f.write_bytes(png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")))
     seen = []
-    real = Path.write_bytes
+    real = strip._write_atomically
 
-    def spy(self, data):
-        seen.append(str(self))
-        return real(self, data)
+    def spy(dest, data):
+        seen.append(str(dest))
+        return real(dest, data)
 
-    Path.write_bytes = spy
+    strip._write_atomically = spy
+    listing = sorted(tmp.iterdir())
     try:
         check("reporting exits 0", strip.main([str(f)]), 0)
         check("reporting writes nothing", seen, [])
+        check("reporting leaves the directory as it was", sorted(tmp.iterdir()), listing)
         check("--out writes exactly one file",
               strip.main([str(f), "--out", str(tmp / "sub" / "o.png")]), 0)
         check("and that file is the destination", seen, [str(tmp / "sub" / "o.png")])
+        check("and leaves no temporary file beside it",
+              sorted(x.name for x in (tmp / "sub").iterdir()), ["o.png"])
     finally:
-        Path.write_bytes = real
+        strip._write_atomically = real
     truthy("the destination is a real image",
            imgfacts.probe(tmp / "sub" / "o.png")["size"] == "16x16")
 
@@ -647,6 +755,227 @@ def test_no_writes_while_reporting(tmp: Path) -> None:
     check("--in-place is idempotent", strip.main([str(f), "--in-place"]), 0)
     check("nothing left to remove the second time", f.read_bytes(), after)
     check("an unreadable file exits 1", strip.main([str(tmp / "junk.png")]), 1)
+
+    # --in-place on a symlink strips the file it points to and keeps the link
+    real = tmp / "real.png"
+    real.write_bytes(png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")))
+    link = tmp / "link.png"
+    link.symlink_to(real)
+    check("--in-place through a symlink exits 0", strip.main([str(link), "--in-place"]), 0)
+    truthy("the link is still a link", link.is_symlink())
+    truthy("and the file it points to was stripped", b"tEXt" not in real.read_bytes())
+
+
+def test_malformed_input(tmp: Path) -> None:
+    """Cut-short and odd files. Each case here was a traceback or a confident
+    wrong answer before a review built the bytes and ran them."""
+    def unreadable(name: str, raw: bytes) -> None:
+        truthy(f"{name} is Unreadable, not a crash or an answer",
+               raises(lambda: imgfacts.probe_bytes(raw), imgfacts.Unreadable))
+
+    sof = b"\xff\xd8\xff\xc0\x00\x04\x08\x00"
+    unreadable("a JPEG frame header too short to hold a size", sof)
+    unreadable("a GIF shorter than its screen descriptor", b"GIF89a\x10\x00")
+    vp8x = webp_vp8x(16, 16, alpha=False, icc=False)
+    unreadable("a VP8X header cut short", vp8x[:21])
+    vp8l = webp_vp8l(16, 16, alpha=False)
+    unreadable("a VP8L chunk with no data", vp8l[:20])
+    unreadable("a VP8L chunk with no signature byte", vp8l[:20] + b"\x00" + vp8l[21:])
+    f = tmp / "cut.webp"
+    f.write_bytes(vp8x[:21])
+    check("imgfacts exits 1 on a cut-short file, without a traceback",
+          imgfacts.main([str(f)]), 1)
+    check("strip exits 1 on it too", strip.main([str(f)]), 1)
+
+    for frame, note in ((0xC0, "baseline"), (0xC1, "sequential"),
+                        (0xCE, "progressive"), (0xC3, "lossless")):
+        body = b"\x08" + struct.pack(">HH", 8, 8) + b"\x01\x01\x11\x00"
+        raw = (b"\xff\xd8" + bytes([0xFF, frame]) + struct.pack(">H", len(body) + 2)
+               + body + b"\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00")
+        truthy(f"SOF {frame:#x} is labelled {note}",
+               note in imgfacts.probe_bytes(raw)["notes"])
+
+    # A graphic control extension is in every animated GIF, for the delay; only
+    # its transparency bit says alpha. The colour table holds the extension's
+    # introducer by chance, which a byte search mistook for one.
+    head = (b"GIF89a" + struct.pack("<HH", 4, 4) + b"\x80\x00\x00"
+            + b"\x21\xf9\x04\x01\x21\xf9")
+    frame = b"\x2c" + b"\x00" * 8 + b"\x00" + b"\x02\x02\x4c\x01\x00"
+    gce = lambda flags: b"\x21\xf9\x04" + bytes([flags]) + b"\x00\x00\x00\x00"
+    check("a GIF whose extension sets no transparency has no alpha",
+          imgfacts.probe_bytes(head + gce(0) + frame + b"\x3b")["alpha"], False)
+    check("one that sets it has alpha",
+          imgfacts.probe_bytes(head + gce(1) + frame + b"\x3b")["alpha"], True)
+    check("and a later frame setting it counts",
+          imgfacts.probe_bytes(head + frame + gce(1) + frame + b"\x3b")["alpha"], True)
+
+    for size in ("16x0", "0x16", "-16x16"):
+        check(f"--check-size {size} is not a size",
+              imgfacts.main([f"--check-size={size}"]), 2)
+    for aspect in ("0:1", "1:0", "0:0"):
+        check(f"--check-aspect {aspect} is not an aspect",
+              imgfacts.main([f"--check-aspect={aspect}"]), 2)
+    for w, h in ((16, 16), (100000, 100000), (64, 32)):
+        n = imgfacts.nearest_legal(w, h)
+        truthy(f"nearest_legal({w},{h}) answers however far off the request is", n)
+        if n:
+            check(f"nearest_legal({w},{h}) is legal", imgfacts.illegal(*n), set())
+            check(f"nearest_legal({w},{h}) keeps the shape",
+                  imgfacts.aspect_of(*n), imgfacts.aspect_of(w, h))
+
+
+def test_strip_leaks(tmp: Path) -> None:
+    """What a stripper must not let through, and what it must not take away."""
+    f = tmp / "leak.jpg"
+    second = jpeg_with(8, 8, [(0xE1, b"Exif\x00\x00" + exif(None) + b"GPSSECRET")])
+    f.write_bytes(jpeg_with(16, 16, []) + second)
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("an appended second JPEG and its Exif are gone", b"GPSSECRET" not in out)
+    truthy("and the removal is reported", any("after EOI" in d for d in dropped))
+    truthy("the image itself still ends at EOI", out.endswith(b"\xff\xd9"))
+
+    # A progressive file puts segments between its scans; the policy applies
+    # there too, and the scans themselves survive byte for byte.
+    scan = b"\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00"
+    entropy = b"AB\xff\x00CD\xff\xd0EF"            # a stuffed byte and a restart
+    com = b"\xff\xfe" + struct.pack(">H", 2 + 6) + b"SECRET"
+    dht = b"\xff\xc4" + struct.pack(">H", 2 + 3) + b"\x00\x01\x02"
+    raw = jpeg_with(16, 16, [])[:-2] + dht + com + scan + entropy + b"\xff\xd9"
+    f.write_bytes(raw)
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("a comment between scans is removed", b"SECRET" not in out)
+    truthy("a table between scans stays", dht in out)
+    truthy("entropy data with stuffing and restarts survives intact",
+           entropy in out and out.count(scan) == 2)
+
+    thumb = (0xE0, b"JFXX\x00\x10" + b"THUMBNAILDATA")
+    jfif = (0xE0, b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00")
+    f.write_bytes(jpeg_with(16, 16, [jfif, thumb]))
+    out, _, _ = strip.strip(f, Opt())
+    truthy("a JFXX thumbnail in APP0 is removed", b"THUMBNAILDATA" not in out)
+    truthy("the JFIF APP0 stays", b"JFIF\x00" in out)
+
+    f = tmp / "hdr.png"
+    f.write_bytes(png(16, 16, extra=raw_chunk(b"cICP", b"\x09\x10\x00\x01")
+                      + raw_chunk(b"cLLI", b"\x00" * 8)))
+    out, _, before = strip.strip(f, Opt())
+    truthy("cICP stays: it is the colour space", "cICP" in tags_of(out))
+    truthy("cLLI stays with it", "cLLI" in tags_of(out))
+    check("imgfacts reports cICP", before["colour"], "cICP declared")
+
+    f = tmp / "cut.png"
+    whole = png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v"))
+    f.write_bytes(whole[:-30])
+    truthy("a truncated PNG is refused, not written short",
+           refuses(f, Opt(), "truncated"))
+    f.write_bytes(whole[:-12])
+    truthy("a PNG with no IEND is refused", refuses(f, Opt(), "IEND"))
+    f = tmp / "cut.webp"
+    full = webp_with(16, 16, 0, [(b"EXIF", exif(None) * 4)])
+    f.write_bytes(full[:-6])
+    truthy("a truncated WebP is refused", refuses(f, Opt(), "truncated"))
+
+
+# --- engine, refute, render -------------------------------------------------
+
+FAKE = """#!/usr/bin/env python3
+import json, os, sys
+argv = sys.argv[1:]
+prompt = sys.stdin.read()
+with open(os.environ["FAKE_LOG"], "a") as log:
+    log.write(json.dumps({"argv": argv, "stdin": prompt}) + "\\n")
+answer = os.environ["FAKE_ANSWER"]
+if "-o" in argv:                                   # codex writes a file
+    open(argv[argv.index("-o") + 1], "w").write(answer)
+else:                                              # claude and agy print an envelope
+    print(json.dumps({"structured_output": json.loads(answer)}))
+"""
+
+
+@contextlib.contextmanager
+def fake_engines(tmp: Path, answer):
+    import os
+    bin_dir = tmp / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    for name in engine.ENGINES["runs_on"]:
+        f = bin_dir / name
+        f.write_text(FAKE, encoding="utf-8")
+        f.chmod(0o755)
+    log = tmp / "fake.log"
+    log.write_text("", encoding="utf-8")
+    saved = {k: os.environ.get(k) for k in ("PATH", "FAKE_LOG", "FAKE_ANSWER")}
+    os.environ.update(PATH=f"{bin_dir}{os.pathsep}{saved['PATH']}",
+                      FAKE_LOG=str(log), FAKE_ANSWER=json.dumps(answer))
+    try:
+        yield log
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def test_engine(tmp: Path) -> None:
+    """A checker that answered outside its schema did not answer."""
+    good = {"refuted": False, "reason": "r", "what_would_settle_it": "w"}
+    for name in engine.ENGINES["runs_on"]:
+        with fake_engines(tmp, good):
+            check(f"{name}: a conforming answer comes back",
+                  engine.run(name, "-starts with a dash", refute.SCHEMA), good)
+        with fake_engines(tmp, dict(good, refuted="false")):
+            truthy(f"{name}: the string 'false' is not a boolean",
+                   raises(lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError))
+        with fake_engines(tmp, {"reason": "r"}):
+            truthy(f"{name}: a missing required key is an error, not a KeyError",
+                   raises(lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError))
+        with fake_engines(tmp, None):
+            truthy(f"{name}: a null answer is an error, not a TypeError",
+                   raises(lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError))
+    with fake_engines(tmp, good) as log:
+        engine.run("codex", "-p --help", refute.SCHEMA)
+        engine.run("claude", "-p --help", refute.SCHEMA)
+        calls = [json.loads(x) for x in log.read_text().splitlines()]
+        check("codex and claude receive the prompt on stdin, verbatim",
+              [c["stdin"] for c in calls], ["-p --help", "-p --help"])
+        truthy("and never as an argument", all("-p --help" not in c["argv"] for c in calls))
+
+    nested = {"type": "object", "properties": {
+        "a": {"anyOf": [{"type": "object", "properties": {"x": {"type": "string"}}},
+                        {"type": "null"}]},
+        "b": {"type": ["object", "null"], "properties": {"y": {"type": "integer"}}},
+        "c": {"type": "array", "items": [{"type": "object", "properties": {}}]}}}
+    closed = engine.strict(nested)
+    check("strict closes an object inside anyOf",
+          closed["properties"]["a"]["anyOf"][0]["additionalProperties"], False)
+    check("strict closes a nullable object", closed["properties"]["b"]["additionalProperties"], False)
+    check("strict closes list-form items", closed["properties"]["c"]["items"][0]["additionalProperties"], False)
+    check("strict requires every property", closed["required"], ["a", "b", "c"])
+
+    check("engine.py with no --running stops rather than running anything",
+          exits(lambda: engine.main(["codex", "--prompt-file", "p", "--schema", "s"])), 2)
+
+    claims = tmp / "claims.json"
+    claims.write_text(json.dumps([{"id": "c1", "claim": "the file is 1536x1024"}]))
+    with fake_engines(tmp, good):
+        check("refute exits 0 when every claim was read", refute.main(["--running", "claude", str(claims)]), 0)
+    with fake_engines(tmp, None):
+        check("refute exits 1 when a claim went unchecked",
+              refute.main(["--running", "claude", str(claims)]), 1)
+        check("and with --json too",
+              refute.main(["--running", "claude", "--json", str(claims)]), 1)
+    for bad in ("[]", '[{"id": "x"}]', '["text"]', "not json"):
+        claims.write_text(bad)
+        check(f"refute rejects the claims file {bad!r} before asking anyone",
+              refute.main(["--running", "claude", str(claims)]), 2)
+
+    skill = tmp / "SKILL.md"
+    key = next(iter(render.H["delivered"]))
+    skill.write_text(f"# x\n\n<!-- deliver:{key} -->\nold\n", encoding="utf-8")
+    truthy("render refuses an open marker with no close, rather than duplicating",
+           raises(lambda: render.render(skill), SystemExit))
+    check("and leaves the file as it was", skill.read_text(encoding="utf-8"),
+          f"# x\n\n<!-- deliver:{key} -->\nold\n")
 
 
 def exits(fn) -> int:
@@ -680,13 +1009,18 @@ def main() -> int:
         tmp = Path(d)
         test_imgfacts(tmp)
         test_legality()
+        test_nearest_legal_at_the_edge()
         test_aspect_legality()
         test_recipe(tmp)
         test_recipe_verbatim(tmp)
         test_recipe_generators(tmp)
+        test_recipe_hardening(tmp)
         test_strip(tmp)
         test_no_writes_while_reporting(tmp)
+        test_malformed_input(tmp)
+        test_strip_leaks(tmp)
         test_cli_surfaces(tmp)
+        test_engine(tmp)
     if failures:
         print(f"{len(failures)} failure(s):")
         print("\n".join(failures))

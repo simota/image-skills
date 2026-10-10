@@ -4,10 +4,11 @@
   brief first. `T2` — two or more skills own parts of it: route it. `T0` drops
   the paperwork, never the evidence. Mis-sized mid-run means re-sizing and saying so
 - **A dialogue comes first** when the deliverable's shape is not uniquely
-  determined, what counts as achieved does not fit in one sentence, the request
-  carries a word with no achievement condition ("nicer", "cleaner", "premium",
-  "more professional"), or the work replaces a picture a person already chose.
-  Looking at what exists is not executing
+  determined, what counts as achieved does not fit in one sentence, a word has no
+  achievement condition ("nicer", "cleaner", "more professional", "make it pop",
+  "modern"), the work replaces a picture a person already chose, or doing it wrong
+  would be expensive to undo (published, under someone's name, a real person or
+  product). Looking at what exists is not executing
 - **Settle `standard` in that dialogue** — what the image is judged against.
   Without one, every candidate is arguable and the loop has no exit. `excludes`
   may not be empty and execution waits on an empty `open_questions`

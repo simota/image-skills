@@ -54,8 +54,9 @@ afterwards, and a conversion is a second operation on the image that belongs in
 the recipe as one.
 
 **Nothing cleans this directory up and nothing guarantees it survives.** A file
-the project will reference is copied out — `recipe.py capture --generator agy`
-is that copy-out, and it writes the recipe in the same move.
+the project will reference is copied out — `recipe.py capture --from <the
+returned path> --generator agy` is that copy-out, and it writes the recipe in
+the same move.
 
 ## The two behaviours that surprise people
 
@@ -66,7 +67,8 @@ is that copy-out, and it writes the recipe in the same move.
   envelope** — and equally, a `SUCCESS` is not evidence a file exists
 - **A first call can be abandoned and retried under a different `ImageName`.**
   The observed run called the tool twice; only the second left a file. So the
-  newest file is the answer, and the count of calls is not the count of images
+  count of calls is not the count of images: capture the path the run returned,
+  and treat the newest file as a fallback, never as provenance
 
 ## Cost and time
 

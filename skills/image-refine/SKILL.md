@@ -31,10 +31,11 @@ Phases: `LOCATE → CLASSIFY → INVARIANTS → CHANGE → COMPARE`.
   brief first. `T2` — two or more skills own parts of it: route it. `T0` drops
   the paperwork, never the evidence. Mis-sized mid-run means re-sizing and saying so
 - **A dialogue comes first** when the deliverable's shape is not uniquely
-  determined, what counts as achieved does not fit in one sentence, the request
-  carries a word with no achievement condition ("nicer", "cleaner", "premium",
-  "more professional"), or the work replaces a picture a person already chose.
-  Looking at what exists is not executing
+  determined, what counts as achieved does not fit in one sentence, a word has no
+  achievement condition ("nicer", "cleaner", "more professional", "make it pop",
+  "modern"), the work replaces a picture a person already chose, or doing it wrong
+  would be expensive to undo (published, under someone's name, a real person or
+  product). Looking at what exists is not executing
 - **Settle `standard` in that dialogue** — what the image is judged against.
   Without one, every candidate is arguable and the loop has no exit. `excludes`
   may not be empty and execution waits on an empty `open_questions`
@@ -58,10 +59,10 @@ Phases: `LOCATE → CLASSIFY → INVARIANTS → CHANGE → COMPARE`.
 | Situation | How to proceed |
 |---|---|
 | Turning a complaint into something a model can act on | [locate-then-change](playbooks/locate-then-change.md) |
-| Choosing how hard a change to make | [edit-ladder](playbooks/edit-ladder.md) — reprompt, region edit, extend, upscale, hand off; take the lowest rung that can work |
+| Choosing how hard a change to make | [edit-ladder](playbooks/edit-ladder.md) — crop or scale, region edit, extend, re-prompt with invariants, back to the brief; take the lowest rung that can work |
 | Picking the edit mode the generator understands | [edit-modes](reference/edit-modes.md) — the taxonomy the backing skill keys off, and what each preserves |
 | A transparent cutout is wanted | [cutouts](reference/cutouts.md) — chroma key, then local removal, then check the alpha |
-| Checking what moved that should not have | [imgfacts](imgfacts.py) on the before and the after — an edit path changes dimensions or format without saying so |
+| Checking what moved that should not have | [imgfacts](imgfacts.py) on the before and the after — an edit path can change dimensions or format without saying so |
 | The change has failed twice the same way | Stop and hand back. A third attempt at the same rung is how a budget is spent proving nothing |
 | A claim here would be expensive to get wrong | [refute](refute.py) — put it to the engines that did not make it, asked to break it rather than to agree. Unrefuted is n engines finding nothing, never proof |
 | The fix would change who or what the picture depicts | That is not a refinement. Hand it back |
@@ -115,8 +116,8 @@ that has not been noticed yet.
   and appears in the handoff's `open`; a run holding `Write` also leaves a
   `#TODO(agent):` marker carrying that class in the document it produced
 - **Never omit the sweep** — markers against `open`, promised decisions against
-  graded ones: `swept, 0 markers; 6 decisions / 6 graded`. While either pair
-  disagrees the status is not `DONE` (`_image/CONTRACT.md`)
+  graded ones: `swept, 0 markers / 0 in open; 6 decisions / 6 graded`. While
+  either pair disagrees the status is not `DONE` (`_image/CONTRACT.md`)
 <!-- /deliver:report -->
 
 ## Done when

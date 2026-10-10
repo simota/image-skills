@@ -50,10 +50,12 @@ using an appropriate processor rather than forcing this helper to fit.
 
 | Keep | Strip |
 |---|---|
-| The colour profile | Camera and lens fields |
-| Orientation, or apply it and then strip it | GPS and location |
+| The colour profile, and a PNG's `cICP`, `mDCV` and `cLLI` colour chunks | Camera and lens fields |
+| JPEG `APP0` only when it is JFIF, `APP14` only when it is Adobe | GPS and location |
 | Any provenance or content-credential block the project has decided to carry | Software and timestamps |
-| Alpha channel | Thumbnails, previews, comments |
+| Alpha channel | Thumbnails (JFXX included), previews, comments |
+| — | All of Exif, orientation included; a non-upright orientation is refused first |
+| — | Anything after the JPEG EOI or the PNG IEND |
 
 **Orientation is the one that bites.** Stripping an orientation flag without
 first applying it rotates the picture ninety degrees somewhere downstream, on

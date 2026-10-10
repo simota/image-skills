@@ -7,15 +7,16 @@ into a wrong one breaks the build instead of ageing quietly.
 
     make figures
 
-Two things are checked, and both are arithmetic the same page already states:
+Four things are checked, and each is arithmetic a page already states or a
+number the registry already declares:
 
 * `image-prompt/reference/sizes.md` — every size listed as legal is put back
   through the four constraints that page states, and its stated ratio and
   megapixel figure are recomputed. Every size listed as rejected must still be
   rejected, by the rule named against it and not merely by some other rule.
 * `image-deliver/reference/export-targets.md` — every density rung is recomputed
-  from its own stated base and factor, and the stated source floor is checked
-  against the largest rung.
+  from its own stated base and factor, its `@Nx` label is checked to be that
+  factor, and the stated source floor is checked against the largest rung.
 * the same four constraints, as prose on that page against the canvas generator's
   block in the registry. The page is written for a reader and the registry is
   what `imgfacts.py` decides legality from; one declaration means the tool and
@@ -107,7 +108,7 @@ def _breaks(w: int, h: int, lim: dict) -> set[str]:
         broken.add("max edge")
     if w % lim["multiple of 16"][0] or h % lim["multiple of 16"][0]:
         broken.add("multiple of 16")
-    if max(w, h) / min(w, h) > lim["ratio"][0]:
+    if min(w, h) == 0 or max(w, h) / min(w, h) > lim["ratio"][0]:
         broken.add("ratio")
     lo, hi = lim["total pixels"]
     if not (lo <= w * h <= hi):
@@ -183,7 +184,8 @@ def check_sizes() -> int:
 # --- density rungs ---------------------------------------------------------
 
 RUNG_ROW = re.compile(
-    r"^\|\s*`@[0-9.]+x`\s*\|\s*(\d+)x(\d+)\s*\|\s*([0-9.]+)\s*\|\s*(\d+)x(\d+)\s*\|")
+    r"^\|\s*`@(\d+(?:\.\d+)?)x`\s*\|\s*(\d+)x(\d+)\s*\|\s*(\d+(?:\.\d+)?)\s*\|"
+    r"\s*(\d+)x(\d+)\s*\|")
 FLOOR = re.compile(r"Source must be at least:\s*(\d+)x(\d+)")
 
 
@@ -208,8 +210,12 @@ def check_density() -> int:
                  f"size, so nothing about it can be recomputed — {line[:60]}")
     widest = (0, 0)
     for i, m in rows:
-        bw, bh, f, ew, eh = (int(m.group(1)), int(m.group(2)), float(m.group(3)),
-                             int(m.group(4)), int(m.group(5)))
+        label, bw, bh, f, ew, eh = (float(m.group(1)), int(m.group(2)),
+                                    int(m.group(3)), float(m.group(4)),
+                                    int(m.group(5)), int(m.group(6)))
+        if label != f:
+            fail(f"export-targets.md:{i}",
+                 f"rung @{m.group(1)}x states a factor of {m.group(4)}")
         want = (round(bw * f), round(bh * f))
         if (ew, eh) != want:
             fail(f"export-targets.md:{i}",

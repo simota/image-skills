@@ -1,7 +1,8 @@
 <!-- image:deferred -->
 Purpose: what size each generator will accept — pixel canvases for one, a fixed list of aspects for the other — and which are known to work.
 Read when: choosing dimensions, or a run has been rejected for an invalid size.
-Source: none — nothing outside this page can move what it states.
+Source: codex, agy — the canvas rules are codex's fallback CLI's and the aspect list is
+agy's `generate_image`'s; both move with those tools' releases.
 Verified: 2026-08-23 — the constraints and the size list are quoted from the
 installed backing skill; the aspect list was re-read from the running tool on
 2026-08-24 and one 1:1 run measured. `make figures` recomputes every row below
@@ -9,15 +10,15 @@ against those constraints, and checks both the four constraints and the aspect
 list against `registry/harness.yaml`, which is what `imgfacts.py` decides
 legality from — so the page, the tool and the build cannot disagree. What
 nothing re-checks is either backing tool: both are a snapshot of one installed
-copy, and the models they belong to are named in `control-surface.md`.
+copy, and the models they belong to are named in `reference/control-surface.md`.
 
 # Sizes
 
 **The two generators do not take the same argument, and one of them takes no
 pixel size at all.** Which one is running decides what the paragraph below is
-even about; `control-surface.md` is where they are set side by side.
+even about; `reference/control-surface.md` is where they are set side by side.
 
-# Canvas sizes — the pixel path
+# Canvas sizes — the pixel path (codex)
 
 ## The two paths do not take the same argument
 
@@ -50,7 +51,7 @@ A size is legal only if all four hold:
 
 | Size | Ratio | Megapixels | Use |
 |---|---|---|---|
-| `1024x1024` | 1:1 | 1.05 MP | fast square draft; the cheapest useful run |
+| `1024x1024` | 1:1 | 1.05 MP | a fast square draft |
 | `1536x1024` | 3:2 | 1.57 MP | landscape default |
 | `1024x1536` | 2:3 | 1.57 MP | portrait default |
 | `2048x2048` | 1:1 | 4.19 MP | square, print-ish |
@@ -58,8 +59,9 @@ A size is legal only if all four hold:
 | `3840x2160` | 16:9 | 8.29 MP | 4K landscape; sits exactly on the pixel ceiling |
 | `2160x3840` | 9:16 | 8.29 MP | 4K portrait |
 
-Square is typically fastest. Start there while the prompt is still moving, and
-pay for the final aspect once it has stopped.
+Square is typically fastest. While the prompt is still moving, start there if
+the installed cost model makes it cheaper, and pay for the final aspect once it
+has stopped.
 
 ## Sizes that are rejected, and by which rule
 
@@ -68,12 +70,12 @@ pay for the final aspect once it has stopped.
 | `1000x1000` | multiple of 16 |
 | `512x512` | total pixels |
 | `3840x1024` | ratio |
-| `4096x2304` | max edge |
+| `3856x1600` | max edge |
 
 Each of these is recomputed too: if a rule stops being violated by the size
 listed against it, the check fails rather than passing quietly.
 
-# Aspects — the ratio path
+# Aspects — the ratio path (agy)
 
 The other generator's `generate_image` takes `AspectRatio` and nothing else: no
 width, no height, no megapixel count. **The seven below are the whole size

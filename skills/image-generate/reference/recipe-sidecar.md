@@ -18,23 +18,30 @@ the file and records its measured size. A manifest or an existing run record is
 also valid; do not create duplicate sidecars solely to use this helper:
 
 ```sh
-recipe.py capture --to assets/hero.png --prompt-file p.txt \
+recipe.py capture --from <returned-file> --generator codex \
+  --to assets/hero.png --prompt-file p.txt \
   --excluded "watermarks, text" --asked 1536x1024
-recipe.py capture --to assets/hero.jpg --prompt-file p.txt \
-  --generator agy --asked 16:9        # the aspect path: a ratio, never pixels
+recipe.py capture --from <returned-file> --generator agy \
+  --to assets/hero.jpg --prompt-file p.txt \
+  --asked 16:9                        # the aspect path: a ratio, never pixels
 recipe.py check assets/hero.png        # every field, and the size against the file
 recipe.py check --dir generated/       # only a directory of retained generated images
 ```
 
 `--generator` picks whose output directory is searched and whose invocation goes
-into `engine`. Without it, every declared generator's directory is searched and
-the newest file across all of them wins. That fallback is not proof of which
+into `engine`. A `--from` file inside a generator's output directory is
+attributed to that generator; one anywhere else is refused until `--generator`
+names it. With neither flag, every declared generator's directory is searched
+and the newest file across all of them wins. That fallback is not proof of which
 run made the file: prefer the actual returned path and invocation, particularly
 after failure or concurrent work. Unknown-origin photographs do not need a
 generation recipe and should not be sent to this directory-wide checker.
 
-It refuses to overwrite an existing file: that is a sibling-version decision for
-a person (`naming` in the delivering skill), not something a tool does quietly.
+It refuses to overwrite an existing file or recipe: that is a sibling-version
+decision for a person (`naming` in the delivering skill), not something a tool
+does quietly. It also refuses a destination whose extension names another
+format — a JPEG placed as `.png` is a conversion nobody performed — and reads
+the prompt before copying anything, so a failure leaves no recipe-less file.
 
 ## The three forms
 
@@ -70,7 +77,7 @@ inputs: []
 output:
   generated: "~/.codex/generated_images/01a0…/exec-d9e8….png"
   placed: "docs/assets/landing-header.png"
-note: "IRREPRODUCIBLE — no seed. This file is the artifact."
+note: "IRREPRODUCIBLE — exact regeneration not established; this file is the artifact"
 ```
 
 ## The fields people get wrong
@@ -85,14 +92,15 @@ note: "IRREPRODUCIBLE — no seed. This file is the artifact."
   for. Either way it explains any disagreement with `on_disk`
 - **`output.generated`** is kept even after the file is copied. It is how a
   later reader tells a generated asset from a hand-made one
-- **`inputs`** is empty for a fresh generation and never empty for an edit
+- **`inputs`** is empty for a fresh generation with no references, and never
+  empty for an edit
 
 The same run on the aspect generator differs in three fields, and in nothing
 else:
 
 ```yaml
 engine: "agy --print"
-size: { asked: "16:9 (the whole size surface; it takes no pixel count)",
+size: { asked: "1:1 (the whole size surface; it takes no pixel count)",
         on_disk: "1024x1024" }
 output:
   generated: "~/.gemini/antigravity-cli/brain/a0a5…/landing-header_1787….jpg"

@@ -106,22 +106,39 @@ def verdict(votes: dict[str, dict]) -> str:
     return "CONTESTED"
 
 
-def main() -> int:
+def load_claims(path: str) -> list[dict]:
+    """The claims, or a ValueError naming what is wrong with them. Checked before
+    any engine is asked, so a bad file costs nothing rather than half a run."""
+    claims = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    if isinstance(claims, dict):
+        claims = [claims]
+    if not isinstance(claims, list) or not claims:
+        raise ValueError("claims must be a non-empty list of objects")
+    for i, c in enumerate(claims):
+        if not isinstance(c, dict) or not isinstance(c.get("claim"), str) \
+                or not c["claim"].strip():
+            raise ValueError(f"claim {i} has no `claim` text")
+    return claims
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("claims", help="JSON list of {id, claim, [evidence], [where]}")
     ap.add_argument("--running", required=True,
                     help="the engine running this — stated, never sniffed")
     ap.add_argument("--json", action="store_true", help="emit the result as JSON")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     if not (REFUTATION.get("lens") and REFUTATION.get("refuted_when")):
         print("harness.yaml declares no refutation lens; a refuter with no domain "
               "framing is a second opinion, not an adversary", file=sys.stderr)
         return 1
 
-    claims = json.loads(pathlib.Path(a.claims).read_text(encoding="utf-8"))
-    if isinstance(claims, dict):
-        claims = [claims]
+    try:
+        claims = load_claims(a.claims)
+    except (OSError, ValueError) as e:
+        print(f"{a.claims}: {e}", file=sys.stderr)
+        return 2
     try:
         pool = refuters(a.running)
     except engine.EngineError as e:
@@ -141,9 +158,12 @@ def main() -> int:
                         "independent_readings": len(votes),
                         "votes": votes, "unreachable": silent})
 
+    # A claim nobody could check is not a claim that stood, and an exit of 0
+    # is what a caller reads as "it stood".
+    unchecked = any(r["verdict"] == "UNCHECKED" for r in results)
     if a.json:
         print(json.dumps(results, ensure_ascii=False, indent=2))
-        return 0
+        return 1 if unchecked else 0
 
     for r in results:
         print(f"\n[{r['verdict']}] {r['id']}   "
@@ -157,7 +177,7 @@ def main() -> int:
     print(f"\n{kinds.count('REFUTED')} refuted · {kinds.count('CONTESTED')} contested · "
           f"{kinds.count('STANDS')} unrefuted · {kinds.count('UNCHECKED')} unchecked")
     print("Unrefuted means nothing was found, not that nothing is there.")
-    return 0
+    return 1 if unchecked else 0
 
 
 if __name__ == "__main__":

@@ -11,9 +11,10 @@ installed tools — Codex's own `imagegen` skill and its built-in
 This set is the discipline around them: what to ask for, how many times, whether
 anyone looked, and what has to be written down so the picture can be made again.
 
-The two do not take the same argument. One takes a pixel canvas subject to four
-constraints; the other takes an aspect ratio off a list of seven and no pixel
-count at all, and writes JPEG. **Which one ran is the first thing a recipe
+The two do not take the same argument. One takes no size argument on its default
+path, and a pixel canvas subject to four constraints on its fallback CLI; the
+other takes an aspect ratio off a list of seven and no pixel count at all, and
+writes JPEG. **Which one ran is the first thing a recipe
 settles**, because half the fields beside an image mean something different
 depending on the answer.
 
@@ -103,13 +104,14 @@ reference layer states from the reference layer itself — every listed canvas
 size put back through the four constraints the same page states, its ratio
 reduced and its megapixel figure recomputed, every size listed as *rejected*
 checked to still be rejected by the rule named against it, and every export rung
-recomputed from its own base and factor. The twelve deliberate errors that prove
-it can fail are not a claim in this file — they are `image-tools/test_figures.py`,
-they run in `make check`, and five of them make the checks *vacuous* rather than
-wrong: a row rewritten out of a computable shape, a table header renamed, a
-constraint deleted from the prose it reads.
+recomputed from its own base and factor and matched to its `@Nx` label. The
+deliberate errors that prove it can fail are not a claim in this file, and
+neither is how many there are — they are `image-tools/test_figures.py`, they run
+in `make check`, and some of them make the checks *vacuous* rather than wrong: a
+row rewritten out of a computable shape, a table header renamed, a constraint
+deleted from the prose it reads.
 
-**Two tools, linked into the skills that can run them.**
+**Four tools, linked into the skills that can run them.**
 [`imgfacts.py`](image-tools/imgfacts.py) reads what is actually in a file —
 dimensions, format, bytes, alpha, whether a colour profile is declared, and
 whether a canvas is legal, or an aspect offered, for the generator that will run
@@ -118,12 +120,19 @@ because a grade that costs effort gets skipped.
 [`recipe.py`](image-tools/recipe.py) captures a generated file out of whichever
 generator produced it and writes its recipe in the same move. Prefer the
 returned path and actual generator explicitly; the newest-file fallback does
-not establish invocation provenance. It checks fields and dimensions later. [`strip.py`](image-tools/strip.py) removes what
-should not ship — Exif, XMP, generation parameters, comments, timestamps — while
+not establish invocation provenance. It reads the prompt and the file before it
+copies anything, so a failure leaves no recipe-less asset behind, and it refuses
+a destination whose extension names another format. It checks fields and
+dimensions later. [`strip.py`](image-tools/strip.py) removes what
+should not ship — Exif, XMP, generation parameters, comments, timestamps,
+embedded thumbnails, and anything appended after the image ends — while
 keeping the colour profile, the alpha channel and any content credential the
-project decided to carry.
+project decided to carry. [`refute.py`](image-tools/refute.py) puts a claim to
+the engines that did not make it and asks them to break it; an answer outside
+its schema is no answer, a claim no engine could read exits non-zero, and
+unrefuted is never proof.
 
-None of the three needs an image library: they read and edit headers rather than
+None of the three file tools needs an image library: they read and edit headers rather than
 decoding pixels, so there is nothing to install beyond the PyYAML the harness
 already requires, and nothing is ever re-encoded. A tool that needed a build step
 before it could say how wide a file is would not get run.
@@ -132,9 +141,11 @@ before it could say how wide a file is would not get run.
 here has heard of is removed by default instead of shipped by default. It
 refuses rather than guessing — a non-upright Exif orientation stops the run,
 because dropping that flag without applying the rotation turns the picture
-sideways somewhere downstream — and it re-reads its own output in memory,
-before touching the disk, refusing if the dimensions, format, alpha or profile
-moved. A run with neither `--out` nor `--in-place` writes nothing.
+sideways somewhere downstream, and a truncated file stops it too, because a
+copy of half a picture is not a stripped one. It re-reads its own output in
+memory, before touching the disk, refusing if the dimensions, format, alpha or
+profile moved, and it replaces a file whole or not at all. A run with neither
+`--out` nor `--in-place` writes nothing.
 
 **One parser per format, shared.** `strip.py` reads JPEG through the same marker
 scanner `imgfacts.py` uses. Two parsers of one format is two chances to disagree
@@ -153,8 +164,9 @@ other, each tagged with the `control` that separates them. `imgfacts.py` decides
 legality from it, `image-prompt/reference/sizes.md` states both in prose for a
 reader, and `make figures` checks the prose against the registry — so the tools
 and the page cannot quietly disagree. Adding a third generator is a registry
-edit; the tools resolve which is which by `control`, and assert rather than
-picking whichever came first in the file.
+edit; the tools resolve which is which by `control`. A second canvas generator
+trips an assert rather than letting the first in the file win, and with a second
+aspect generator `--check-aspect` needs `--generator` to say which is meant.
 
 **Budgets are enforced, not intended.**
 [`image-registry/harness.yaml`](image-registry/harness.yaml) holds every
@@ -190,7 +202,7 @@ finds the file, which is what makes this fail quietly.
 | File | What it fixes |
 |---|---|
 | [`skills/_image/CONTRACT.md`](skills/_image/CONTRACT.md) | Evidence grades, status, residual classes, the completion sweep |
-| [`skills/_image/RECIPE.md`](skills/_image/RECIPE.md) | The seven fields every generated image carries, and what `IRREPRODUCIBLE` obliges |
+| [`skills/_image/RECIPE.md`](skills/_image/RECIPE.md) | The seven fields every retained generated candidate carries, and what `IRREPRODUCIBLE` obliges |
 | [`skills/_image/SIZING.md`](skills/_image/SIZING.md) | How much ceremony a request is worth; when a dialogue is mandatory; the brief |
 | [`skills/_image/HANDOFF.md`](skills/_image/HANDOFF.md) | What passes between skills, and the checks the receiver runs |
 | [`skills/_image/VALUES.md`](skills/_image/VALUES.md) | The order that decides when two goods conflict, and the escape hatch |
@@ -204,7 +216,8 @@ image-skills/
 ├── README.md
 ├── Makefile
 ├── image-registry/             # budgets, boundaries, routes, delivered blocks
-├── image-tools/                # imgfacts · recipe · strip · validate · figures · tests
+├── image-tools/                # imgfacts · recipe · strip · refute · engine · render
+│                               # · validate · figures · tests
 └── skills/                     # everything the CLI reads
     ├── _image/                 # contracts in force on every run
     └── image-<facet>/          # a SKILL.md is what makes this a skill, and
@@ -239,8 +252,13 @@ it. Dropping a standalone JPEG marker did not fail it, because the fixtures
 checked what was removed and never that the rest survived byte for byte. And
 widening `ASPECT_TOLERANCE` to 1.0 did not fail it, because the assertion read
 the constant from the module it was testing — which passes for any value that
-module picks. All three fixtures exist now. A test suite only ever seen passing
-has the same problem a check does, and an assertion that borrows the
+module picks. All three fixtures exist now. A later review found more of the
+same kind across the tools and the checks — metadata appended after a JPEG's
+end, a cut-short PNG written out short, an engine's `"false"` read as a
+refutation, a validator rule that matched nothing in the corpus, a budget no
+tool read — and each now has a case, seen failing against the old code before
+the fix went in. A test suite only ever seen passing has the same problem a
+check does, and an assertion that borrows the
 implementation's own number is the version of that which looks fine in review.
 
 ## Installing

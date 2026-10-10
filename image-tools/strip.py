@@ -33,8 +33,10 @@ downstream.
 from __future__ import annotations
 
 import argparse
+import os
 import struct
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -50,12 +52,17 @@ import imgfacts                                            # noqa: E402
 # by default instead of shipped by default.
 
 PNG_STRUCTURE = {"IHDR", "PLTE", "IDAT", "IEND", "acTL", "fcTL", "fdAT"}
-PNG_COLOUR = {"iCCP", "sRGB", "gAMA", "cHRM", "sBIT"}
+# cICP, mDCV and cLLI are how a PNG states an HDR colour space and its mastering
+# display; dropping them changes how the picture is shown, not what travels with it.
+PNG_COLOUR = {"iCCP", "sRGB", "gAMA", "cHRM", "sBIT", "cICP", "mDCV", "cLLI"}
 PNG_RENDER = {"tRNS", "bKGD", "pHYs"}
 PNG_CREDENTIALS = {"caBX"}                    # C2PA content credentials
 
 JPEG_CREDENTIALS = {0xEB}                     # APP11, JUMBF
-JPEG_KEEP_APP = {0xE0, 0xEE}                  # JFIF density, Adobe colour transform
+# Kept by marker *and* signature: APP0 also carries JFXX thumbnails, and an
+# embedded thumbnail is on the list of what goes.
+JPEG_KEEP_APP = {0xE0: b"JFIF\x00",          # density
+                 0xEE: b"Adobe"}               # colour transform
 EXIF_SIG = b"Exif\x00\x00"
 
 WEBP_STRUCTURE = {b"VP8 ", b"VP8L", b"VP8X", b"ALPH", b"ANIM", b"ANMF"}
@@ -98,10 +105,12 @@ def _orientation(block: bytes) -> int | None:
 # --- PNG ---------------------------------------------------------------------
 
 def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
-    out, dropped, i = bytearray(imgfacts.PNG_SIG), [], 8
+    out, dropped, i, ended = bytearray(imgfacts.PNG_SIG), [], 8, False
     while i + 8 <= len(raw):
         size, tag = struct.unpack(">I4s", raw[i:i + 8])
         name = tag.decode("latin-1")
+        if i + 12 + size > len(raw):
+            raise Refused(f"PNG is truncated inside {name}; nothing was changed")
         body = raw[i + 8:i + 8 + size]
         whole = raw[i:i + 12 + size]
         keep = (name in PNG_STRUCTURE or name in PNG_RENDER
@@ -118,21 +127,25 @@ def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
             dropped.append(f"{name} ({size:,} bytes)")
         i += 12 + size
         if name == "IEND":
+            ended = True
             break
+    if not ended:
+        raise Refused("PNG has no IEND, so it is truncated; nothing was changed")
+    if i < len(raw):
+        dropped.append(f"data after IEND ({len(raw) - i:,} bytes)")
     return bytes(out), dropped
 
 
 # --- JPEG --------------------------------------------------------------------
 
 def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
-    out, dropped = bytearray(b"\xff\xd8"), []
-    for marker, start, end, body in imgfacts.jpeg_segments(raw):
-        if marker == 0xDA:                     # scan; the rest is entropy data
-            out += raw[start:]
-            break
+    out, dropped, tail = bytearray(b"\xff\xd8"), [], len(raw)
+    for marker, start, end, body in imgfacts.jpeg_segments(raw, through_scans=True):
         whole = raw[start:end]
-        if body is None:                       # standalone marker, no payload
+        if body is None:                       # entropy data, or a standalone marker
             out += whole
+            if marker == 0xD9:
+                tail = end
             continue
         if marker == 0xE1 and body.startswith(EXIF_SIG):
             o = _orientation(body)
@@ -148,13 +161,17 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
         elif marker in JPEG_CREDENTIALS:
             keep = not opt.drop_credentials
         else:
-            keep = marker in JPEG_KEEP_APP
+            keep = body.startswith(JPEG_KEEP_APP.get(marker, b"\x00unmatched"))
         if keep:
             out += whole
         else:
             label = "COM" if marker == 0xFE else f"APP{marker - 0xE0}"
             hint = body[:12].split(b"\x00")[0].decode("latin-1", "replace")
             dropped.append(f"{label} {hint!r} ({len(body) + 2:,} bytes)")
+    if tail < len(raw):
+        # Not this image: an appended second picture (a motion photo, an MPF
+        # preview) carries its own Exif and location, and ships them if kept.
+        dropped.append(f"data after EOI ({len(raw) - tail:,} bytes)")
     return bytes(out), dropped
 
 
@@ -166,6 +183,8 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
         tag = raw[i:i + 4]
         size = struct.unpack("<I", raw[i + 4:i + 8])[0]
         padded = size + (size & 1)
+        if i + 8 + size > len(raw):
+            raise Refused(f"WebP is truncated inside {tag!r}; nothing was changed")
         whole = raw[i:i + 8 + padded]
         keep = (tag in WEBP_STRUCTURE
                 or (tag in WEBP_COLOUR and not opt.drop_profile))
@@ -216,6 +235,35 @@ def strip(path: Path, opt) -> tuple[bytes, list[str], dict]:
     return out, dropped, before
 
 
+def _write_atomically(dest: Path, data: bytes) -> None:
+    """Replace `dest` whole or not at all. `--in-place` overwrites the only copy
+    of an asset, and an interrupted plain write leaves half of one.
+
+    A symlink is followed, not replaced: renaming over the link would leave the
+    image it points to unstripped while reporting it done."""
+    dest = dest.resolve() if dest.is_symlink() else dest
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        if dest.exists():
+            os.chmod(tmp, dest.stat().st_mode & 0o7777)
+        else:
+            os.chmod(tmp, 0o666 & ~_umask())
+        os.replace(tmp, dest)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _umask() -> int:
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("files", nargs="+", type=Path)
@@ -235,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     for f in a.files:
         try:
             out, dropped, before = strip(f, a)
-        except (Refused, imgfacts.Unreadable, OSError) as e:
+        except (Refused, imgfacts.Unreadable, OSError, struct.error) as e:
             print(f"{f}: {e}", file=sys.stderr)
             failed = True
             continue
@@ -252,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = a.out or (f if a.in_place else None)
         if dest:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(out)
+            _write_atomically(dest, out)
             print(f"  wrote {dest}  {len(out):,} bytes")
     return 1 if failed else 0
 

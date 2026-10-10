@@ -1,9 +1,9 @@
 <!-- image:deferred -->
 Purpose: what this class of generator gets wrong, where it hides, and how to tell a defect from a choice.
 Read when: sweeping an image, or a picture reads as wrong and nobody can say why.
-Source: none — nothing outside this page can move what it states.
+Source: codex — the entries were observed against its generator, and move with its model.
 Verified: 2026-08-23 — assembled from failures observed in generations run
-against the installed backing skill and from its own guidance on validating
+against the installed codex backing skill and from its own guidance on validating
 output. No automated check re-runs this; a newer model will drop some entries and
 add others, and the sites are more durable than the specifics.
 
@@ -77,7 +77,7 @@ Three questions, in order:
 
 ## What this catalogue is not
 
-A checklist that finding nothing on means the image is clean. It lists the sites
-worth going to deliberately. New failure modes arrive with every model, and the
-cold first impression in `seeing` remains the only pass that can catch one
-nobody has named yet.
+It is not a checklist on which finding nothing means the image is clean. It
+lists the sites worth going to deliberately. New failure modes arrive with every
+model, and the cold first impression in `seeing` remains the only pass that can
+catch one nobody has named yet.

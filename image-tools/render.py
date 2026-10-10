@@ -28,7 +28,14 @@ def render(path: Path) -> bool:
             encoding="utf-8").rstrip("\n")
         open_m, close_m = f"<!-- deliver:{key} -->", f"<!-- /deliver:{key} -->"
         payload = f"{open_m}\n{block}\n{close_m}"
-        if open_m in text and close_m in text:
+        opens, closes = text.count(open_m), text.count(close_m)
+        if (opens, closes) not in ((0, 0), (1, 1)) or (
+                opens and text.index(open_m) > text.index(close_m)):
+            # A lost marker, rendered past, duplicates the block now and deletes
+            # whatever lies between the two opens on the next run.
+            raise SystemExit(f"{path}: deliver:{key} markers are unbalanced "
+                             f"({opens} open, {closes} close); fix them by hand")
+        if opens:
             head, rest = text.split(open_m, 1)
             _, tail = rest.split(close_m, 1)
             text = head + payload + tail

@@ -18,7 +18,10 @@ often than anyone expects, which is the whole reason both are recorded.
 Which generator produced it is not guessed from the environment: with no
 `--generator` and no `--from`, every declared generator's output directory is
 searched and the newest file across all of them wins, so the answer comes from a
-timestamp rather than from an assumption about which CLI is running.
+timestamp rather than from an assumption about which CLI is running. A file
+named with `--from` is attributed to the generator whose output directory holds
+it; one held by neither needs `--generator`, because recording the default would
+put a command nobody ran into `engine`.
 
 It never overwrites: an existing destination is a sibling version decision for a
 person to make (`image-deliver/playbooks/naming.md`), not something a tool does
@@ -46,10 +49,18 @@ FIELDS = [f for f in H["vocabulary"]["recipe_fields"] if not f.isupper()]
 SIDECAR = ".recipe.yaml"
 
 
+# Characters YAML reads as line breaks, and folds or normalises unless they are
+# escaped. A prompt holding one is double-quoted, the one style that escapes them.
+_YAML_BREAKS = ("\r", "\x85", "\u2028", "\u2029")
+
+
 def _block(dumper, data):
     """Keep the verbatim prompt readable. A prompt folded into a quoted scalar
     is still the right characters, and nobody will diff it."""
-    style = "|" if "\n" in data.rstrip("\n") else None
+    if any(c in data for c in _YAML_BREAKS):
+        style = '"'
+    else:
+        style = "|" if "\n" in data.rstrip("\n") else None
     return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
 
 
@@ -79,10 +90,31 @@ def newest_generated(name: str | None = None) -> tuple[str, Path] | None:
     """The newest file left by `name`, or across every generator when unnamed."""
     hits = []
     for n in ([name] if name else GENERATORS):
-        hits += [(n, p) for p in home_of(n).glob(GENERATORS[n]["output_glob"])]
+        for p in home_of(n).glob(GENERATORS[n]["output_glob"]):
+            try:                                 # a cache cleared mid-glob, or
+                if p.is_file():                  # a dangling link, is not a hit
+                    hits.append((p.stat().st_mtime, n, p))
+            except OSError:
+                continue
     if not hits:
         return None
-    return max(hits, key=lambda h: h[1].stat().st_mtime)
+    _, n, p = max(hits)
+    return n, p
+
+
+def generator_holding(path: Path) -> str | None:
+    """The generator whose output directory this file sits in, if any."""
+    where = path.resolve()
+    for n in GENERATORS:
+        if where.is_relative_to(home_of(n).resolve()):
+            return n
+    return None
+
+
+# What a placed file's extension promises. A JPEG written to `hero.png` is a
+# conversion nobody performed, and every later reader trusts the name.
+SUFFIX_FORMAT = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG",
+                 ".webp": "WebP", ".gif": "GIF"}
 
 
 def _searched(name: str | None) -> str:
@@ -101,7 +133,12 @@ def capture(a: argparse.Namespace) -> int:
         print(f"{a.generator} is not one of {sorted(GENERATORS)}", file=sys.stderr)
         return 2
     if a.source:
-        src, produced_by = a.source, a.generator or DEFAULT_GENERATOR
+        src, produced_by = a.source, a.generator or generator_holding(a.source)
+        if produced_by is None:
+            print(f"{src} is not under any generator's output directory; name "
+                  f"the one that made it with --generator {sorted(GENERATORS)}",
+                  file=sys.stderr)
+            return 2
     else:
         found = newest_generated(a.generator)
         if found is None:
@@ -115,13 +152,41 @@ def capture(a: argparse.Namespace) -> int:
         return 2
 
     dest = a.to
-    if dest.exists() and not a.replace:
-        print(f"{dest} already exists. Write a sibling version instead, or pass "
-              "--replace once a person has decided to retire the old one",
+    if dest.is_dir():
+        print(f"{dest} is a directory; --to names the file to write", file=sys.stderr)
+        return 2
+    side = sidecar_of(dest)
+    if (dest.exists() or side.exists()) and not a.replace:
+        print(f"{dest if dest.exists() else side} already exists. Write a sibling "
+              "version instead, or pass --replace once a person has decided to "
+              "retire the old one", file=sys.stderr)
+        return 2
+    if dest.exists() and dest.resolve() == src.resolve():
+        print(f"{dest} is the generated file itself; place it somewhere else",
               file=sys.stderr)
         return 2
 
-    facts = imgfacts.probe(src)
+    # Everything that can fail is read before anything is written. A copy
+    # placed ahead of a prompt that could not be read is an asset with no
+    # recipe, and the overwrite guard then refuses the retry.
+    try:
+        prompt = (a.prompt_file.read_bytes().decode("utf-8") if a.prompt_file
+                  else a.prompt)
+        facts = imgfacts.probe(src)
+    except (OSError, UnicodeDecodeError, imgfacts.Unreadable) as e:
+        print(f"{e}; nothing was written", file=sys.stderr)
+        return 2
+    if not prompt.strip():
+        print("the prompt is blank; the prompt is the asset", file=sys.stderr)
+        return 2
+    promised = SUFFIX_FORMAT.get(dest.suffix.lower())
+    if promised != facts["format"]:
+        print(f"{src} is {facts['format']}, and {dest.name} names "
+              f"{promised or 'no format this checks'}. Place it under its own "
+              "extension; a conversion is its own operation and its own line "
+              "in the recipe", file=sys.stderr)
+        return 2
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
 
@@ -133,7 +198,7 @@ def capture(a: argparse.Namespace) -> int:
     doc = {
         "engine": a.engine or gen["invoke"],
         "model": a.model or "unreported",
-        "prompt": a.prompt_file.read_bytes().decode("utf-8") if a.prompt_file else a.prompt,
+        "prompt": prompt,
         "excluded": a.excluded or "none",
         "size": {"asked": a.asked or UNASKED[gen["control"]],
                  "on_disk": facts["size"]},
@@ -141,7 +206,6 @@ def capture(a: argparse.Namespace) -> int:
         "output": {"generated": str(src), "placed": str(dest)},
         "note": NO_SEED,
     }
-    side = sidecar_of(dest)
     side.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
                                    default_flow_style=False), encoding="utf-8")
     print(f"{dest}  {facts['size']}  {facts['bytes']:,} bytes")
@@ -163,6 +227,9 @@ def check_one(image: Path) -> list[str]:
         doc = yaml.safe_load(side.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
         return [f"{side}: not readable as YAML ({e.__class__.__name__})"]
+    if not isinstance(doc, dict):
+        return [f"{side}: a recipe is a mapping of fields, not a "
+                f"{type(doc).__name__}; a chain of edits is one recipe per file"]
 
     problems = []
     for f in FIELDS:
@@ -173,19 +240,42 @@ def check_one(image: Path) -> list[str]:
                             "not one that does not apply")
     if not isinstance(doc.get("prompt"), str) or not doc["prompt"].strip():
         problems.append(f"{side}: prompt must be non-empty text; length cannot prove provenance")
-    placed = (doc.get("output") or {}).get("placed")
-    if placed and Path(placed) != image:
+    for f in ("size", "output"):
+        if f in doc and not isinstance(doc[f], dict):
+            problems.append(f"{side}: {f} must be a mapping, not {doc[f]!r}")
+    note = doc.get("note")
+    if not isinstance(note, str) or "IRREPRODUCIBLE" not in note:
+        problems.append(f"{side}: no note stating IRREPRODUCIBLE — the limit on "
+                        "what this recipe promises is stated once, not implied")
+    output = doc["output"] if isinstance(doc.get("output"), dict) else {}
+    placed = output.get("placed")
+    # Resolved from where `capture` ran or from beside the sidecar: the same
+    # file, checked from another directory, is still the same file.
+    if placed and not _same_file(str(placed), image, side.parent):
         problems.append(f"{side}: output.placed is {placed}, beside {image}")
 
     try:
         facts = imgfacts.probe(image)
     except (imgfacts.Unreadable, OSError) as e:
         return problems + [f"{image}: {e}"]
-    on_disk = (doc.get("size") or {}).get("on_disk")
+    size = doc["size"] if isinstance(doc.get("size"), dict) else {}
+    on_disk = size.get("on_disk")
     if on_disk != facts["size"]:
         problems.append(f"{side}: size.on_disk is {on_disk!r}, the file is "
                         f"{facts['size']}")
     return problems
+
+
+def _same_file(placed: str, image: Path, beside: Path) -> bool:
+    target = image.resolve()
+    p = Path(placed).expanduser()
+    if p.is_absolute():
+        return p.resolve() == target
+    if (Path.cwd() / p).resolve() == target or (beside / p).resolve() == target:
+        return True
+    # Recorded relative to the directory `capture` ran in: the path's tail
+    # still has to name this file, under the same parents as far as it goes.
+    return target.parts[-len(p.parts):] == p.parts
 
 
 def check(a: argparse.Namespace) -> int:

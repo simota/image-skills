@@ -34,7 +34,7 @@ numbers.
 ③ minor     repeating grain, not visible below 100%
 ```
 
-The grid is the picture's own division, not a fixed quarters — thirds for a
+The grid is the picture's own division, not fixed quarters — thirds for a
 composition brief that named thirds, a single band for a header. Say the
 dimensions and the size you judged at, or the marks mean nothing.
 

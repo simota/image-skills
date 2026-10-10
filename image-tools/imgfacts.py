@@ -365,16 +365,13 @@ def nearest_legal(w: int, h: int) -> tuple[int, int] | None:
         return None
     aspect, want = w / h, w * h
     inside, outside = [], []
-    # Every width on the grid, each with the heights either side of this
-    # aspect. Exhaustive rather than a range of scales around the request,
-    # which answered "nothing is legal" for 16x16 and for 100000x100000.
-    seen = set()
-    for cw in range(m, CANVAS["max_edge"] + 1, m):
-        base = math.floor(cw / aspect / m) * m
-        for ch in (base, base + m):
-            if ch < m or (cw, ch) in seen:
-                continue
-            seen.add((cw, ch))
+    # The whole grid. A range of scales around the request answered "nothing
+    # is legal" for 16x16 and for 100000x100000, and the two heights nearest
+    # the aspect per width missed the legal one just under the edge limit.
+    # Sixty thousand candidates is still instant.
+    grid = range(m, CANVAS["max_edge"] + 1, m)
+    for cw in grid:
+        for ch in grid:
             if illegal(cw, ch):
                 continue
             drift = abs(cw / ch - aspect) / aspect

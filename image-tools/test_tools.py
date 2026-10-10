@@ -269,6 +269,14 @@ def test_legality() -> None:
     check("--check-size rejects nonsense", imgfacts.main(["--check-size", "big"]), 2)
 
 
+def test_nearest_legal_at_the_edge() -> None:
+    """The nearest legal canvas can sit just under the edge limit, below both
+    grid heights nearest the aspect. A review found 2251x5653 answered with
+    1520x3824 when 1536x3840 is legal, the same shape, and nearer in area."""
+    check("the legal height under max_edge is considered",
+          imgfacts.nearest_legal(2251, 5653), (1536, 3840))
+
+
 def test_aspect_legality() -> None:
     """The other generator's only size lever, and the reduce-then-compare that
     makes `1920:1080` and `16:9` the same question."""
@@ -748,6 +756,15 @@ def test_no_writes_while_reporting(tmp: Path) -> None:
     check("nothing left to remove the second time", f.read_bytes(), after)
     check("an unreadable file exits 1", strip.main([str(tmp / "junk.png")]), 1)
 
+    # --in-place on a symlink strips the file it points to and keeps the link
+    real = tmp / "real.png"
+    real.write_bytes(png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")))
+    link = tmp / "link.png"
+    link.symlink_to(real)
+    check("--in-place through a symlink exits 0", strip.main([str(link), "--in-place"]), 0)
+    truthy("the link is still a link", link.is_symlink())
+    truthy("and the file it points to was stripped", b"tEXt" not in real.read_bytes())
+
 
 def test_malformed_input(tmp: Path) -> None:
     """Cut-short and odd files. Each case here was a traceback or a confident
@@ -992,6 +1009,7 @@ def main() -> int:
         tmp = Path(d)
         test_imgfacts(tmp)
         test_legality()
+        test_nearest_legal_at_the_edge()
         test_aspect_legality()
         test_recipe(tmp)
         test_recipe_verbatim(tmp)

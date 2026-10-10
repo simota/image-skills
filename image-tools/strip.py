@@ -237,7 +237,11 @@ def strip(path: Path, opt) -> tuple[bytes, list[str], dict]:
 
 def _write_atomically(dest: Path, data: bytes) -> None:
     """Replace `dest` whole or not at all. `--in-place` overwrites the only copy
-    of an asset, and an interrupted plain write leaves half of one."""
+    of an asset, and an interrupted plain write leaves half of one.
+
+    A symlink is followed, not replaced: renaming over the link would leave the
+    image it points to unstripped while reporting it done."""
+    dest = dest.resolve() if dest.is_symlink() else dest
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as f:

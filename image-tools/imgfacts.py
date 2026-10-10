@@ -442,7 +442,11 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
 
     if a.check_aspect:
-        name = a.generator or next(iter(sorted(ASPECT_GENERATORS)), "")
+        if a.generator is None and len(ASPECT_GENERATORS) > 1:
+            print(f"--check-aspect needs --generator: the registry declares "
+                  f"{sorted(ASPECT_GENERATORS)}, and their lists differ", file=sys.stderr)
+            return 2
+        name = a.generator or next(iter(ASPECT_GENERATORS), "")
         try:
             offered = aspect_offered(name)
             ratio = a.check_aspect if ":" in a.check_aspect else ""

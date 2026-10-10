@@ -292,6 +292,16 @@ def test_aspect_legality() -> None:
           imgfacts.main(["--check-aspect", "5:4", "--json"]), 1)
     check("--check-aspect rejects nonsense",
           imgfacts.main(["--check-aspect", "wide"]), 2)
+    saved = dict(imgfacts.ASPECT_GENERATORS)
+    imgfacts.ASPECT_GENERATORS["second"] = {"aspects": ["5:4"]}
+    try:
+        check("with two aspect generators, --check-aspect asks which is meant",
+              imgfacts.main(["--check-aspect", "5:4"]), 2)
+        check("and answers once it is told",
+              imgfacts.main(["--check-aspect", "5:4", "--generator", "second"]), 0)
+    finally:
+        imgfacts.ASPECT_GENERATORS.clear()
+        imgfacts.ASPECT_GENERATORS.update(saved)
     check("--check-aspect refuses a generator that has no aspect list",
           imgfacts.main(["--check-aspect", "1:1", "--generator",
                          imgfacts.CANVAS_GENERATOR]), 2)

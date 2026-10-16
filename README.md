@@ -143,9 +143,12 @@ here has heard of is removed by default instead of shipped by default. It
 refuses rather than guessing — a non-upright Exif orientation stops the run,
 because dropping that flag without applying the rotation turns the picture
 sideways somewhere downstream, and a truncated file stops it too, because a
-copy of half a picture is not a stripped one. It re-reads its own output in
-memory, before touching the disk, refusing if the dimensions, format, alpha or
-profile moved, and it replaces a file whole or not at all. A run with neither
+copy of half a picture is not a stripped one. Every byte that does not reach
+the output is named in the report, in all three formats. It re-reads its own
+output in memory, before touching the disk, refusing if the dimensions, format,
+alpha or profile moved, and it replaces a lone file whole or not at all; a file
+with other hard links, or in a directory that refuses new files, is rewritten
+through its own inode so every name sees the result. A run with neither
 `--out` nor `--in-place` writes nothing.
 
 **One parser per format, shared.** `strip.py` reads JPEG through the same marker
@@ -238,13 +241,22 @@ image-skills/
 ```sh
 make check      # the rules, the figures, the tools, and proof each still fires
 make render     # after editing anything in image-registry/delivered/
-make hooks      # run the rules on every commit
+make hooks      # run the rules on every commit, against what is staged
 ```
+
+The hook checks the index, not the working tree: the commit is what is staged,
+so an unrelated unstaged edit cannot fail it and an unstaged fix cannot pass it.
+It will not replace a different pre-commit hook that is already installed
+unless told to with `FORCE=1`.
 
 Adding a rule means adding a deliberate violation to
 `image-tools/test_validate.py`, and adding a figure check means adding one to
 `image-tools/test_figures.py` — including one that makes the check vacuous
-rather than wrong. A check only ever seen passing may be checking nothing.
+rather than wrong. A check only ever seen passing may be checking nothing. Each
+case also names what has to fire — a message for a rule, the checker for a
+figure — because a neighbour catching the same edit proves nothing about the
+one under test. The other direction is covered too: `QUIET` cases in
+`test_validate.py` are ordinary writing a rule must not fire on.
 
 The tools get the same treatment in `image-tools/test_tools.py`, and it is worth
 saying what that has caught so far. Inverting the keyed-transparency branch in

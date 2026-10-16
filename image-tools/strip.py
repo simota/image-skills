@@ -64,6 +64,7 @@ JPEG_CREDENTIALS = {0xEB}                     # APP11, JUMBF
 JPEG_KEEP_APP = {0xE0: b"JFIF\x00",          # density
                  0xEE: b"Adobe"}               # colour transform
 EXIF_SIG = b"Exif\x00\x00"
+JFIF_HEAD = 14                                # "JFIF\0", version, units, density, thumb w/h
 
 WEBP_STRUCTURE = {b"VP8 ", b"VP8L", b"VP8X", b"ALPH", b"ANIM", b"ANMF"}
 WEBP_COLOUR = {b"ICCP"}
@@ -139,8 +140,16 @@ def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
 # --- JPEG --------------------------------------------------------------------
 
 def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
-    out, dropped, tail = bytearray(b"\xff\xd8"), [], len(raw)
+    # `pos` is how far the input has been accounted for. Bytes the segment walk
+    # skips are reported rather than lost quietly, and a file that ends before
+    # EOI is refused as PNG's missing IEND is: half a picture is not stripped.
+    out, dropped, tail, pos = bytearray(b"\xff\xd8"), [], None, 2
     for marker, start, end, body in imgfacts.jpeg_segments(raw, through_scans=True):
+        if end > len(raw):
+            raise Refused("JPEG is truncated inside a segment; nothing was changed")
+        if start > pos:
+            dropped.append(f"{start - pos:,} stray bytes between segments")
+        pos = end
         whole = raw[start:end]
         if body is None:                       # entropy data, or a standalone marker
             out += whole
@@ -162,12 +171,20 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
             keep = not opt.drop_credentials
         else:
             keep = body.startswith(JPEG_KEEP_APP.get(marker, b"\x00unmatched"))
-        if keep:
+        if keep and marker == 0xE0 and len(body) > JFIF_HEAD and body[12:14] != b"\x00\x00":
+            # JFIF carries an optional thumbnail after its 14-byte header. The
+            # header stays, the thumbnail goes, and the segment says so.
+            head = body[:12] + b"\x00\x00"
+            out += b"\xff\xe0" + struct.pack(">H", len(head) + 2) + head
+            dropped.append(f"JFIF thumbnail ({len(body) - JFIF_HEAD:,} bytes)")
+        elif keep:
             out += whole
         else:
             label = "COM" if marker == 0xFE else f"APP{marker - 0xE0}"
             hint = body[:12].split(b"\x00")[0].decode("latin-1", "replace")
             dropped.append(f"{label} {hint!r} ({len(body) + 2:,} bytes)")
+    if tail is None:
+        raise Refused("JPEG has no EOI, so it is truncated; nothing was changed")
     if tail < len(raw):
         # Not this image: an appended second picture (a motion photo, an MPF
         # preview) carries its own Exif and location, and ships them if kept.
@@ -179,13 +196,17 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
 
 def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
     body, dropped, i = bytearray(b"WEBP"), [], 12
-    while i + 8 <= len(raw):
+    # The RIFF header says where the file ends. Bytes past it are not chunks,
+    # and reading them as one called a file with a trailer "truncated".
+    end = min(len(raw), 8 + struct.unpack("<I", raw[4:8])[0])
+    while i + 8 <= end:
         tag = raw[i:i + 4]
         size = struct.unpack("<I", raw[i + 4:i + 8])[0]
         padded = size + (size & 1)
-        if i + 8 + size > len(raw):
+        if i + 8 + size > end:
             raise Refused(f"WebP is truncated inside {tag!r}; nothing was changed")
-        whole = raw[i:i + 8 + padded]
+        whole = raw[i:i + 8 + padded]          # a missing final pad stays missing:
+                                               # this edits containers, never repairs them
         keep = (tag in WEBP_STRUCTURE
                 or (tag in WEBP_COLOUR and not opt.drop_profile))
         if tag == b"EXIF":
@@ -199,11 +220,18 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
                 head[8] &= ~(VP8X_EXIF | VP8X_XMP)
                 if opt.drop_profile:
                     head[8] &= ~0x20
+                if head[8] != whole[8]:
+                    dropped.append(f"VP8X flags {whole[8]:#04x} -> {head[8]:#04x} "
+                                   "(they advertised blocks that are not kept)")
                 whole = bytes(head)
             body += whole
         else:
             dropped.append(f"{tag.decode('latin-1').strip()} ({size:,} bytes)")
         i += 8 + padded
+    if end < len(raw):
+        dropped.append(f"data after RIFF ({len(raw) - end:,} bytes)")
+    elif i < end:
+        dropped.append(f"{end - i:,} bytes too short to be a chunk")
     return b"RIFF" + struct.pack("<I", len(body)) + bytes(body), dropped
 
 

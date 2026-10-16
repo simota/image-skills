@@ -1075,6 +1075,46 @@ def test_strip_writes(tmp: Path) -> None:
           strip.main([str(cut)]) in (0, 1), True)
 
 
+def test_strip_accounts_for_every_byte(tmp: Path) -> None:
+    """Every byte that does not reach the output is reported, and a file that is
+    cut short is refused — the same rules PNG already followed, now for JPEG
+    and WebP. A review found JPEG and WebP bytes going missing under "nothing
+    to remove", and truncated JPEGs written out as if whole."""
+    f = tmp / "acct.jpg"
+    jfif = (0xE0, b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00")
+    good = jpeg_with(16, 16, [jfif])
+    cut = good.index(b"\xff\xdb") if b"\xff\xdb" in good else good.index(b"\xff\xc0")
+    f.write_bytes(good[:cut] + b"JUNK!" + good[cut:])
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("stray bytes between segments are reported, not dropped silently",
+           any("between segments" in d for d in dropped))
+
+    f.write_bytes(good[:-2])                                  # no EOI
+    truthy("a JPEG with no EOI is refused as truncated", refuses(f, Opt(), "EOI"))
+    sos_at = good.index(b"\xff\xda")
+    f.write_bytes(good[:sos_at + 6])                          # a segment past the end
+    truthy("a segment running past the end is refused", refuses(f, Opt(), "truncated"))
+
+    thumb = b"\x02\x02" + b"\x11\x22\x33" * 4
+    f.write_bytes(jpeg_with(16, 16, [(0xE0, jfif[1][:-2] + thumb)]))
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("a thumbnail inside the JFIF APP0 is removed", b"\x11\x22\x33" not in out)
+    truthy("and reported", any("thumbnail" in d for d in dropped))
+    truthy("and the JFIF header itself stays", b"JFIF\x00\x01\x02" in out)
+    check("the result still reads as the same image",
+          imgfacts.probe_bytes(out)["size"], "16x16")
+
+    w = tmp / "acct.webp"
+    base = webp_with(16, 16, 0, [])
+    w.write_bytes(base + b"JUNKJUNKJUNK")
+    out, dropped, _ = strip.strip(w, Opt())
+    truthy("data after the RIFF end is reported", any("after RIFF" in d for d in dropped))
+    check("and not copied", out, base)
+    w.write_bytes(webp_with(16, 16, 0x08, []))                # EXIF flag, no EXIF
+    out, dropped, _ = strip.strip(w, Opt())
+    truthy("a cleared VP8X flag is reported", any("flag" in d for d in dropped))
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1117,6 +1157,7 @@ def main() -> int:
         test_malformed_input(tmp)
         test_strip_leaks(tmp)
         test_strip_writes(tmp)
+        test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_engine(tmp)
         test_precommit_hook(tmp)

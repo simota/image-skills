@@ -578,6 +578,23 @@ def _(r):
                  + "\n```bad`info\n\n# status: DONE | MAYBE\n", encoding="utf-8")
 
 
+@quiet("a marker inside a code span that runs across lines is quoted")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nA span can run on: `first line\n#" + "TODO(agent): <action>\nand close` here.\n",
+                 encoding="utf-8")
+
+
+@case("V22-after-multiline-span", says="residual class")
+def _(r):
+    # The span closes, and a live marker after it on the same paragraph is live.
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nA span `runs\non` and then #" + "TODO(agent): fix this\n",
+                 encoding="utf-8")
+
+
 @quiet("a quoted marker is talked about, not left behind")
 def _(r):
     f = r / f"{S}image-prompt/playbooks/structure.md"

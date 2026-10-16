@@ -1190,6 +1190,31 @@ def test_strip_writes(tmp: Path) -> None:
         check("and that copy is the original", Path(kept.group(1)).read_bytes(), pristine)
         Path(kept.group(1)).unlink()
 
+    # The restore works and the interrupt is in flight; a cleanup that then
+    # fails must not replace it with an error main() would continue past.
+    hl.write_bytes(pristine)
+
+    def interrupted_once(f, data):
+        if data != pristine:
+            f.seek(0)
+            f.write(data[:10])
+            raise KeyboardInterrupt
+        return real_overwrite(f, data)
+
+    real_unlink = Path.unlink
+    Path.unlink = lambda self, *a, **k: (_ for _ in ()).throw(OSError(5, "I/O error")) \
+        if ".original." in self.name else real_unlink(self, *a, **k)
+    strip._overwrite = interrupted_once
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            truthy("a failed cleanup does not swallow the interrupt",
+                   raises(lambda: strip.main([str(hl), "--in-place"]), KeyboardInterrupt))
+    finally:
+        strip._overwrite = real_overwrite
+        Path.unlink = real_unlink
+    for stray in strays() - already:
+        Path(stray).unlink()
+
     # A failed write, then Ctrl-C during the restore: the interrupt is not
     # converted into an error that main() would report and continue past.
     hl.write_bytes(pristine)

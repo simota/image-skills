@@ -345,7 +345,11 @@ def _write_atomically(dest: Path, data: bytes) -> None:
                                   "restored unchanged") from None
         finally:
             if keep and not retain:
-                Path(keep).unlink(missing_ok=True)
+                try:
+                    Path(keep).unlink(missing_ok=True)
+                except OSError as e:             # never replaces what is in flight
+                    print(f"strip.py: could not remove the recovery copy {keep}: "
+                          f"{e.strerror}", file=sys.stderr)
         return
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:

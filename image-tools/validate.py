@@ -58,14 +58,15 @@ TICK_PATH_RE = re.compile(r"`([^`\s]*(?:/[^`\s]*|\.(?:md|yaml|py)))`")
 MARKER_RE = re.compile(r"#" + r"TODO\(agent\):")
 
 
-def _live_marker(line: str) -> bool:
-    """A marker outside every code span, with spans found the CommonMark way: a
-    run of n backticks opens a span that only a run of exactly n closes, and a
-    run nothing closes is literal text. A pattern for "inside backticks" called
-    the prose between two spans code; splitting on single backticks called
-    ``double-quoted`` code prose."""
+def _live_marker_offsets(text: str) -> list[int]:
+    """Where markers sit outside every code span, with spans found the
+    CommonMark way: a run of n backticks opens a span that only a run of
+    exactly n closes, and a run nothing closes is literal text. A pattern for
+    "inside backticks" called the prose between two spans code; splitting on
+    single backticks called ``double-quoted`` code prose. `text` is a whole
+    paragraph, because a span may run across its lines."""
     prose, i = [], 0
-    runs = [(m.start(), m.end()) for m in re.finditer(r"`+", line)]
+    runs = [(m.start(), m.end()) for m in re.finditer(r"`+", text)]
     k = 0
     while k < len(runs):
         start, end = runs[k]
@@ -74,11 +75,11 @@ def _live_marker(line: str) -> bool:
         if close is None:
             k += 1
             continue
-        prose.append(line[i:start])
+        prose.append((i, start))
         i = runs[close][1]
         k = close + 1
-    prose.append(line[i:])
-    return any(MARKER_RE.search(piece) for piece in prose)
+    prose.append((i, len(text)))
+    return [a + m.start() for a, b in prose for m in MARKER_RE.finditer(text[a:b])]
 
 
 def read(p: Path) -> str:
@@ -450,12 +451,27 @@ def v22_markers_classified():
     for f in ROOT.rglob("*.md"):
         if ".git" in f.parts or f.parts[-2:-1] == ("delivered",):
             continue
-        for i, line in enumerate(read(f).splitlines(), 1):
-            # Exempt only a marker quoted inside backticks — one that is being
-            # talked about. A live marker on a line with other code is still live.
-            if _live_marker(line):
-                if not any(c in line for c in VOCAB["residual_classes"]):
-                    fail("V22", f"{f.relative_to(ROOT)}:{i} marker carries no residual class")
+        lines = read(f).splitlines()
+        # Exempt only a marker quoted inside a code span — one that is being
+        # talked about. Spans are found per paragraph, since one may run across
+        # lines; a live marker beside other code is still live.
+        for first, para in _paragraphs(lines):
+            text = "\n".join(para)
+            for at in _live_marker_offsets(text):
+                i = first + text.count("\n", 0, at)
+                if not any(c in lines[i] for c in VOCAB["residual_classes"]):
+                    fail("V22", f"{f.relative_to(ROOT)}:{i + 1} marker carries no residual class")
+
+
+def _paragraphs(lines: list[str]):
+    """Runs of non-blank lines, with the index of each run's first line."""
+    start = None
+    for n, line in enumerate(lines + [""]):
+        if line.strip() and start is None:
+            start = n
+        elif not line.strip() and start is not None:
+            yield start, lines[start:n]
+            start = None
 
 
 def v23_labels():

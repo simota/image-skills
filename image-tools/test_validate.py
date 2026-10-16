@@ -605,6 +605,14 @@ def _(r):
                  encoding="utf-8")
 
 
+@quiet("a code span inside a block quote runs across its quoted lines")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n> A span `starts\n> #" + "TODO(agent): example\n> closes` here\n",
+                 encoding="utf-8")
+
+
 @quiet("a quoted marker is talked about, not left behind")
 def _(r):
     f = r / f"{S}image-prompt/playbooks/structure.md"

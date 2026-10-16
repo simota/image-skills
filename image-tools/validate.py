@@ -474,15 +474,19 @@ _ONE_LINE_BLOCK = re.compile(r" {0,3}(#{1,6}(\s|$)|`{3,}|~{3,}|\|)")   # nothing
 
 def _paragraphs(lines: list[str]):
     """Runs of lines inside one block, with the index of each run's first line."""
-    start, closed = None, False
+    start, closed, quoted = None, False, False
     for n, line in enumerate(lines + [""]):
-        boundary = not line.strip() or _BLOCK_START.match(line) or closed
+        in_quote = bool(re.match(r" {0,3}>", line))
+        # Consecutive quoted lines are one block quote, and one paragraph in it.
+        boundary = (not line.strip() or closed
+                    or (_BLOCK_START.match(line) and not (in_quote and quoted)))
         if start is not None and boundary:
             yield start, lines[start:n]
             start = None
         if line.strip() and start is None:
             start = n
         closed = bool(_ONE_LINE_BLOCK.match(line))
+        quoted = in_quote
 
 
 def v23_labels():

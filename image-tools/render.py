@@ -33,8 +33,9 @@ def render(path: Path) -> bool:
                 opens and text.index(open_m) > text.index(close_m)):
             # A lost marker, rendered past, duplicates the block now and deletes
             # whatever lies between the two opens on the next run.
-            state = (f"unbalanced ({opens} open, {closes} close)"
-                     if opens != closes or opens > 1 else "in the wrong order")
+            state = (f"unbalanced ({opens} open, {closes} close)" if opens != closes
+                     else f"duplicated ({opens} of each)" if opens > 1
+                     else "in the wrong order")
             raise SystemExit(f"{path}: deliver:{key} markers are {state}; "
                              "fix them by hand")
         if opens:

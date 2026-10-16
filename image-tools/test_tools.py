@@ -1020,6 +1020,11 @@ def test_precommit_hook(tmp: Path) -> None:
     target.write_text(good, encoding="utf-8")
     check("a staged breakage fails the commit, whatever the tree says",
           hook_passes(), False)
+    git("reset", "-q", "--hard")
+    # A sparse checkout leaves files out of the tree, not out of the commit.
+    git("sparse-checkout", "set", "--no-cone", "/*", "!/docs/")
+    check("a sparse checkout does not fail the commit over files it left out",
+          hook_passes(), True)
 
 
 def test_strip_writes(tmp: Path) -> None:
@@ -1047,11 +1052,14 @@ def test_strip_writes(tmp: Path) -> None:
     real_access = strip.os.access
     strip.os.access = lambda path, mode, *a, **k: (
         False if Path(path) == ro and mode == os.W_OK else real_access(path, mode, *a, **k))
+    inode = f.stat().st_ino
     try:
         check("--in-place in a directory it cannot create files in exits 0",
               strip.main([str(f), "--in-place"]), 0)
     finally:
         strip.os.access = real_access
+    check("and it wrote through the same inode, the only way open to it",
+          f.stat().st_ino, inode)
     truthy("and the file was stripped through its own inode", b"tEXt" not in f.read_bytes())
 
     blocker = d / "blocker"
@@ -1069,10 +1077,23 @@ def test_strip_writes(tmp: Path) -> None:
           strip.main([str(src), "--out", str(dangling)]), 0)
     truthy("the target now exists", (d / "made" / "here.png").exists())
 
-    cut = d / "ff.jpg"
-    cut.write_bytes(jpeg_with(16, 16, [])[:-2] + b"\xff\xff")
-    check("a JPEG ending in fill bytes is a clean failure, not a traceback",
-          strip.main([str(cut)]) in (0, 1), True)
+    ending = jpeg_with(16, 16, [])[:-2] + b"\xff\xff"
+    truthy("the segment walk stops at fill bytes that run to the end",
+           not raises(lambda: list(imgfacts.jpeg_segments(ending, through_scans=True)),
+                      IndexError))
+    real_strip = strip.strip
+    strip.strip = lambda *a, **k: [][0]           # any parser slip of this kind
+    try:
+        check("a parser IndexError is that file's failure, not a traceback",
+              strip.main([str(src)]), 1)
+    finally:
+        strip.strip = real_strip
+
+
+def reported_bytes(dropped: list[str]) -> int:
+    import re
+    return sum(int(m.replace(",", "")) for d in dropped
+               for m in re.findall(r"([\d,]+) (?:stray )?bytes", d))
 
 
 def test_strip_accounts_for_every_byte(tmp: Path) -> None:
@@ -1113,6 +1134,29 @@ def test_strip_accounts_for_every_byte(tmp: Path) -> None:
     w.write_bytes(webp_with(16, 16, 0x08, []))                # EXIF flag, no EXIF
     out, dropped, _ = strip.strip(w, Opt())
     truthy("a cleared VP8X flag is reported", any("flag" in d for d in dropped))
+    w.write_bytes(webp_with(16, 16, 0x08, [(b"EXIF", exif(None))]))
+    out, dropped, _ = strip.strip(w, Opt())
+    check("a flag cleared with its chunk is one removal, not two lines",
+          [d for d in dropped if "flag" in d], [])
+    big = bytearray(webp_with(16, 16, 0, []))
+    big[4:8] = struct.pack("<I", len(big) + 100)
+    w.write_bytes(bytes(big))
+    truthy("a RIFF size past the end of the file is refused as truncated",
+           refuses(w, Opt(), "truncated"))
+
+    # The report is a ledger: what it names adds up to what the file lost.
+    for name, raw in (
+            ("png", png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")
+                        + raw_chunk(b"tIME", b"\x07\xea\x01\x01\x01\x01\x01")) + b"TAIL"),
+            ("jpg", jpeg_with(16, 16, [(0xE1, b"Exif\x00\x00" + exif(None)),
+                                       (0xFE, b"a comment")], pad=b"\xff") + b"after"),
+            ("webp", webp_with(16, 16, 0x08, [(b"EXIF", exif(None)), (b"XMP ", b"<x/>")])
+             + b"trailer!")):
+        f = tmp / f"ledger.{name}"
+        f.write_bytes(raw)
+        out, dropped, _ = strip.strip(f, Opt())
+        check(f"{name}: the bytes the report names are the bytes the file lost",
+              reported_bytes(dropped), len(raw) - len(out))
 
 
 def test_edges_round_four(tmp: Path) -> None:
@@ -1126,6 +1170,15 @@ def test_edges_round_four(tmp: Path) -> None:
     check("and with a schema that is not JSON",
           engine.main(["--running", "claude", "codex", "--prompt-file",
                        str(tmp / "p.txt"), "--schema", str(bad)]), 2)
+    deep = engine.strict({"type": "object", "properties": {},
+                          "dependentSchemas": {"a": {"type": "object", "properties": {}}},
+                          "propertyNames": {"type": "object"},
+                          "additionalItems": {"type": "object"},
+                          "unevaluatedProperties": {"type": "object"}})
+    truthy("strict still closes objects under every schema keyword",
+           all(x.get("additionalProperties") is False for x in (
+               deep["dependentSchemas"]["a"], deep["propertyNames"],
+               deep["additionalItems"], deep["unevaluatedProperties"])))
     check("1.0 is an integer, as JSON Schema says",
           engine.conforms(1.0, {"type": "integer"}), [])
     truthy("1.5 is not", engine.conforms(1.5, {"type": "integer"}))

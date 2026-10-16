@@ -8,7 +8,11 @@
 # files whose fix happened to sit unstaged beside them.
 set -e
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
-git checkout-index --all --prefix="$tmp/"
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' INT TERM
+# Sparse checkouts leave files out of the tree, not out of the commit; the flag
+# needs git 2.35, and an older git exports what it can.
+git checkout-index --all --ignore-skip-worktree-bits --prefix="$tmp/" 2>/dev/null \
+    || { rm -rf "$tmp"; mkdir "$tmp"; git checkout-index --all --prefix="$tmp/"; }
 python3 "$tmp/image-tools/validate.py"
 python3 "$tmp/image-tools/figures_check.py"

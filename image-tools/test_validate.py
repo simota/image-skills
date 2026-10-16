@@ -543,6 +543,22 @@ def _(r):
                  encoding="utf-8")
 
 
+@quiet("a marker in double-backtick code is quoted too")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nWrite ``#" + "TODO(agent): <action>`` with a class.\n",
+                 encoding="utf-8")
+
+
+@case("V38-fenced-comment", says="MAYBE")
+def _(r):
+    # Inside a fence a leading `#` is a comment in the schema, not a heading.
+    f = r / f"{S}image-review/reference/report-template.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n```yaml\n# status: DONE | MAYBE\n```\n", encoding="utf-8")
+
+
 @quiet("a quoted marker is talked about, not left behind")
 def _(r):
     f = r / f"{S}image-prompt/playbooks/structure.md"

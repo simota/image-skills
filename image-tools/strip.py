@@ -125,7 +125,7 @@ def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
         if keep:
             out += whole
         else:
-            dropped.append(f"{name} ({size:,} bytes)")
+            dropped.append(f"{name} ({12 + size:,} bytes)")
         i += 12 + size
         if name == "IEND":
             ended = True
@@ -176,13 +176,13 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
             # header stays, the thumbnail goes, and the segment says so.
             head = body[:12] + b"\x00\x00"
             out += b"\xff\xe0" + struct.pack(">H", len(head) + 2) + head
-            dropped.append(f"JFIF thumbnail ({len(body) - JFIF_HEAD:,} bytes)")
+            dropped.append(f"JFIF thumbnail ({len(whole) - len(head) - 4:,} bytes)")
         elif keep:
             out += whole
         else:
             label = "COM" if marker == 0xFE else f"APP{marker - 0xE0}"
             hint = body[:12].split(b"\x00")[0].decode("latin-1", "replace")
-            dropped.append(f"{label} {hint!r} ({len(body) + 2:,} bytes)")
+            dropped.append(f"{label} {hint!r} ({end - start:,} bytes)")
     if tail is None:
         raise Refused("JPEG has no EOI, so it is truncated; nothing was changed")
     if tail < len(raw):
@@ -198,7 +198,11 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
     body, dropped, i = bytearray(b"WEBP"), [], 12
     # The RIFF header says where the file ends. Bytes past it are not chunks,
     # and reading them as one called a file with a trailer "truncated".
-    end = min(len(raw), 8 + struct.unpack("<I", raw[4:8])[0])
+    end = 8 + struct.unpack("<I", raw[4:8])[0]
+    if end > len(raw):
+        raise Refused(f"WebP's RIFF header says {end:,} bytes and the file has "
+                      f"{len(raw):,}; it is truncated, and nothing was changed")
+    flags_note = None
     while i + 8 <= end:
         tag = raw[i:i + 4]
         size = struct.unpack("<I", raw[i + 4:i + 8])[0]
@@ -221,13 +225,19 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
                 if opt.drop_profile:
                     head[8] &= ~0x20
                 if head[8] != whole[8]:
-                    dropped.append(f"VP8X flags {whole[8]:#04x} -> {head[8]:#04x} "
-                                   "(they advertised blocks that are not kept)")
+                    flags_note = (whole[8], head[8])
                 whole = bytes(head)
             body += whole
         else:
-            dropped.append(f"{tag.decode('latin-1').strip()} ({size:,} bytes)")
+            dropped.append(f"{tag.decode('latin-1').strip()} ({8 + padded:,} bytes)")
         i += 8 + padded
+    # A flag cleared along with the chunk it advertised is that chunk's
+    # removal, already reported; one advertising a chunk that was never there
+    # is a change of its own, and says so.
+    gone = {d.split(" ")[0] for d in dropped}
+    if flags_note and not gone & {"EXIF", "XMP", "ICCP"}:
+        dropped.append(f"VP8X flags {flags_note[0]:#04x} -> {flags_note[1]:#04x}, "
+                       "0 bytes (they advertised blocks the file does not have)")
     if end < len(raw):
         dropped.append(f"data after RIFF ({len(raw) - end:,} bytes)")
     elif i < end:

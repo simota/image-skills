@@ -59,10 +59,26 @@ MARKER_RE = re.compile(r"#" + r"TODO\(agent\):")
 
 
 def _live_marker(line: str) -> bool:
-    """A marker outside every code span. Split on backticks, the odd pieces are
-    code; a pattern looking for "inside backticks" can start at a closing one
-    and call the prose between two spans code."""
-    return any(MARKER_RE.search(piece) for piece in line.split("`")[0::2])
+    """A marker outside every code span, with spans found the CommonMark way: a
+    run of n backticks opens a span that only a run of exactly n closes, and a
+    run nothing closes is literal text. A pattern for "inside backticks" called
+    the prose between two spans code; splitting on single backticks called
+    ``double-quoted`` code prose."""
+    prose, i = [], 0
+    runs = [(m.start(), m.end()) for m in re.finditer(r"`+", line)]
+    k = 0
+    while k < len(runs):
+        start, end = runs[k]
+        close = next((j for j in range(k + 1, len(runs))
+                      if runs[j][1] - runs[j][0] == end - start), None)
+        if close is None:
+            k += 1
+            continue
+        prose.append(line[i:start])
+        i = runs[close][1]
+        k = close + 1
+    prose.append(line[i:])
+    return any(MARKER_RE.search(piece) for piece in prose)
 
 
 def read(p: Path) -> str:
@@ -887,8 +903,12 @@ def v38_enumerations_declared():
     for f in sorted(SKILLS_ROOT.rglob("*.md")):
         if ".git" in f.parts:
             continue
+        fenced = False
         for i, line in enumerate(read(f).splitlines(), 1):
-            for m in _enumerations(line):
+            if line.lstrip().startswith("```"):
+                fenced = not fenced
+                continue
+            for m in _enumerations(line, fenced):
                 seen += 1
                 words = [w.strip() for w in m.split("|")]
                 missing = [w for w in words if w not in declared]
@@ -901,13 +921,13 @@ def v38_enumerations_declared():
                     "drifted from how pages write one, and this check is vacuous")
 
 
-def _enumerations(line: str) -> list[str]:
+def _enumerations(line: str, fenced: bool = False) -> list[str]:
     """The enumerations on a line: in the text, and in a trailing comment — the
     place a schema line usually lists its values — with backticks and a closing
     parenthetical removed, both of which hid the one real enumeration here."""
     out = []
-    if re.match(r"\s*#+\s", line):          # a heading names things; it switches on nothing
-        return out
+    if not fenced and re.match(r"#+\s", line):
+        return out                          # a heading names things; it switches on nothing
     # A comment starts at a `#` after whitespace, as in YAML; a `#` inside a
     # word is not one.
     m = re.search(r"\s#", line)
@@ -984,13 +1004,15 @@ def _hook_state() -> str:
     said, rather than a confident "off"."""
     import subprocess
     try:
-        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute",
-                            "--git-path", "hooks"], capture_output=True, text=True)
+        # No --path-format: git before 2.31 echoes an option it does not know
+        # and exits 0, which read as a path that never exists.
+        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--git-path", "hooks"],
+                           capture_output=True, text=True)
     except OSError:
         return ""
     if r.returncode != 0 or not r.stdout.strip():
         return ""
-    on = (Path(r.stdout.strip()) / "pre-commit").exists()
+    on = (ROOT / r.stdout.strip() / "pre-commit").exists()   # absolute stays absolute
     return f" · hooks {'on' if on else 'off — run: make hooks'}"
 
 

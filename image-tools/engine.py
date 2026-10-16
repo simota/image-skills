@@ -58,8 +58,11 @@ class EngineError(RuntimeError):
 # `default`, `const`, `enum` or `examples` value that happens to look like a
 # schema is data and is left exactly as written.
 _SCHEMA_LIST = ("anyOf", "oneOf", "allOf", "prefixItems")
-_SCHEMA_ONE = ("items", "not", "if", "then", "else", "contains")
-_SCHEMA_MAP = ("properties", "$defs", "definitions", "patternProperties")
+_SCHEMA_ONE = ("items", "not", "if", "then", "else", "contains", "propertyNames",
+               "additionalItems", "unevaluatedItems", "unevaluatedProperties",
+               "additionalProperties")
+_SCHEMA_MAP = ("properties", "$defs", "definitions", "patternProperties",
+               "dependentSchemas", "dependencies")
 
 
 def strict(schema):
@@ -78,8 +81,9 @@ def strict(schema):
         elif isinstance(out.get(k), dict):
             out[k] = strict(out[k])
     for k in _SCHEMA_MAP:
-        if isinstance(out.get(k), dict):
-            out[k] = {n: strict(v) for n, v in out[k].items()}
+        if isinstance(out.get(k), dict):                 # `dependencies` may hold
+            out[k] = {n: strict(v) for n, v in out[k].items()}   # lists; strict()
+                                                                 # passes those through
     kind = out.get("type")
     if kind == "object" or (isinstance(kind, list) and "object" in kind):
         out["additionalProperties"] = False

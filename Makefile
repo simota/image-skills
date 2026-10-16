@@ -65,11 +65,12 @@ render:
 # Asked of git rather than assumed: in a worktree or a submodule `.git` is a
 # file, and core.hooksPath may point somewhere else entirely.
 # A different pre-commit already there (a team's, under a shared hooksPath) is
-# left alone unless FORCE=1 says to replace it.
+# left alone unless FORCE=1 says to replace it. An earlier version of this set's
+# own hook is recognised by its first comment and upgraded.
 hooks:
 	@hooks=$$(git rev-parse --git-path hooks) && mkdir -p "$$hooks" && \
-		if [ -e "$$hooks/pre-commit" ] && ! cmp -s image-tools/githooks/pre-commit "$$hooks/pre-commit" \
-			&& [ "$(FORCE)" != 1 ]; then \
+		if [ -e "$$hooks/pre-commit" ] && [ "$(FORCE)" != 1 ] \
+			&& ! grep -q "Budgets enforced by a mechanism" "$$hooks/pre-commit"; then \
 			echo "$$hooks/pre-commit exists and is not this set's; run: make hooks FORCE=1 to replace it"; exit 1; \
 		fi && \
 		cp image-tools/githooks/pre-commit "$$hooks/pre-commit" && \

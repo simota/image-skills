@@ -240,8 +240,20 @@ def _write_atomically(dest: Path, data: bytes) -> None:
     of an asset, and an interrupted plain write leaves half of one.
 
     A symlink is followed, not replaced: renaming over the link would leave the
-    image it points to unstripped while reporting it done."""
-    dest = dest.resolve() if dest.is_symlink() else dest
+    image it points to unstripped while reporting it done. The same holds for a
+    file with other hard links, and a directory that refuses new files has no
+    room for the temporary copy — both are written through the existing inode
+    instead, which also keeps its owner, extended attributes and ACLs."""
+    dest = dest.resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and (dest.stat().st_nlink > 1
+                          or not os.access(dest.parent, os.W_OK)):
+        with open(dest, "r+b") as f:
+            f.write(data)
+            f.truncate()
+            f.flush()
+            os.fsync(f.fileno())
+        return
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as f:
@@ -249,7 +261,12 @@ def _write_atomically(dest: Path, data: bytes) -> None:
             f.flush()
             os.fsync(f.fileno())
         if dest.exists():
-            os.chmod(tmp, dest.stat().st_mode & 0o7777)
+            st = dest.stat()
+            os.chmod(tmp, st.st_mode & 0o7777)
+            try:                               # keep the owner where allowed
+                os.chown(tmp, st.st_uid, st.st_gid)
+            except OSError:
+                pass
         else:
             os.chmod(tmp, 0o666 & ~_umask())
         os.replace(tmp, dest)
@@ -283,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     for f in a.files:
         try:
             out, dropped, before = strip(f, a)
-        except (Refused, imgfacts.Unreadable, OSError, struct.error) as e:
+        except (Refused, imgfacts.Unreadable, OSError, struct.error, IndexError) as e:
             print(f"{f}: {e}", file=sys.stderr)
             failed = True
             continue
@@ -299,8 +316,12 @@ def main(argv: list[str] | None = None) -> int:
               + (f"   -{saved:,} bytes" if saved else ""))
         dest = a.out or (f if a.in_place else None)
         if dest:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            _write_atomically(dest, out)
+            try:
+                _write_atomically(dest, out)
+            except OSError as e:
+                print(f"{f}: could not write {dest}: {e}", file=sys.stderr)
+                failed = True
+                continue
             print(f"  wrote {dest}  {len(out):,} bytes")
     return 1 if failed else 0
 

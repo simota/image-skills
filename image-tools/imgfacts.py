@@ -150,6 +150,8 @@ def jpeg_segments(raw: bytes, through_scans: bool = False):
         j = i
         while j + 1 < len(raw) and raw[j + 1] == 0xFF:
             j += 1                              # fill bytes before the marker
+        if j + 1 >= len(raw):                   # fill bytes and then the end
+            return
         marker = raw[j + 1]
         if marker == 0x00:                      # a stuffed byte, not a marker
             i = j + 2

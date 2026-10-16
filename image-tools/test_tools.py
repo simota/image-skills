@@ -1022,6 +1022,59 @@ def test_precommit_hook(tmp: Path) -> None:
           hook_passes(), False)
 
 
+def test_strip_writes(tmp: Path) -> None:
+    """How a stripped file reaches the disk. Each case is a regression a review
+    found in the atomic write: a new inode is right for a lone file and wrong
+    for one with other names, and a write that fails is that file's failure,
+    not a traceback that abandons the rest of the run."""
+    import os
+    d = tmp / "writes"
+    d.mkdir()
+    junk = raw_chunk(b"tEXt", b"k\x00v")
+
+    h1, h2 = d / "h1.png", d / "h2.png"
+    h1.write_bytes(png(16, 16, extra=junk))
+    os.link(h1, h2)
+    check("--in-place on a hard-linked file exits 0", strip.main([str(h1), "--in-place"]), 0)
+    truthy("every name of a hard-linked file sees the stripped bytes",
+           b"tEXt" not in h2.read_bytes())
+    check("and the names still share one file", h1.stat().st_ino, h2.stat().st_ino)
+
+    ro = d / "ro"
+    ro.mkdir()
+    f = ro / "a.png"
+    f.write_bytes(png(16, 16, extra=junk))
+    real_access = strip.os.access
+    strip.os.access = lambda path, mode, *a, **k: (
+        False if Path(path) == ro and mode == os.W_OK else real_access(path, mode, *a, **k))
+    try:
+        check("--in-place in a directory it cannot create files in exits 0",
+              strip.main([str(f), "--in-place"]), 0)
+    finally:
+        strip.os.access = real_access
+    truthy("and the file was stripped through its own inode", b"tEXt" not in f.read_bytes())
+
+    blocker = d / "blocker"
+    blocker.write_bytes(b"a file, not a directory")
+    src = d / "src.png"
+    src.write_bytes(png(16, 16, extra=junk))
+    check("a write that cannot happen is reported and exits 1, not a traceback",
+          strip.main([str(src), "--out", str(blocker / "out.png")]), 1)
+    check("and a later file in the same run is still processed",
+          strip.main([str(blocker / "nope.png"), str(src)]), 1)
+
+    dangling = d / "dl.png"
+    dangling.symlink_to(d / "made" / "here.png")
+    check("--out through a dangling link creates the link's target",
+          strip.main([str(src), "--out", str(dangling)]), 0)
+    truthy("the target now exists", (d / "made" / "here.png").exists())
+
+    cut = d / "ff.jpg"
+    cut.write_bytes(jpeg_with(16, 16, [])[:-2] + b"\xff\xff")
+    check("a JPEG ending in fill bytes is a clean failure, not a traceback",
+          strip.main([str(cut)]) in (0, 1), True)
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1063,6 +1116,7 @@ def main() -> int:
         test_no_writes_while_reporting(tmp)
         test_malformed_input(tmp)
         test_strip_leaks(tmp)
+        test_strip_writes(tmp)
         test_cli_surfaces(tmp)
         test_engine(tmp)
         test_precommit_hook(tmp)

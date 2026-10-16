@@ -125,7 +125,7 @@ def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
         if keep:
             out += whole
         else:
-            dropped.append(f"{name} ({12 + size:,} bytes)")
+            dropped.append((name, len(whole)))
         i += 12 + size
         if name == "IEND":
             ended = True
@@ -133,7 +133,7 @@ def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
     if not ended:
         raise Refused("PNG has no IEND, so it is truncated; nothing was changed")
     if i < len(raw):
-        dropped.append(f"data after IEND ({len(raw) - i:,} bytes)")
+        dropped.append(("data after IEND", len(raw) - i))
     return bytes(out), dropped
 
 
@@ -148,7 +148,7 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
         if end > len(raw):
             raise Refused("JPEG is truncated inside a segment; nothing was changed")
         if start > pos:
-            dropped.append(f"{start - pos:,} stray bytes between segments")
+            dropped.append(("stray bytes between segments", start - pos))
         pos = end
         whole = raw[start:end]
         if body is None:                       # entropy data, or a standalone marker
@@ -176,19 +176,19 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
             # header stays, the thumbnail goes, and the segment says so.
             head = body[:12] + b"\x00\x00"
             out += b"\xff\xe0" + struct.pack(">H", len(head) + 2) + head
-            dropped.append(f"JFIF thumbnail ({len(whole) - len(head) - 4:,} bytes)")
+            dropped.append(("JFIF thumbnail", len(whole) - len(head) - 4))
         elif keep:
             out += whole
         else:
             label = "COM" if marker == 0xFE else f"APP{marker - 0xE0}"
             hint = body[:12].split(b"\x00")[0].decode("latin-1", "replace")
-            dropped.append(f"{label} {hint!r} ({end - start:,} bytes)")
+            dropped.append((f"{label} {hint!r}", end - start))
     if tail is None:
         raise Refused("JPEG has no EOI, so it is truncated; nothing was changed")
     if tail < len(raw):
         # Not this image: an appended second picture (a motion photo, an MPF
         # preview) carries its own Exif and location, and ships them if kept.
-        dropped.append(f"data after EOI ({len(raw) - tail:,} bytes)")
+        dropped.append(("data after EOI", len(raw) - tail))
     return bytes(out), dropped
 
 
@@ -231,19 +231,19 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
                 whole = bytes(head)
             body += whole
         else:
-            dropped.append(f"{tag.decode('latin-1').strip()} ({8 + padded:,} bytes)")
+            dropped.append((tag.decode("latin-1").strip(), len(whole)))
         i += 8 + padded
     # A flag cleared along with the chunk it advertised is that chunk's
     # removal, already reported; one advertising a chunk that was never there
     # is a change of its own, and says so.
-    gone = {d.split(" ")[0] for d in dropped}
+    gone = {d for d, _ in dropped}
     if flags_note and not gone & {"EXIF", "XMP", "ICCP"}:
-        dropped.append(f"VP8X flags {flags_note[0]:#04x} -> {flags_note[1]:#04x}, "
-                       "0 bytes (they advertised blocks the file does not have)")
+        dropped.append((f"VP8X flags {flags_note[0]:#04x} -> {flags_note[1]:#04x}, "
+                        "which advertised blocks the file does not have", 0))
+    if i < end:                                # reported independently of a
+        dropped.append(("residue too short to be a chunk", end - i))   # trailer
     if end < len(raw):
-        dropped.append(f"data after RIFF ({len(raw) - end:,} bytes)")
-    elif i < end:
-        dropped.append(f"{end - i:,} bytes too short to be a chunk")
+        dropped.append(("data after RIFF", len(raw) - end))
     return b"RIFF" + struct.pack("<I", len(body)) + bytes(body), dropped
 
 
@@ -257,7 +257,17 @@ def strip(path: Path, opt) -> tuple[bytes, list[str], dict]:
     fn = HANDLERS.get(before["format"])
     if fn is None:
         raise Refused(f"{before['format']} is not handled; nothing was changed")
-    out, dropped = fn(path.read_bytes(), opt)
+    raw = path.read_bytes()
+    out, ledger = fn(raw, opt)
+    # The report is a ledger and has to balance: what it names, byte for byte,
+    # is what the file lost. Each handler counts what it actually dropped, and
+    # a mismatch is refused rather than written under a report that is wrong —
+    # four reviews in a row found a new way for a per-branch count to drift.
+    named = sum(n for _, n in ledger)
+    if named != len(raw) - len(out):
+        raise Refused(f"the report accounts for {named:,} bytes and the file "
+                      f"lost {len(raw) - len(out):,}; nothing was written")
+    dropped = [f"{what} ({n:,} bytes)" for what, n in ledger]
 
     # The tool's own output gets the same treatment as anything else here: read
     # off the result, never assumed from the operation. From memory, because a

@@ -1155,6 +1155,34 @@ def test_strip_accounts_for_every_byte(tmp: Path) -> None:
     truthy("no trailer byte is copied in as a missing pad", b"S" not in out[-2:])
     check("and the ledger still balances", reported_bytes(dropped), len(w.read_bytes()) - len(out))
 
+    # An unpadded odd final chunk that is dropped counts the bytes it had, not
+    # the pad it never had; and a short residue inside the RIFF is reported
+    # even when a trailer follows the RIFF end.
+    head = (bytes([0]) + b"\x00\x00\x00" + (15).to_bytes(3, "little")
+            + (15).to_bytes(3, "little"))
+    vp8x = b"VP8X" + struct.pack("<I", len(head)) + head
+    body = b"WEBP" + vp8x + b"EXIF" + struct.pack("<I", 1) + b"\x07"
+    w.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body)
+    out, dropped, _ = strip.strip(w, Opt())
+    check("an unpadded dropped chunk is counted as the bytes it had",
+          reported_bytes(dropped), len(w.read_bytes()) - len(out))
+    body = b"WEBP" + vp8x + b"abc"
+    w.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body + b"TRAILR")
+    out, dropped, _ = strip.strip(w, Opt())
+    check("residue inside the RIFF and a trailer after it are both counted",
+          reported_bytes(dropped), len(w.read_bytes()) - len(out))
+
+    # And the tool holds itself to that: a handler that under-counts is refused
+    # at run time, not shipped under a report that is wrong.
+    real = strip.HANDLERS["PNG"]
+    strip.HANDLERS["PNG"] = lambda raw, opt: (lambda o, d: (o, [(w, n - 1) for w, n in d]))(*real(raw, opt))
+    try:
+        f = tmp / "ledger-guard.png"
+        f.write_bytes(png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")))
+        truthy("a report that does not balance is refused", refuses(f, Opt(), "accounts for"))
+    finally:
+        strip.HANDLERS["PNG"] = real
+
     # The report is a ledger: what it names adds up to what the file lost.
     for name, raw in (
             ("png", png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")

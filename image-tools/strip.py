@@ -321,13 +321,17 @@ def _write_atomically(dest: Path, data: bytes) -> None:
             with open(dest, "r+b") as f:
                 try:
                     _overwrite(f, data)
-                except OSError as failed:
-                    try:
-                        _overwrite(f, original)
-                    except OSError:
-                        retain = True        # the one way out that keeps it
+                except BaseException as failed:  # an interrupt too: the finally
+                    try:                         # below must not delete the copy
+                        _overwrite(f, original)  # of a half-written file
+                    except BaseException:
+                        retain = True            # the one way out that keeps it
+                        if not isinstance(failed, OSError):
+                            raise
                         raise OSError(failed.errno, f"{failed.strerror}; {dest} may "
                                       f"be damaged, original saved to {keep}") from None
+                    if not isinstance(failed, OSError):
+                        raise
                     raise OSError(failed.errno, f"{failed.strerror}; {dest} was "
                                   "restored unchanged") from None
         finally:

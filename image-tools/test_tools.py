@@ -1146,6 +1146,29 @@ def test_strip_writes(tmp: Path) -> None:
     check("and leaves no partial copy behind", strays() - already, set())
     truthy("and the image was not touched", b"tEXt" in hl.read_bytes())
 
+    # An interrupt mid-write is a failure like any other: the original goes
+    # back before the interrupt carries on, and nothing is stranded.
+    hl.write_bytes(png(16, 16, extra=junk))
+    pristine = hl.read_bytes()
+    real_overwrite, seen = strip._overwrite, []
+
+    def interrupted(f, data):
+        seen.append(1)
+        if len(seen) == 1:
+            f.seek(0)
+            f.write(data[:10])                       # half a write, then Ctrl-C
+            raise KeyboardInterrupt
+        return real_overwrite(f, data)
+
+    strip._overwrite = interrupted
+    try:
+        truthy("an interrupt mid-write still propagates",
+               raises(lambda: strip._write_atomically(hl, b"x" * 20), KeyboardInterrupt))
+    finally:
+        strip._overwrite = real_overwrite
+    check("and the original is back first", hl.read_bytes(), pristine)
+    check("and no recovery copy is stranded", strays() - already, set())
+
     blocker = d / "blocker"
     blocker.write_bytes(b"a file, not a directory")
     src = d / "src.png"

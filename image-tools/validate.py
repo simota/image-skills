@@ -906,6 +906,10 @@ def v38_enumerations_declared():
         fence = None                     # the opening run, while inside one
         for i, line in enumerate(read(f).splitlines(), 1):
             run = re.match(r" {0,3}(`{3,}|~{3,})", line)
+            if run and fence is None and run.group(1)[0] == "`" \
+                    and "`" in line[run.end():]:
+                run = None                       # CommonMark: no backtick in a
+                                                 # backtick fence's info string
             if run:
                 mark = run.group(1)
                 if fence is None:

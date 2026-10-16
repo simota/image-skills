@@ -569,6 +569,15 @@ def _(r):
                  encoding="utf-8")
 
 
+@quiet("a backtick run with a backtick in its info string opens no fence")
+def _(r):
+    # CommonMark: such a line is a paragraph, so the heading after it is still
+    # a heading — and a heading names things, it switches on nothing.
+    f = r / f"{S}image-review/reference/report-template.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n```bad`info\n\n# status: DONE | MAYBE\n", encoding="utf-8")
+
+
 @quiet("a quoted marker is talked about, not left behind")
 def _(r):
     f = r / f"{S}image-prompt/playbooks/structure.md"

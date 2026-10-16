@@ -1144,6 +1144,17 @@ def test_strip_accounts_for_every_byte(tmp: Path) -> None:
     truthy("a RIFF size past the end of the file is refused as truncated",
            refuses(w, Opt(), "truncated"))
 
+    # An odd final chunk missing its pad ends exactly at the RIFF end; the
+    # byte after it belongs to the trailer, and must not ride along as the pad.
+    head = (bytes([0]) + b"\x00\x00\x00" + (15).to_bytes(3, "little")
+            + (15).to_bytes(3, "little"))
+    body = b"WEBP" + b"VP8X" + struct.pack("<I", len(head)) + head \
+        + b"ANIM" + struct.pack("<I", 1) + b"\x07"
+    w.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body + b"SECRET")
+    out, dropped, _ = strip.strip(w, Opt())
+    truthy("no trailer byte is copied in as a missing pad", b"S" not in out[-2:])
+    check("and the ledger still balances", reported_bytes(dropped), len(w.read_bytes()) - len(out))
+
     # The report is a ledger: what it names adds up to what the file lost.
     for name, raw in (
             ("png", png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")

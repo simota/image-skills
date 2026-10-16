@@ -209,8 +209,10 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
         padded = size + (size & 1)
         if i + 8 + size > end:
             raise Refused(f"WebP is truncated inside {tag!r}; nothing was changed")
-        whole = raw[i:i + 8 + padded]          # a missing final pad stays missing:
-                                               # this edits containers, never repairs them
+        # Never past the RIFF end: a final chunk missing its pad stays missing
+        # (this edits containers, never repairs them), and the byte after it is
+        # the trailer's, not a pad to copy along.
+        whole = raw[i:min(i + 8 + padded, end)]
         keep = (tag in WEBP_STRUCTURE
                 or (tag in WEBP_COLOUR and not opt.drop_profile))
         if tag == b"EXIF":

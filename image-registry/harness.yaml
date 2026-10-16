@@ -116,7 +116,7 @@ generators:
   default: codex
 
   codex:
-    tool: image_generation
+    tool: image_gen             # the tool; `image_generation` is the feature that enables it
     skill: "$CODEX_HOME/skills/.system/imagegen"
     invoke: "codex exec --enable image_generation"
     home_env: CODEX_HOME

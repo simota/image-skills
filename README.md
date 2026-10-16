@@ -6,8 +6,9 @@ project — plus the contracts they share and the budgets that keep the set from
 growing into something nobody can route through.
 
 **None of them generate pixels themselves.** The generation is one of two
-installed tools — Codex's own `imagegen` skill and its built-in
-`image_generation` tool, or the `generate_image` tool built into the `agy` CLI.
+installed tools — Codex's own `imagegen` skill and its built-in `image_gen` tool
+(switched on by the `image_generation` feature), or the `generate_image` tool
+built into the `agy` CLI.
 This set is the discipline around them: what to ask for, how many times, whether
 anyone looked, and what has to be written down so the picture can be made again.
 

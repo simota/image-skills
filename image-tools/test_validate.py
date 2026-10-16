@@ -559,6 +559,16 @@ def _(r):
                  + "\n```yaml\n# status: DONE | MAYBE\n```\n", encoding="utf-8")
 
 
+@case("V38-nested-fence", says="MAYBE")
+def _(r):
+    # Inside a four-backtick fence a three-backtick line is content, not a
+    # fence; toggling on it called the rest of the block unfenced.
+    f = r / f"{S}image-review/reference/report-template.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n````md\n```\n# status: DONE | MAYBE\n```\n````\n",
+                 encoding="utf-8")
+
+
 @quiet("a quoted marker is talked about, not left behind")
 def _(r):
     f = r / f"{S}image-prompt/playbooks/structure.md"

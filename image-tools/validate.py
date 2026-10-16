@@ -903,12 +903,22 @@ def v38_enumerations_declared():
     for f in sorted(SKILLS_ROOT.rglob("*.md")):
         if ".git" in f.parts:
             continue
-        fenced = False
+        fence = None                     # the opening run, while inside one
         for i, line in enumerate(read(f).splitlines(), 1):
-            if line.lstrip().startswith("```"):
-                fenced = not fenced
-                continue
-            for m in _enumerations(line, fenced):
+            run = re.match(r" {0,3}(`{3,}|~{3,})", line)
+            if run:
+                mark = run.group(1)
+                if fence is None:
+                    fence = mark
+                    continue
+                # Only a run of the same character, at least as long and with
+                # nothing after it, closes a fence (CommonMark); anything else
+                # inside is content.
+                if mark[0] == fence[0] and len(mark) >= len(fence) \
+                        and not line[run.end():].strip():
+                    fence = None
+                    continue
+            for m in _enumerations(line, fence is not None):
                 seen += 1
                 words = [w.strip() for w in m.split("|")]
                 missing = [w for w in words if w not in declared]

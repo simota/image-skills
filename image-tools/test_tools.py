@@ -1190,6 +1190,28 @@ def test_strip_writes(tmp: Path) -> None:
         check("and that copy is the original", Path(kept.group(1)).read_bytes(), pristine)
         Path(kept.group(1)).unlink()
 
+    # A failed write, then Ctrl-C during the restore: the interrupt is not
+    # converted into an error that main() would report and continue past.
+    hl.write_bytes(pristine)
+
+    def write_fails_then_interrupted(f, data):
+        f.seek(0)
+        f.write(data[:10])
+        raise OSError(28, "No space") if data != pristine else KeyboardInterrupt
+
+    strip._overwrite = write_fails_then_interrupted
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            truthy("an interrupt during the restore stays an interrupt",
+                   raises(lambda: strip.main([str(hl), "--in-place"]), KeyboardInterrupt))
+    finally:
+        strip._overwrite = real_overwrite
+    kept = _re.search(r"original saved to (\S+)", err.getvalue())
+    truthy("and the copy's location is said first", kept)
+    if kept:
+        Path(kept.group(1)).unlink()
+
     blocker = d / "blocker"
     blocker.write_bytes(b"a file, not a directory")
     src = d / "src.png"

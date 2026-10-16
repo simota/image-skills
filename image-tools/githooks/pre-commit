@@ -1,6 +1,14 @@
 #!/bin/sh
 # Budgets enforced by a mechanism rather than by remembering.
 # Install with: make hooks
+#
+# The commit is the index, so the index is what gets checked: it is written out
+# to a scratch directory and the checks run there. Checking the working tree
+# failed clean commits over unrelated unstaged edits, and passed broken staged
+# files whose fix happened to sit unstaged beside them.
 set -e
-python3 "$(git rev-parse --show-toplevel)/image-tools/validate.py"
-python3 "$(git rev-parse --show-toplevel)/image-tools/figures_check.py"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT INT TERM
+git checkout-index --all --prefix="$tmp/"
+python3 "$tmp/image-tools/validate.py"
+python3 "$tmp/image-tools/figures_check.py"

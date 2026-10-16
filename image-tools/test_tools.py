@@ -978,6 +978,50 @@ def test_engine(tmp: Path) -> None:
           f"# x\n\n<!-- deliver:{key} -->\nold\n")
 
 
+def test_precommit_hook(tmp: Path) -> None:
+    """The hook judges the commit, which is the index — not the working tree.
+
+    Validating the tree failed a clean commit because of an unrelated,
+    unstaged half-edit, and would pass a broken staged file whose fix sat
+    unstaged beside it."""
+    import os
+    import shutil
+    import subprocess
+    if shutil.which("git") is None:
+        failures.append("  git is not on PATH; the pre-commit hook was not exercised")
+        return
+    repo = tmp / "hookrepo"
+    root = Path(__file__).resolve().parent.parent
+    shutil.copytree(root, repo, symlinks=True,
+                    ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(repo), *args], env=env,
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-q", "--no-verify", "-m", "base")
+    hook = repo / "image-tools" / "githooks" / "pre-commit"
+
+    def hook_passes() -> bool:
+        return subprocess.run(["sh", str(hook)], cwd=repo, env=env,
+                              capture_output=True, text=True).returncode == 0
+
+    target = repo / "skills" / "image-prompt" / "playbooks" / "structure.md"
+    good = target.read_text(encoding="utf-8")
+    broken = good + "\n#" + "TODO(agent): no class here\n"
+    check("the hook passes a clean index", hook_passes(), True)
+    target.write_text(broken, encoding="utf-8")
+    check("an unstaged breakage does not fail the commit", hook_passes(), True)
+    git("add", str(target))
+    target.write_text(good, encoding="utf-8")
+    check("a staged breakage fails the commit, whatever the tree says",
+          hook_passes(), False)
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1021,6 +1065,7 @@ def main() -> int:
         test_strip_leaks(tmp)
         test_cli_surfaces(tmp)
         test_engine(tmp)
+        test_precommit_hook(tmp)
     if failures:
         print(f"{len(failures)} failure(s):")
         print("\n".join(failures))

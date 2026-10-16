@@ -926,12 +926,27 @@ RULES = [v1_sizes, v2_description_terms, v3_roster, v4_playbook_orphans,
          v39_post_change_review]
 
 
+def _hook_state() -> str:
+    """Whether the pre-commit hook is installed, asked of git: in a worktree
+    `.git` is a file, and core.hooksPath may point anywhere. Outside a
+    repository — the hook runs this on an export of the index — nothing is
+    said, rather than a confident "off"."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute",
+                            "--git-path", "hooks"], capture_output=True, text=True)
+    except OSError:
+        return ""
+    if r.returncode != 0 or not r.stdout.strip():
+        return ""
+    on = (Path(r.stdout.strip()) / "pre-commit").exists()
+    return f" · hooks {'on' if on else 'off — run: make hooks'}"
+
+
 def main() -> int:
     for rule in RULES:
         rule()
-    hooks = (ROOT / ".git" / "hooks" / "pre-commit").exists()
-    print(f"{len(RULES)} rules · {len(SKILLS)} skills · "
-          f"hooks {'on' if hooks else 'off — run: make hooks'}")
+    print(f"{len(RULES)} rules · {len(SKILLS)} skills{_hook_state()}")
     if FAILURES:
         for f in sorted(FAILURES):
             print(f"  {f}")

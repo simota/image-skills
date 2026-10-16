@@ -500,6 +500,57 @@ def _(r):
         "    section: Owns\n")
 
 
+@case("V22-between-spans", says="residual class")
+def _(r):
+    # The text between two code spans is not code, whichever backtick a
+    # pattern happens to start from.
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nRun `make check` #"
+                 "TODO(agent): fix the walker `later`\n", encoding="utf-8")
+
+
+@case("V19-nested", says="does not resolve")
+def _(r):
+    sub_dir = r / f"{S}image-prompt/reference/deeper"
+    sub_dir.mkdir()
+    (sub_dir / "x.md").write_text("<!-- image:deferred -->\nSee `playbooks/nope.md`.\n",
+                                  encoding="utf-8")
+
+
+@case("V19-harness-path", says="image-tools/nope.py")
+def _(r):
+    f = r / f"{S}image-prompt/reference/sizes.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee `image-tools/nope.py`.\n",
+                 encoding="utf-8")
+
+
+# The other half: edits a rule must stay quiet about. A rule that fires on
+# ordinary writing gets switched off, which is a slower way to have no rule.
+QUIET: dict[str, callable] = {}
+
+
+def quiet(name):
+    def deco(fn):
+        QUIET[name] = fn
+        return fn
+    return deco
+
+
+@quiet("a heading that names formats is not an enumeration")
+def _(r):
+    f = r / f"{S}image-deliver/reference/export-targets.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\n# PNG | WEBP\n\n# Output: PNG | WEBP\n",
+                 encoding="utf-8")
+
+
+@quiet("a quoted marker is talked about, not left behind")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nA marker reads `#" + "TODO(agent): <action>` in a document.\n",
+                 encoding="utf-8")
+
+
 def main() -> int:
     code, baseline = run(ROOT)
     if code != 0:
@@ -520,9 +571,21 @@ def main() -> int:
                 bad.append(rule)
                 print(f"  {rule} did not fire\n{out}")
 
-    print(f"{len(CASES)} rules exercised, {len(bad)} silent")
+    for name, mutate in QUIET.items():
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "repo"
+            shutil.copytree(ROOT, copy, symlinks=True,
+                            ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            mutate(copy)
+            code, out = run(copy)
+            if code != 0:
+                bad.append(f"quiet: {name}")
+                print(f"  a rule fired on: {name}\n{out}")
+
+    print(f"{len(CASES)} rules exercised, {len(QUIET)} quiet cases, "
+          f"{len(bad)} wrong")
     if bad:
-        print("silent: " + ", ".join(bad))
+        print("wrong: " + ", ".join(bad))
         return 1
 
     # Counting the cases that exist says nothing about the rules that do. A rule

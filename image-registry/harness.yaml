@@ -216,10 +216,8 @@ label_by_path:
 external_paths: [".agents/", "CLAUDE.md", "AGENTS.md", "GEMINI.md", "settings.json", "assets/", "public/",
                  # the backing imagegen skill's own files, named where a page quotes it
                  "references/", "scripts/",
-                 # this harness, named for maintainers in a page's header; no skill reads it
-                 "image-tools/",
                  # example files in a reader's project, on the recipe page
-                 "hero.png", "images.yaml"]
+                 "hero.png.recipe.yaml", "images.yaml"]
 
 # Content that goes stale belongs in reference/, which carries no line budget and
 # is checked for freshness instead. A model identifier is the fastest-rotting

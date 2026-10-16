@@ -56,7 +56,13 @@ LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 # the directory the file writing it lives in.
 TICK_PATH_RE = re.compile(r"`([^`\s]*(?:/[^`\s]*|\.(?:md|yaml|py)))`")
 MARKER_RE = re.compile(r"#" + r"TODO\(agent\):")
-QUOTED_MARKER_RE = re.compile(r"`[^`]*#" + r"TODO\(agent\):[^`]*`")
+
+
+def _live_marker(line: str) -> bool:
+    """A marker outside every code span. Split on backticks, the odd pieces are
+    code; a pattern looking for "inside backticks" can start at a closing one
+    and call the prose between two spans code."""
+    return any(MARKER_RE.search(piece) for piece in line.split("`")[0::2])
 
 
 def read(p: Path) -> str:
@@ -343,8 +349,8 @@ def v19_paths_resolve():
     shared = sorted((SKILLS_ROOT / SHARED).glob("*.md"))
     for d in SKILL_DIRS:
         # reference/ is read by the skill too, so its paths resolve the same way
-        readable = [d / "SKILL.md"] + sorted((d / "playbooks").glob("*.md")) \
-            + sorted((d / "reference").glob("*.md"))
+        readable = [d / "SKILL.md"] + sorted((d / "playbooks").rglob("*.md")) \
+            + sorted((d / "reference").rglob("*.md"))
         for f in readable:
             _check_paths(f, d, f"{d.name}/{f.relative_to(d)}")
     for f in shared:                      # checked once, against one skill dir
@@ -355,7 +361,11 @@ def v19_paths_resolve():
 # under one of the set's own roots. `node_modules/` in a search playbook is an
 # example of the reader's project, not a pointer into this repo.
 def _is_own_reference(p: str) -> bool:
-    if any(p.startswith(x) or p == x for x in H.get("external_paths", [])):
+    # An entry ending in `/` is a directory and covers what is under it; any
+    # other entry is one name. A bare prefix exempted every path that merely
+    # began with the same characters.
+    if any(p == x or (x.endswith("/") and p.startswith(x))
+           for x in H.get("external_paths", [])):
         return False
     if p.endswith((".md", ".yaml", ".py")):
         return True
@@ -366,7 +376,12 @@ def _check_paths(f: Path, base: Path, label: str) -> None:
     for p in TICK_PATH_RE.findall(read(f)):
         if p.startswith(("http", "~", "/")) or " " in p or not _is_own_reference(p):
             continue
-        if ".." in p:
+        if p.startswith(f"{SET}-tools/"):
+            # The harness, named for maintainers; no skill reads it, but the
+            # name still has to point at something that exists.
+            if not (ROOT / p).exists():
+                fail("V19", f"{label} names {p}, which is not in the repository")
+        elif ".." in p:
             fail("V19", f"{label} references {p!r}; paths are normalised lexically, "
                         "so `..` does not traverse the install symlink")
         elif not (base / p).exists():
@@ -422,7 +437,7 @@ def v22_markers_classified():
         for i, line in enumerate(read(f).splitlines(), 1):
             # Exempt only a marker quoted inside backticks — one that is being
             # talked about. A live marker on a line with other code is still live.
-            if MARKER_RE.search(line) and not QUOTED_MARKER_RE.search(line):
+            if _live_marker(line):
                 if not any(c in line for c in VOCAB["residual_classes"]):
                     fail("V22", f"{f.relative_to(ROOT)}:{i} marker carries no residual class")
 
@@ -891,7 +906,12 @@ def _enumerations(line: str) -> list[str]:
     place a schema line usually lists its values — with backticks and a closing
     parenthetical removed, both of which hid the one real enumeration here."""
     out = []
-    text, _, comment = line.partition("#")
+    if re.match(r"\s*#+\s", line):          # a heading names things; it switches on nothing
+        return out
+    # A comment starts at a `#` after whitespace, as in YAML; a `#` inside a
+    # word is not one.
+    m = re.search(r"\s#", line)
+    text, comment = (line[:m.start()], line[m.end():]) if m else (line, "")
     for part in (text, comment) if comment else (text,):
         part = re.sub(r"\s*\([^()]*\)\s*$", "", part.replace("`", "")).strip()
         m = ENUM_RE.search(part)

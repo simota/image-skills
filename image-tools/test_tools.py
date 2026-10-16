@@ -1169,6 +1169,27 @@ def test_strip_writes(tmp: Path) -> None:
     check("and the original is back first", hl.read_bytes(), pristine)
     check("and no recovery copy is stranded", strays() - already, set())
 
+    # Interrupted, and the restore fails too: the interrupt is still what
+    # propagates, and the copy's location is said before it does.
+    def always(f, data):
+        f.seek(0)
+        f.write(data[:10])
+        raise KeyboardInterrupt if data != pristine else OSError(5, "I/O error")
+
+    strip._overwrite = always
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            truthy("the original interrupt propagates, not the restore's error",
+                   raises(lambda: strip._write_atomically(hl, b"x" * 20), KeyboardInterrupt))
+    finally:
+        strip._overwrite = real_overwrite
+    kept = _re.search(r"original saved to (\S+)", err.getvalue())
+    truthy("and the copy's location is said before it does", kept)
+    if kept:
+        check("and that copy is the original", Path(kept.group(1)).read_bytes(), pristine)
+        Path(kept.group(1)).unlink()
+
     blocker = d / "blocker"
     blocker.write_bytes(b"a file, not a directory")
     src = d / "src.png"

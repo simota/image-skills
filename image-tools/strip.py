@@ -326,10 +326,14 @@ def _write_atomically(dest: Path, data: bytes) -> None:
                         _overwrite(f, original)  # of a half-written file
                     except BaseException:
                         retain = True            # the one way out that keeps it
+                        where = f"{dest} may be damaged, original saved to {keep}"
                         if not isinstance(failed, OSError):
-                            raise
-                        raise OSError(failed.errno, f"{failed.strerror}; {dest} may "
-                                      f"be damaged, original saved to {keep}") from None
+                            # The interrupt is what the caller is waiting for,
+                            # so it propagates — after the one fact that makes
+                            # the damage recoverable has been said.
+                            print(f"strip.py: {where}", file=sys.stderr)
+                            raise failed from None
+                        raise OSError(failed.errno, f"{failed.strerror}; {where}") from None
                     if not isinstance(failed, OSError):
                         raise
                     raise OSError(failed.errno, f"{failed.strerror}; {dest} was "

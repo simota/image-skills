@@ -1192,6 +1192,16 @@ def test_edges_round_four(tmp: Path) -> None:
 
     check("a size just past the ratio limit still has a legal neighbour inside "
           "the tolerance", imgfacts.nearest_legal(3010, 1000) is not None, True)
+    # The cut-off uses the search's own drift rule, in both orientations: a
+    # fixed margin answered None for shapes the search itself would accept.
+    for w, h in ((75376, 25000), (1000, 3010)):
+        n = imgfacts.nearest_legal(w, h)
+        truthy(f"nearest_legal({w},{h}) answers inside the tolerance", n)
+        if n:
+            check(f"nearest_legal({w},{h}) is legal", imgfacts.illegal(*n), set())
+    for w, h in ((3840, 1024), (1024, 3840), (25000, 75376)):
+        check(f"nearest_legal({w},{h}) is past the limit by more than the tolerance",
+              imgfacts.nearest_legal(w, h), None)
 
     skill = tmp / "SKILL2.md"
     key = next(iter(render.H["delivered"]))

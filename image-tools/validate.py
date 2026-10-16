@@ -936,7 +936,7 @@ def _enumerations(line: str, fenced: bool = False) -> list[str]:
     place a schema line usually lists its values — with backticks and a closing
     parenthetical removed, both of which hid the one real enumeration here."""
     out = []
-    if not fenced and re.match(r"#+\s", line):
+    if not fenced and re.match(r" {0,3}#{1,6}(\s|$)", line):   # CommonMark ATX heading
         return out                          # a heading names things; it switches on nothing
     # A comment starts at a `#` after whitespace, as in YAML; a `#` inside a
     # word is not one.

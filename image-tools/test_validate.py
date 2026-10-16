@@ -539,8 +539,8 @@ def quiet(name):
 @quiet("a heading that names formats is not an enumeration")
 def _(r):
     f = r / f"{S}image-deliver/reference/export-targets.md"
-    f.write_text(f.read_text(encoding="utf-8") + "\n# PNG | WEBP\n\n# Output: PNG | WEBP\n",
-                 encoding="utf-8")
+    f.write_text(f.read_text(encoding="utf-8") + "\n# PNG | WEBP\n\n# Output: PNG | WEBP\n"
+                 "\n  # Output: PNG | WEBP\n", encoding="utf-8")   # indented, still a heading
 
 
 @quiet("a marker in double-backtick code is quoted too")

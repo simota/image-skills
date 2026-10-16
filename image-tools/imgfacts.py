@@ -363,12 +363,17 @@ def nearest_legal(w: int, h: int) -> tuple[int, int] | None:
     the limit means.
     """
     m = CANVAS["edge_multiple"]
-    # Past the ratio limit by more than the tolerance, no scaling of this shape
-    # is legal. Just past it, a legal canvas still keeps the shape.
-    if w <= 0 or h <= 0 or (max(w, h) / min(w, h)
-                            > CANVAS["max_ratio"] * (1 + ASPECT_TOLERANCE)):
+    if w <= 0 or h <= 0:
         return None
     aspect, want = w / h, w * h
+    # The legal shape nearest this one is the aspect clamped to the ratio
+    # limit, measured with the same relative drift the search below uses —
+    # one rule, so the cut-off and the search cannot disagree about a shape
+    # (a fixed margin did, in both directions, near 3:1 and near 1:3).
+    lim = CANVAS["max_ratio"]
+    closest = min(max(aspect, 1 / lim), lim)
+    if abs(closest - aspect) / aspect > ASPECT_TOLERANCE:
+        return None
     inside, outside = [], []
     # The whole grid. A range of scales around the request answered "nothing
     # is legal" for 16x16 and for 100000x100000, and the two heights nearest

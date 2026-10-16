@@ -229,7 +229,10 @@ def v10_fixtures():
         return
     for entry in FIX:
         ask, expect = _norm(entry["ask"]), entry["expect"]
-        hits = [(len(sig), owner) for sig, owner in pairs if sig in ask]
+        # Whole words only: a signal inside a longer word is not that signal,
+        # and matching it there let a fixture pass that nothing really matched.
+        hits = [(len(sig), owner) for sig, owner in pairs
+                if re.search(rf"(?<!\w){re.escape(sig)}(?!\w)", ask)]
         if not hits:
             fail("V10", f"no signal matches {entry['ask']!r} (expected {expect})")
             continue
@@ -297,7 +300,11 @@ def v16_sections():
 
 def v17_delivery():
     for key, spec in H["delivered"].items():
-        want = read(ROOT / "image-registry" / "delivered" / f"{key}.md").rstrip("\n")
+        source = ROOT / "image-registry" / "delivered" / f"{key}.md"
+        if not source.exists():
+            fail("V17", f"harness.yaml delivers {key!r} and there is no delivered/{key}.md")
+            continue
+        want = read(source).rstrip("\n")
         open_m, close_m = f"<!-- deliver:{key} -->", f"<!-- /deliver:{key} -->"
         for d in SKILL_DIRS:
             text = read(d / "SKILL.md")
@@ -330,6 +337,8 @@ def v19_paths_resolve():
     applies to the shared contracts too — they are read *by* a skill, so a
     sibling-relative path in them points at nothing once installed.
     """
+    if not SKILL_DIRS:
+        return                            # V3 reports the roster mismatch
     probe = SKILL_DIRS[0]
     shared = sorted((SKILLS_ROOT / SHARED).glob("*.md"))
     for d in SKILL_DIRS:

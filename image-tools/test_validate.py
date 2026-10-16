@@ -249,37 +249,30 @@ def _(r):
 
 
 
-@case("V34")
+@case("V34", says="cannot reach")
 def _(r):
-    """Reachable and runnable must move together, whichever way they are split."""
-    for d in sorted((r / "skills").glob("image-*")):
-        link = d / "refute.py"
-        if link.is_symlink():
-            link.unlink()                      # runnable, and now out of reach
-            return
-    # No set-wide link to remove: make a skill runnable instead, and leave it
-    # unreachable. Widening a class trips V15 too, which the harness allows —
-    # it only asks that V34 appear.
-    sub(r / "image-registry/harness.yaml",
-        "tools: \"Read, Grep, Glob, Write", "tools: \"Read, Grep, Glob, Bash, Write")
+    """Runnable and declared, and out of reach."""
+    (r / "skills/image-review/refute.py").unlink()
 
 
-@case("V34-decoration")
+@case("V34-decoration", says="grants no Bash")
 def _(r):
-    """A link where the class grants no shell reads like a capability and is not one."""
-    import yaml as _y
-    caps = _y.safe_load((r / "image-registry/capabilities.yaml").read_text())
-    cls = _y.safe_load((r / "image-registry/harness.yaml").read_text())["permission_classes"]
-    for name, e in caps.items():
-        if "Bash" not in cls[e["class"]]["tools"]:
-            (r / "skills" / name / "refute.py").symlink_to("../../image-tools/refute.py")
-            return
-    for d in sorted((r / "skills").glob("image-*")):
-        link = d / "refute.py"
-        if link.is_symlink():
-            link.unlink()
-            link.symlink_to("../../image-tools/render.py")   # the set's own, but the wrong tool
-            return
+    """A link where the class grants no shell reads like a capability and is not
+    one. Every class this set declares grants Bash, so the case adds one that
+    does not; picking an existing class without Bash found none and fell
+    through to a different branch."""
+    sub(r / "image-registry/harness.yaml", "permission_classes:\n",
+        "permission_classes:\n  no-shell:\n    tools: \"Read, Grep, Glob\"\n"
+        "    writes: false\n")
+    sub(r / "image-registry/capabilities.yaml",
+        "image-review:\n  class: read-only", "image-review:\n  class: no-shell")
+
+
+@case("V34-wrong-target", says="not the set's own")
+def _(r):
+    link = r / "skills/image-review/refute.py"
+    link.unlink()
+    link.symlink_to("../../image-tools/render.py")   # the set's own, but the wrong tool
 
 
 @case("V34-undeclared")
@@ -486,6 +479,25 @@ def _(r):
     f = r / f"{S}_image/ROUTING.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nSee `image-colour-grade`.\n",
                  encoding="utf-8")
+
+
+@case("V10-substring", says="no signal matches")
+def _(r):
+    # A signal inside a longer word is not that signal — `seed` is not in
+    # `seedling` — so a fixture that only matches that way matches nothing.
+    import yaml as _y
+    caps = _y.safe_load((r / "image-registry/capabilities.yaml").read_text())
+    sig = next(s for s in caps["image-refine"]["signals"] if " " not in s)
+    f = r / "image-registry/fixtures.yaml"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + f"\n- ask: \"x{sig}y\"\n  expect: image-refine\n",
+                 encoding="utf-8")
+
+
+@case("V17-missing-source", says="no delivered/")
+def _(r):
+    sub(r / "image-registry/harness.yaml", "delivered:\n", "delivered:\n  nosuch:\n"
+        "    section: Owns\n")
 
 
 def main() -> int:

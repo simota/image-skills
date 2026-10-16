@@ -1062,6 +1062,43 @@ def test_strip_writes(tmp: Path) -> None:
           f.stat().st_ino, inode)
     truthy("and the file was stripped through its own inode", b"tEXt" not in f.read_bytes())
 
+    # Writing through an inode cannot be atomic, so a failure part-way must
+    # put the original back; if even that fails, the original is kept
+    # somewhere the error names. A half-written only copy is never the result.
+    hl, hl2 = d / "fail1.png", d / "fail2.png"
+    original = png(16, 16, extra=junk)
+    hl.write_bytes(original)
+    os.link(hl, hl2)
+    real_fsync, calls = strip.os.fsync, []
+
+    def failing_fsync(fd):
+        calls.append(fd)
+        if len(calls) == 1:
+            raise OSError(28, "No space left on device")
+        return real_fsync(fd)
+
+    strip.os.fsync = failing_fsync
+    try:
+        check("a write through the inode that fails exits 1",
+              strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        strip.os.fsync = real_fsync
+    check("and the original is back, for every name", hl2.read_bytes(), original)
+
+    strip.os.fsync = lambda fd: (_ for _ in ()).throw(OSError(5, "I/O error"))
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            check("a failed restore also exits 1", strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        strip.os.fsync = real_fsync
+    import re as _re
+    saved = _re.search(r"original saved to (\S+)", err.getvalue())
+    truthy("and the error names where the original was saved", saved)
+    if saved:
+        check("which holds the original bytes", Path(saved.group(1)).read_bytes(), original)
+        Path(saved.group(1)).unlink()
+
     blocker = d / "blocker"
     blocker.write_bytes(b"a file, not a directory")
     src = d / "src.png"

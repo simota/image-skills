@@ -148,7 +148,8 @@ the output is named in the report, in all three formats. It re-reads its own
 output in memory, before touching the disk, refusing if the dimensions, format,
 alpha or profile moved, and it replaces a lone file whole or not at all; a file
 with other hard links, or in a directory that refuses new files, is rewritten
-through its own inode so every name sees the result. A run with neither
+through its own inode so every name sees the result, with the original put
+back if that write fails part-way. A run with neither
 `--out` nor `--in-place` writes nothing.
 
 **One parser per format, shared.** `strip.py` reads JPEG through the same marker

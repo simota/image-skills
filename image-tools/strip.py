@@ -293,16 +293,32 @@ def _write_atomically(dest: Path, data: bytes) -> None:
     image it points to unstripped while reporting it done. The same holds for a
     file with other hard links, and a directory that refuses new files has no
     room for the temporary copy — both are written through the existing inode
-    instead, which also keeps its owner, extended attributes and ACLs."""
+    instead, which also keeps its owner, extended attributes and ACLs.
+
+    That path cannot be atomic, so it keeps the original bytes and puts them
+    back if any step fails. Stripping only shrinks a file, so neither the write
+    nor the restore needs new space on an ordinary filesystem. If the restore
+    fails as well, the original is saved to the system temporary directory and
+    the error says where: a half-written only copy is never the outcome."""
     dest = dest.resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and (dest.stat().st_nlink > 1
                           or not os.access(dest.parent, os.W_OK)):
+        original = dest.read_bytes()
         with open(dest, "r+b") as f:
-            f.write(data)
-            f.truncate()
-            f.flush()
-            os.fsync(f.fileno())
+            try:
+                _overwrite(f, data)
+            except OSError as failed:
+                try:
+                    _overwrite(f, original)
+                except OSError:
+                    fd, keep = tempfile.mkstemp(prefix=f"{dest.name}.original.")
+                    with os.fdopen(fd, "wb") as k:
+                        k.write(original)
+                    raise OSError(failed.errno, f"{failed.strerror}; {dest} may be "
+                                  f"damaged, original saved to {keep}") from None
+                raise OSError(failed.errno, f"{failed.strerror}; {dest} was "
+                              "restored unchanged") from None
         return
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:
@@ -323,6 +339,14 @@ def _write_atomically(dest: Path, data: bytes) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def _overwrite(f, data: bytes) -> None:
+    f.seek(0)
+    f.write(data)
+    f.truncate()
+    f.flush()
+    os.fsync(f.fileno())
 
 
 def _umask() -> int:

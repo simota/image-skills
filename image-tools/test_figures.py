@@ -105,7 +105,9 @@ def main() -> int:
                 continue
             f.write_text(text.replace(old, new, 1), encoding="utf-8")
             r = run(copy)
-            if not r.returncode:
+            # The named checker must be the one that fired: a neighbour
+            # catching the same edit proves nothing about this checker.
+            if not r.returncode or f"[{checker}]" not in r.stdout:
                 silent.append(f"{i}:{checker}/{kind}")
                 print(f"  case {i} ({checker}, {kind}) did not fire\n{r.stdout}{r.stderr}")
 

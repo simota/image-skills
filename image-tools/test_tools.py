@@ -1120,6 +1120,32 @@ def test_strip_writes(tmp: Path) -> None:
           (strip.main([str(hl), "--in-place"]), set(_glob.glob(pattern)) - already),
           (0, set()))
 
+    # Every way out except a failed restore removes the recovery copy: a run
+    # that carries on to the next file must not strand originals in /tmp.
+    def strays() -> set:
+        return set(_glob.glob(pattern))
+    hl.write_bytes(png(16, 16, extra=junk))
+    already = strays()
+    real_open = strip.__dict__.get("open", open)
+    strip.open = lambda path, *a, **k: (
+        (_ for _ in ()).throw(PermissionError(13, "denied")) if Path(path) == hl.resolve()
+        else real_open(path, *a, **k))
+    try:
+        check("an image that cannot be opened for writing exits 1",
+              strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        del strip.open
+    check("and leaves no recovery copy behind", strays() - already, set())
+    strip.os.fsync = lambda fd: (real_fsync(fd) if os.fstat(fd).st_ino == target
+                                 else (_ for _ in ()).throw(OSError(28, "No space")))
+    try:
+        check("a recovery copy that cannot be finished refuses the write",
+              strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        strip.os.fsync = real_fsync
+    check("and leaves no partial copy behind", strays() - already, set())
+    truthy("and the image was not touched", b"tEXt" in hl.read_bytes())
+
     blocker = d / "blocker"
     blocker.write_bytes(b"a file, not a directory")
     src = d / "src.png"

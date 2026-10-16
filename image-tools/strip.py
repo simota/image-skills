@@ -307,28 +307,32 @@ def _write_atomically(dest: Path, data: bytes) -> None:
     if dest.exists() and (dest.stat().st_nlink > 1
                           or not os.access(dest.parent, os.W_OK)):
         original = dest.read_bytes()
-        try:
-            fd, keep = tempfile.mkstemp(prefix=f"{dest.name}.original.")
-            with os.fdopen(fd, "wb") as k:
-                k.write(original)
-                k.flush()
-                os.fsync(k.fileno())
-        except OSError as e:
-            raise OSError(e.errno, f"could not save a recovery copy of {dest} "
-                          f"({e.strerror}); nothing was changed") from None
-        with open(dest, "r+b") as f:
-            try:
-                _overwrite(f, data)
-            except OSError as failed:
+        keep, retain = None, False
+        try:                                 # the copy's whole lifetime: removed
+            try:                             # on every way out but one
+                fd, keep = tempfile.mkstemp(prefix=f"{dest.name}.original.")
+                with os.fdopen(fd, "wb") as k:
+                    k.write(original)
+                    k.flush()
+                    os.fsync(k.fileno())
+            except OSError as e:
+                raise OSError(e.errno, f"could not save a recovery copy of {dest} "
+                              f"({e.strerror}); nothing was changed") from None
+            with open(dest, "r+b") as f:
                 try:
-                    _overwrite(f, original)
-                except OSError:
-                    raise OSError(failed.errno, f"{failed.strerror}; {dest} may be "
-                                  f"damaged, original saved to {keep}") from None
+                    _overwrite(f, data)
+                except OSError as failed:
+                    try:
+                        _overwrite(f, original)
+                    except OSError:
+                        retain = True        # the one way out that keeps it
+                        raise OSError(failed.errno, f"{failed.strerror}; {dest} may "
+                                      f"be damaged, original saved to {keep}") from None
+                    raise OSError(failed.errno, f"{failed.strerror}; {dest} was "
+                                  "restored unchanged") from None
+        finally:
+            if keep and not retain:
                 Path(keep).unlink(missing_ok=True)
-                raise OSError(failed.errno, f"{failed.strerror}; {dest} was "
-                              "restored unchanged") from None
-        Path(keep).unlink(missing_ok=True)
         return
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:

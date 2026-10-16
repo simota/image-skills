@@ -63,16 +63,33 @@ def read(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
+class BadFrontmatter(ValueError):
+    """The block every CLI parses as YAML does not parse as YAML."""
+
+
 def frontmatter(text: str) -> dict:
+    """The frontmatter as the CLIs read it: YAML. A line parser read a folded
+    `description: >-` as the two characters `>-`, which made the length rule
+    vacuous for exactly the descriptions long enough to need folding."""
     if not text.startswith("---\n"):
         return {}
     body = text.split("---\n", 2)[1]
-    out = {}
-    for line in body.splitlines():
-        if ":" in line:
-            k, _, v = line.partition(":")
-            out[k.strip()] = v.strip().strip('"')
-    return out
+    try:
+        doc = yaml.safe_load(body)
+    except yaml.YAMLError as e:
+        raise BadFrontmatter(str(e).splitlines()[0]) from None
+    if not isinstance(doc, dict):
+        raise BadFrontmatter("not a mapping")
+    return {str(k): "" if v is None else str(v) for k, v in doc.items()}
+
+
+def _fm(d: Path) -> dict:
+    """A skill's frontmatter for the rules that read one field of it. A block
+    that does not parse is V1's to report, once; here it reads as empty."""
+    try:
+        return frontmatter(read(d / "SKILL.md"))
+    except BadFrontmatter:
+        return {}
 
 
 def sections(text: str) -> dict[str, str]:
@@ -101,7 +118,12 @@ def v1_sizes():
         n = len(t.splitlines())
         if n > LIM["skill_md_lines"]:
             fail("V1", f"{d.name}/SKILL.md is {n} lines (max {LIM['skill_md_lines']})")
-        desc = frontmatter(t).get("description", "")
+        try:
+            desc = frontmatter(t).get("description", "")
+        except BadFrontmatter as e:
+            fail("V1", f"{d.name}/SKILL.md frontmatter is not YAML ({e}); "
+                       "no CLI can read its name or description")
+            continue
         if len(desc) > LIM["description_chars"]:
             fail("V1", f"{d.name} description is {len(desc)} chars "
                        f"(max {LIM['description_chars']}; the listing truncates)")
@@ -110,7 +132,7 @@ def v1_sizes():
 def v2_description_terms():
     others = set(SKILLS)
     for d in SKILL_DIRS:
-        desc = frontmatter(read(d / "SKILL.md")).get("description", "")
+        desc = _fm(d).get("description", "")
         for term in H["forbidden_description_terms"]:
             if term in desc:
                 fail("V2", f"{d.name} description contains {term!r}; "
@@ -260,7 +282,7 @@ def v15_permission_class():
             fail("V15", f"{d.name} declares unknown class {declared!r}")
             continue
         want = classes[declared]["tools"]
-        got = frontmatter(read(d / "SKILL.md")).get("allowed-tools", "")
+        got = _fm(d).get("allowed-tools", "")
         if got != want:
             fail("V15", f"{d.name} allowed-tools is {got!r}, class {declared} requires {want!r}")
 
@@ -293,7 +315,7 @@ def v17_delivery():
 
 def v18_signals_in_description():
     for d in SKILL_DIRS:
-        desc = _norm(frontmatter(read(d / "SKILL.md")).get("description", ""))
+        desc = _norm(_fm(d).get("description", ""))
         for s in CAP.get(d.name, {}).get("signals", []):
             if _norm(s) not in desc:
                 fail("V18", f"{d.name} signal {s!r} is not literal in its description; "
@@ -427,7 +449,7 @@ def v24_rendered_tables():
         if name not in readme:
             fail("V24", f"README.md does not list {name}")
     for doc, text in ((SKILLS_ROOT / ROUTING_FILE, routing), (ROOT / "README.md", readme)):
-        for found in set(re.findall(rf"`({PREFIX}[a-z]+)`", text)):
+        for found in set(re.findall(rf"`({re.escape(PREFIX)}[a-z0-9]+(?:-[a-z0-9]+)*)`", text)):
             if found not in SKILLS:
                 fail("V24", f"{doc.relative_to(ROOT)} names {found}, which does not exist")
 

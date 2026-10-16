@@ -464,6 +464,30 @@ def _(r):
     sub(r / "image-registry/harness.yaml", "reviews: [verdict]", "reviews: [verdict, judgement]")
 
 
+@case("V1-folded", says="description is")
+def _(r):
+    # A folded scalar is how a long description gets written, and a line
+    # parser reads it as the two characters `>-` — always under the limit.
+    f = r / f"{S}image-prompt/SKILL.md"
+    t = f.read_text(encoding="utf-8")
+    start = t.index("description:")
+    end = t.index("\n", start)
+    f.write_text(t[:start] + "description: >-\n  " + "word " * 60 + t[end:],
+                 encoding="utf-8")
+
+
+@case("V1-yaml", says="frontmatter")
+def _(r):
+    sub(r / f"{S}image-prompt/SKILL.md", "name: image-prompt", "name: [image-prompt")
+
+
+@case("V24-hyphen", says="image-colour-grade")
+def _(r):
+    f = r / f"{S}_image/ROUTING.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee `image-colour-grade`.\n",
+                 encoding="utf-8")
+
+
 def main() -> int:
     code, baseline = run(ROOT)
     if code != 0:

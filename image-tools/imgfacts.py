@@ -363,7 +363,10 @@ def nearest_legal(w: int, h: int) -> tuple[int, int] | None:
     the limit means.
     """
     m = CANVAS["edge_multiple"]
-    if w <= 0 or h <= 0 or max(w, h) / min(w, h) > CANVAS["max_ratio"]:
+    # Past the ratio limit by more than the tolerance, no scaling of this shape
+    # is legal. Just past it, a legal canvas still keeps the shape.
+    if w <= 0 or h <= 0 or (max(w, h) / min(w, h)
+                            > CANVAS["max_ratio"] * (1 + ASPECT_TOLERANCE)):
         return None
     aspect, want = w / h, w * h
     inside, outside = [], []

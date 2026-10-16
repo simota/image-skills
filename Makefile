@@ -83,6 +83,9 @@ link:
 			name=$$(basename "$$path"); target="$$dir/$$name"; \
 			if [ -e "$$target" ] && [ ! -L "$$target" ]; then \
 				echo "  skip $$name (a real path is already there)"; \
+			elif [ -L "$$target" ] && [ ! -e "$$target" ]; then \
+				old=$$(readlink "$$target"); ln -sfn "$(REPO)/$$path" "$$target"; \
+				echo "  link $$name (replaced a dangling link to $$old)"; \
 			elif [ -L "$$target" ] && [ "$$(readlink "$$target")" != "$(REPO)/$$path" ]; then \
 				echo "  skip $$name (links to $$(readlink "$$target"), not here)"; \
 			else \
@@ -111,6 +114,7 @@ status:
 			if [ -L "$$target" ] && [ "$$(readlink "$$target")" = "$(REPO)/$$path" ]; then \
 				if [ -e "$$target" ]; then echo "  linked   $$name"; \
 				else echo "  dangling $$name"; fi; \
+			elif [ -L "$$target" ] && [ ! -e "$$target" ]; then echo "  dangling $$name (make link replaces it)"; \
 			elif [ -e "$$target" ] || [ -L "$$target" ]; then echo "  foreign  $$name"; \
 			else echo "  unlinked $$name"; fi; \
 		done; \

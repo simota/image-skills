@@ -33,8 +33,10 @@ def render(path: Path) -> bool:
                 opens and text.index(open_m) > text.index(close_m)):
             # A lost marker, rendered past, duplicates the block now and deletes
             # whatever lies between the two opens on the next run.
-            raise SystemExit(f"{path}: deliver:{key} markers are unbalanced "
-                             f"({opens} open, {closes} close); fix them by hand")
+            state = (f"unbalanced ({opens} open, {closes} close)"
+                     if opens != closes or opens > 1 else "in the wrong order")
+            raise SystemExit(f"{path}: deliver:{key} markers are {state}; "
+                             "fix them by hand")
         if opens:
             head, rest = text.split(open_m, 1)
             _, tail = rest.split(close_m, 1)

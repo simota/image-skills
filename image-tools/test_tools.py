@@ -1115,6 +1115,42 @@ def test_strip_accounts_for_every_byte(tmp: Path) -> None:
     truthy("a cleared VP8X flag is reported", any("flag" in d for d in dropped))
 
 
+def test_edges_round_four(tmp: Path) -> None:
+    """Edges a fourth review found in engine, imgfacts and render."""
+    check("engine.py with a missing prompt file exits 2, not a traceback",
+          engine.main(["--running", "claude", "codex", "--prompt-file",
+                       str(tmp / "nope.txt"), "--schema", str(tmp / "nope.json")]), 2)
+    bad = tmp / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    (tmp / "p.txt").write_text("p", encoding="utf-8")
+    check("and with a schema that is not JSON",
+          engine.main(["--running", "claude", "codex", "--prompt-file",
+                       str(tmp / "p.txt"), "--schema", str(bad)]), 2)
+    check("1.0 is an integer, as JSON Schema says",
+          engine.conforms(1.0, {"type": "integer"}), [])
+    truthy("1.5 is not", engine.conforms(1.5, {"type": "integer"}))
+    schema = {"type": "object", "properties": {
+        "mode": {"type": "string", "default": {"type": "object", "properties": {}}},
+        "pick": {"const": {"type": "object"}}}}
+    closed = engine.strict(schema)
+    check("strict leaves a default that looks like a schema alone",
+          closed["properties"]["mode"]["default"], {"type": "object", "properties": {}})
+    check("and a const", closed["properties"]["pick"]["const"], {"type": "object"})
+
+    check("a size just past the ratio limit still has a legal neighbour inside "
+          "the tolerance", imgfacts.nearest_legal(3010, 1000) is not None, True)
+
+    skill = tmp / "SKILL2.md"
+    key = next(iter(render.H["delivered"]))
+    skill.write_text(f"<!-- /deliver:{key} -->\nx\n<!-- deliver:{key} -->\n", encoding="utf-8")
+    try:
+        render.render(skill)
+        said = ""
+    except SystemExit as e:
+        said = str(e)
+    truthy("render names markers in the wrong order as such", "order" in said)
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1161,6 +1197,7 @@ def main() -> int:
         test_cli_surfaces(tmp)
         test_engine(tmp)
         test_precommit_hook(tmp)
+        test_edges_round_four(tmp)
     if failures:
         print(f"{len(failures)} failure(s):")
         print("\n".join(failures))

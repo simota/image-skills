@@ -478,12 +478,13 @@ def _paragraphs(lines: list[str]):
     for n, line in enumerate(lines + [""]):
         in_quote = bool(re.match(r" {0,3}>", line))
         # Consecutive quoted lines are one block quote, and one paragraph in it.
-        boundary = (not line.strip() or closed
+        blank = not line.strip() or re.fullmatch(r" {0,3}>\s*", line)   # `>` alone too
+        boundary = (blank or closed
                     or (_BLOCK_START.match(line) and not (in_quote and quoted)))
         if start is not None and boundary:
             yield start, lines[start:n]
             start = None
-        if line.strip() and start is None:
+        if not blank and start is None:
             start = n
         closed = bool(_ONE_LINE_BLOCK.match(line))
         quoted = in_quote

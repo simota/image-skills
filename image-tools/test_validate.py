@@ -613,6 +613,15 @@ def _(r):
                  encoding="utf-8")
 
 
+@case("V22-quoted-blank", says="residual class")
+def _(r):
+    # A `>` with nothing after it is a blank line inside the quote: the
+    # paragraphs either side cannot pair backticks across it.
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n> one `\n>\n> #" + "TODO(agent): fix `\n", encoding="utf-8")
+
+
 @quiet("a quoted marker is talked about, not left behind")
 def _(r):
     f = r / f"{S}image-prompt/playbooks/structure.md"

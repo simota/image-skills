@@ -1070,11 +1070,13 @@ def test_strip_writes(tmp: Path) -> None:
     hl.write_bytes(original)
     os.link(hl, hl2)
     real_fsync, calls = strip.os.fsync, []
+    target = hl.stat().st_ino
 
-    def failing_fsync(fd):
-        calls.append(fd)
-        if len(calls) == 1:
-            raise OSError(28, "No space left on device")
+    def failing_fsync(fd):                     # only the image's own inode fails;
+        if os.fstat(fd).st_ino == target:      # the recovery copy is elsewhere
+            calls.append(fd)
+            if len(calls) == 1:
+                raise OSError(28, "No space left on device")
         return real_fsync(fd)
 
     strip.os.fsync = failing_fsync
@@ -1085,7 +1087,8 @@ def test_strip_writes(tmp: Path) -> None:
         strip.os.fsync = real_fsync
     check("and the original is back, for every name", hl2.read_bytes(), original)
 
-    strip.os.fsync = lambda fd: (_ for _ in ()).throw(OSError(5, "I/O error"))
+    strip.os.fsync = lambda fd: (real_fsync(fd) if os.fstat(fd).st_ino != target
+                                 else (_ for _ in ()).throw(OSError(5, "I/O error")))
     err = io.StringIO()
     try:
         with contextlib.redirect_stderr(err):
@@ -1098,6 +1101,24 @@ def test_strip_writes(tmp: Path) -> None:
     if saved:
         check("which holds the original bytes", Path(saved.group(1)).read_bytes(), original)
         Path(saved.group(1)).unlink()
+
+    # The recovery copy exists before the inode is touched: if it cannot be
+    # made, nothing is changed, rather than finding out after the damage.
+    real_mkstemp = strip.tempfile.mkstemp
+    strip.tempfile.mkstemp = lambda *a, **k: (_ for _ in ()).throw(OSError(28, "No space"))
+    before_bytes = hl.read_bytes()
+    try:
+        check("no room for a recovery copy refuses the write-through",
+              strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        strip.tempfile.mkstemp = real_mkstemp
+    check("and leaves the file exactly as it was", hl.read_bytes(), before_bytes)
+    import glob as _glob
+    pattern = str(Path(tempfile.gettempdir()) / f"{hl.name}.original.*")
+    already = set(_glob.glob(pattern))
+    check("a successful write-through leaves no recovery copy behind",
+          (strip.main([str(hl), "--in-place"]), set(_glob.glob(pattern)) - already),
+          (0, set()))
 
     blocker = d / "blocker"
     blocker.write_bytes(b"a file, not a directory")

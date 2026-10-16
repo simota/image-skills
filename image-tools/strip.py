@@ -295,16 +295,27 @@ def _write_atomically(dest: Path, data: bytes) -> None:
     room for the temporary copy — both are written through the existing inode
     instead, which also keeps its owner, extended attributes and ACLs.
 
-    That path cannot be atomic, so it keeps the original bytes and puts them
-    back if any step fails. Stripping only shrinks a file, so neither the write
-    nor the restore needs new space on an ordinary filesystem. If the restore
-    fails as well, the original is saved to the system temporary directory and
-    the error says where: a half-written only copy is never the outcome."""
+    That path cannot be atomic, so before the inode is touched the original is
+    written durably to the system temporary directory; if that copy cannot be
+    made, nothing is changed. A failed write is then undone from memory —
+    stripping only shrinks a file, so neither step needs new space on an
+    ordinary filesystem — and the copy is removed once the file is whole again.
+    If the restore fails too, the copy stays and the error names it: a
+    half-written only copy with no original anywhere is never the outcome."""
     dest = dest.resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and (dest.stat().st_nlink > 1
                           or not os.access(dest.parent, os.W_OK)):
         original = dest.read_bytes()
+        try:
+            fd, keep = tempfile.mkstemp(prefix=f"{dest.name}.original.")
+            with os.fdopen(fd, "wb") as k:
+                k.write(original)
+                k.flush()
+                os.fsync(k.fileno())
+        except OSError as e:
+            raise OSError(e.errno, f"could not save a recovery copy of {dest} "
+                          f"({e.strerror}); nothing was changed") from None
         with open(dest, "r+b") as f:
             try:
                 _overwrite(f, data)
@@ -312,13 +323,12 @@ def _write_atomically(dest: Path, data: bytes) -> None:
                 try:
                     _overwrite(f, original)
                 except OSError:
-                    fd, keep = tempfile.mkstemp(prefix=f"{dest.name}.original.")
-                    with os.fdopen(fd, "wb") as k:
-                        k.write(original)
                     raise OSError(failed.errno, f"{failed.strerror}; {dest} may be "
                                   f"damaged, original saved to {keep}") from None
+                Path(keep).unlink(missing_ok=True)
                 raise OSError(failed.errno, f"{failed.strerror}; {dest} was "
                               "restored unchanged") from None
+        Path(keep).unlink(missing_ok=True)
         return
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:

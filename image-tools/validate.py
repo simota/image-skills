@@ -463,15 +463,26 @@ def v22_markers_classified():
                     fail("V22", f"{f.relative_to(ROOT)}:{i + 1} marker carries no residual class")
 
 
+# Lines that are a block of their own, or open one: an ATX heading, a fence,
+# a table row, a list item, a block quote. A code span cannot pair backticks
+# across a block boundary, and a blank line is not the only one. This is the
+# part of CommonMark's block structure the corpus uses, not all of it: a full
+# parser would be a dependency, and this set deliberately has none.
+_BLOCK_START = re.compile(r" {0,3}(#{1,6}(\s|$)|`{3,}|~{3,}|\||[-*+]\s|\d+[.)]\s|>)")
+_ONE_LINE_BLOCK = re.compile(r" {0,3}(#{1,6}(\s|$)|`{3,}|~{3,}|\|)")   # nothing continues these
+
+
 def _paragraphs(lines: list[str]):
-    """Runs of non-blank lines, with the index of each run's first line."""
-    start = None
+    """Runs of lines inside one block, with the index of each run's first line."""
+    start, closed = None, False
     for n, line in enumerate(lines + [""]):
-        if line.strip() and start is None:
-            start = n
-        elif not line.strip() and start is not None:
+        boundary = not line.strip() or _BLOCK_START.match(line) or closed
+        if start is not None and boundary:
             yield start, lines[start:n]
             start = None
+        if line.strip() and start is None:
+            start = n
+        closed = bool(_ONE_LINE_BLOCK.match(line))
 
 
 def v23_labels():

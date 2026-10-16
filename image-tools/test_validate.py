@@ -595,6 +595,16 @@ def _(r):
                  encoding="utf-8")
 
 
+@case("V22-across-blocks", says="residual class")
+def _(r):
+    # A heading is a block of its own: a backtick it leaves open cannot pair
+    # with one in the paragraph below and hide the marker between them.
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n## A heading with a stray `\n#" + "TODO(agent): fix\nand a line with `\n",
+                 encoding="utf-8")
+
+
 @quiet("a quoted marker is talked about, not left behind")
 def _(r):
     f = r / f"{S}image-prompt/playbooks/structure.md"

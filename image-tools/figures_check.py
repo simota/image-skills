@@ -42,7 +42,16 @@ failures: list[str] = []
 
 
 def fail(where: str, msg: str) -> None:
-    failures.append(f"  {where}: {msg}")
+    """Record a mismatch, tagged with the checker it was found under. A test
+    that only sees a non-zero exit cannot tell a checker that fired from a
+    neighbour that happened to catch the same edit."""
+    frame, checker = sys._getframe(1), "?"
+    while frame is not None:
+        if frame.f_code.co_name.startswith("check_"):
+            checker = frame.f_code.co_name
+            break
+        frame = frame.f_back
+    failures.append(f"  [{checker}] {where}: {msg}")
 
 
 # --- canvas sizes ----------------------------------------------------------

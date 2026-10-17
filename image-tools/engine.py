@@ -54,25 +54,54 @@ class EngineError(RuntimeError):
     """The engine did not answer. Never a verdict."""
 
 
+# Where a schema holds further schemas. Recursion stays inside these, so a
+# `default`, `const`, `enum` or `examples` value that happens to look like a
+# schema is data and is left exactly as written.
+_SCHEMA_LIST = ("anyOf", "oneOf", "allOf", "prefixItems")
+_SCHEMA_ONE = ("items", "not", "if", "then", "else", "contains", "propertyNames",
+               "additionalItems", "unevaluatedItems", "unevaluatedProperties",
+               "additionalProperties")
+_SCHEMA_MAP = ("properties", "$defs", "definitions", "patternProperties",
+               "dependentSchemas", "dependencies")
+
+
 def strict(schema):
     """Every object closed and every property required, at every depth —
     including inside `anyOf`/`oneOf`/`allOf`, list-form `items`, and a nullable
     `type: [object, null]`. That is what codex requires and agy tolerates."""
-    if isinstance(schema, list):
-        return [strict(v) for v in schema]
     if not isinstance(schema, dict):
         return schema
-    out = {k: strict(v) if isinstance(v, (dict, list)) else v for k, v in schema.items()}
+    out = dict(schema)
+    for k in _SCHEMA_LIST:
+        if isinstance(out.get(k), list):
+            out[k] = [strict(v) for v in out[k]]
+    for k in _SCHEMA_ONE:
+        if isinstance(out.get(k), list):
+            out[k] = [strict(v) for v in out[k]]
+        elif isinstance(out.get(k), dict):
+            out[k] = strict(out[k])
+    for k in _SCHEMA_MAP:
+        if isinstance(out.get(k), dict):                 # `dependencies` may hold
+            out[k] = {n: strict(v) for n, v in out[k].items()}   # lists; strict()
+                                                                 # passes those through
     kind = out.get("type")
     if kind == "object" or (isinstance(kind, list) and "object" in kind):
         out["additionalProperties"] = False
-        out["properties"] = {k: strict(v) for k, v in (out.get("properties") or {}).items()}
+        out["properties"] = out.get("properties") or {}
         out["required"] = list(out["properties"])
     return out
 
 
 _TYPES = {"object": dict, "array": list, "string": str, "boolean": bool,
           "integer": int, "number": (int, float), "null": type(None)}
+
+
+def _is_type(got, kind: str) -> bool:
+    if isinstance(got, bool) and kind in ("integer", "number"):
+        return False                       # JSON keeps true apart from 1
+    if kind == "integer" and isinstance(got, float):
+        return got.is_integer()            # 1.0 is an integer in JSON Schema
+    return isinstance(got, _TYPES[kind])
 
 
 def conforms(got, schema: dict, where: str = "answer") -> list[str]:
@@ -84,9 +113,7 @@ def conforms(got, schema: dict, where: str = "answer") -> list[str]:
     kinds = schema.get("type")
     if kinds is not None:
         kinds = kinds if isinstance(kinds, list) else [kinds]
-        ok = any(isinstance(got, _TYPES[k]) and not (
-                     k in ("integer", "number") and isinstance(got, bool))
-                 for k in kinds if k in _TYPES)
+        ok = any(_is_type(got, k) for k in kinds if k in _TYPES)
         if not ok:
             return [f"{where} is {type(got).__name__}, not {'/'.join(kinds)}"]
     if isinstance(got, dict):
@@ -239,9 +266,13 @@ def main(argv: list[str] | None = None) -> int:
         if a.running and engine == a.running:
             raise EngineError(f"{engine} is the engine running this; "
                               "a verdict from it is not a check")
-        got = run(engine,
-                  pathlib.Path(a.prompt_file).read_text(encoding="utf-8"),
-                  json.loads(pathlib.Path(a.schema).read_text(encoding="utf-8")))
+        try:
+            prompt = pathlib.Path(a.prompt_file).read_text(encoding="utf-8")
+            schema = json.loads(pathlib.Path(a.schema).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"cannot read the prompt or the schema: {e}", file=sys.stderr)
+            return 2
+        got = run(engine, prompt, schema)
     except EngineError as e:
         print(f"{a.engine or 'checker'}: {e}", file=sys.stderr)
         return 1

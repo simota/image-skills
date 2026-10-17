@@ -978,6 +978,456 @@ def test_engine(tmp: Path) -> None:
           f"# x\n\n<!-- deliver:{key} -->\nold\n")
 
 
+def test_precommit_hook(tmp: Path) -> None:
+    """The hook judges the commit, which is the index — not the working tree.
+
+    Validating the tree failed a clean commit because of an unrelated,
+    unstaged half-edit, and would pass a broken staged file whose fix sat
+    unstaged beside it."""
+    import os
+    import shutil
+    import subprocess
+    if shutil.which("git") is None:
+        failures.append("  git is not on PATH; the pre-commit hook was not exercised")
+        return
+    repo = tmp / "hookrepo"
+    root = Path(__file__).resolve().parent.parent
+    shutil.copytree(root, repo, symlinks=True,
+                    ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(repo), *args], env=env,
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-q", "--no-verify", "-m", "base")
+    hook = repo / "image-tools" / "githooks" / "pre-commit"
+
+    def hook_passes() -> bool:
+        return subprocess.run(["sh", str(hook)], cwd=repo, env=env,
+                              capture_output=True, text=True).returncode == 0
+
+    target = repo / "skills" / "image-prompt" / "playbooks" / "structure.md"
+    good = target.read_text(encoding="utf-8")
+    broken = good + "\n#" + "TODO(agent): no class here\n"
+    check("the hook passes a clean index", hook_passes(), True)
+    target.write_text(broken, encoding="utf-8")
+    check("an unstaged breakage does not fail the commit", hook_passes(), True)
+    git("add", str(target))
+    target.write_text(good, encoding="utf-8")
+    check("a staged breakage fails the commit, whatever the tree says",
+          hook_passes(), False)
+    git("reset", "-q", "--hard")
+    # A sparse checkout leaves files out of the tree, not out of the commit.
+    git("sparse-checkout", "set", "--no-cone", "/*", "!/docs/")
+    check("a sparse checkout does not fail the commit over files it left out",
+          hook_passes(), True)
+
+
+def test_strip_writes(tmp: Path) -> None:
+    """How a stripped file reaches the disk. Each case is a regression a review
+    found in the atomic write: a new inode is right for a lone file and wrong
+    for one with other names, and a write that fails is that file's failure,
+    not a traceback that abandons the rest of the run."""
+    import os
+    d = tmp / "writes"
+    d.mkdir()
+    junk = raw_chunk(b"tEXt", b"k\x00v")
+
+    h1, h2 = d / "h1.png", d / "h2.png"
+    h1.write_bytes(png(16, 16, extra=junk))
+    os.link(h1, h2)
+    check("--in-place on a hard-linked file exits 0", strip.main([str(h1), "--in-place"]), 0)
+    truthy("every name of a hard-linked file sees the stripped bytes",
+           b"tEXt" not in h2.read_bytes())
+    check("and the names still share one file", h1.stat().st_ino, h2.stat().st_ino)
+
+    ro = d / "ro"
+    ro.mkdir()
+    f = ro / "a.png"
+    f.write_bytes(png(16, 16, extra=junk))
+    real_access = strip.os.access
+    strip.os.access = lambda path, mode, *a, **k: (
+        False if Path(path) == ro and mode == os.W_OK else real_access(path, mode, *a, **k))
+    inode = f.stat().st_ino
+    try:
+        check("--in-place in a directory it cannot create files in exits 0",
+              strip.main([str(f), "--in-place"]), 0)
+    finally:
+        strip.os.access = real_access
+    check("and it wrote through the same inode, the only way open to it",
+          f.stat().st_ino, inode)
+    truthy("and the file was stripped through its own inode", b"tEXt" not in f.read_bytes())
+
+    # Writing through an inode cannot be atomic, so a failure part-way must
+    # put the original back; if even that fails, the original is kept
+    # somewhere the error names. A half-written only copy is never the result.
+    hl, hl2 = d / "fail1.png", d / "fail2.png"
+    original = png(16, 16, extra=junk)
+    hl.write_bytes(original)
+    os.link(hl, hl2)
+    real_fsync, calls = strip.os.fsync, []
+    target = hl.stat().st_ino
+
+    def failing_fsync(fd):                     # only the image's own inode fails;
+        if os.fstat(fd).st_ino == target:      # the recovery copy is elsewhere
+            calls.append(fd)
+            if len(calls) == 1:
+                raise OSError(28, "No space left on device")
+        return real_fsync(fd)
+
+    strip.os.fsync = failing_fsync
+    try:
+        check("a write through the inode that fails exits 1",
+              strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        strip.os.fsync = real_fsync
+    check("and the original is back, for every name", hl2.read_bytes(), original)
+
+    strip.os.fsync = lambda fd: (real_fsync(fd) if os.fstat(fd).st_ino != target
+                                 else (_ for _ in ()).throw(OSError(5, "I/O error")))
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            check("a failed restore also exits 1", strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        strip.os.fsync = real_fsync
+    import re as _re
+    saved = _re.search(r"original saved to (\S+)", err.getvalue())
+    truthy("and the error names where the original was saved", saved)
+    if saved:
+        check("which holds the original bytes", Path(saved.group(1)).read_bytes(), original)
+        Path(saved.group(1)).unlink()
+
+    # The recovery copy exists before the inode is touched: if it cannot be
+    # made, nothing is changed, rather than finding out after the damage.
+    real_mkstemp = strip.tempfile.mkstemp
+    strip.tempfile.mkstemp = lambda *a, **k: (_ for _ in ()).throw(OSError(28, "No space"))
+    before_bytes = hl.read_bytes()
+    try:
+        check("no room for a recovery copy refuses the write-through",
+              strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        strip.tempfile.mkstemp = real_mkstemp
+    check("and leaves the file exactly as it was", hl.read_bytes(), before_bytes)
+    import glob as _glob
+    pattern = str(Path(tempfile.gettempdir()) / f"{hl.name}.original.*")
+    already = set(_glob.glob(pattern))
+    check("a successful write-through leaves no recovery copy behind",
+          (strip.main([str(hl), "--in-place"]), set(_glob.glob(pattern)) - already),
+          (0, set()))
+
+    # Every way out except a failed restore removes the recovery copy: a run
+    # that carries on to the next file must not strand originals in /tmp.
+    def strays() -> set:
+        return set(_glob.glob(pattern))
+    hl.write_bytes(png(16, 16, extra=junk))
+    already = strays()
+    real_open = strip.__dict__.get("open", open)
+    strip.open = lambda path, *a, **k: (
+        (_ for _ in ()).throw(PermissionError(13, "denied")) if Path(path) == hl.resolve()
+        else real_open(path, *a, **k))
+    try:
+        check("an image that cannot be opened for writing exits 1",
+              strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        del strip.open
+    check("and leaves no recovery copy behind", strays() - already, set())
+    strip.os.fsync = lambda fd: (real_fsync(fd) if os.fstat(fd).st_ino == target
+                                 else (_ for _ in ()).throw(OSError(28, "No space")))
+    try:
+        check("a recovery copy that cannot be finished refuses the write",
+              strip.main([str(hl), "--in-place"]), 1)
+    finally:
+        strip.os.fsync = real_fsync
+    check("and leaves no partial copy behind", strays() - already, set())
+    truthy("and the image was not touched", b"tEXt" in hl.read_bytes())
+
+    # An interrupt mid-write is a failure like any other: the original goes
+    # back before the interrupt carries on, and nothing is stranded.
+    hl.write_bytes(png(16, 16, extra=junk))
+    pristine = hl.read_bytes()
+    real_overwrite, seen = strip._overwrite, []
+
+    def interrupted(f, data):
+        seen.append(1)
+        if len(seen) == 1:
+            f.seek(0)
+            f.write(data[:10])                       # half a write, then Ctrl-C
+            raise KeyboardInterrupt
+        return real_overwrite(f, data)
+
+    strip._overwrite = interrupted
+    try:
+        truthy("an interrupt mid-write still propagates",
+               raises(lambda: strip._write_atomically(hl, b"x" * 20), KeyboardInterrupt))
+    finally:
+        strip._overwrite = real_overwrite
+    check("and the original is back first", hl.read_bytes(), pristine)
+    check("and no recovery copy is stranded", strays() - already, set())
+
+    # Interrupted, and the restore fails too: the interrupt is still what
+    # propagates, and the copy's location is said before it does.
+    def always(f, data):
+        f.seek(0)
+        f.write(data[:10])
+        raise KeyboardInterrupt if data != pristine else OSError(5, "I/O error")
+
+    strip._overwrite = always
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            truthy("the original interrupt propagates, not the restore's error",
+                   raises(lambda: strip._write_atomically(hl, b"x" * 20), KeyboardInterrupt))
+    finally:
+        strip._overwrite = real_overwrite
+    kept = _re.search(r"original saved to (\S+)", err.getvalue())
+    truthy("and the copy's location is said before it does", kept)
+    if kept:
+        check("and that copy is the original", Path(kept.group(1)).read_bytes(), pristine)
+        Path(kept.group(1)).unlink()
+
+    # The restore works and the interrupt is in flight; a cleanup that then
+    # fails must not replace it with an error main() would continue past.
+    hl.write_bytes(pristine)
+
+    def interrupted_once(f, data):
+        if data != pristine:
+            f.seek(0)
+            f.write(data[:10])
+            raise KeyboardInterrupt
+        return real_overwrite(f, data)
+
+    real_unlink = Path.unlink
+    Path.unlink = lambda self, *a, **k: (_ for _ in ()).throw(OSError(5, "I/O error")) \
+        if ".original." in self.name else real_unlink(self, *a, **k)
+    strip._overwrite = interrupted_once
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            truthy("a failed cleanup does not swallow the interrupt",
+                   raises(lambda: strip.main([str(hl), "--in-place"]), KeyboardInterrupt))
+    finally:
+        strip._overwrite = real_overwrite
+        Path.unlink = real_unlink
+    for stray in strays() - already:
+        Path(stray).unlink()
+
+    # A failed write, then Ctrl-C during the restore: the interrupt is not
+    # converted into an error that main() would report and continue past.
+    hl.write_bytes(pristine)
+
+    def write_fails_then_interrupted(f, data):
+        f.seek(0)
+        f.write(data[:10])
+        raise OSError(28, "No space") if data != pristine else KeyboardInterrupt
+
+    strip._overwrite = write_fails_then_interrupted
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            truthy("an interrupt during the restore stays an interrupt",
+                   raises(lambda: strip.main([str(hl), "--in-place"]), KeyboardInterrupt))
+    finally:
+        strip._overwrite = real_overwrite
+    kept = _re.search(r"original saved to (\S+)", err.getvalue())
+    truthy("and the copy's location is said first", kept)
+    if kept:
+        Path(kept.group(1)).unlink()
+
+    blocker = d / "blocker"
+    blocker.write_bytes(b"a file, not a directory")
+    src = d / "src.png"
+    src.write_bytes(png(16, 16, extra=junk))
+    check("a write that cannot happen is reported and exits 1, not a traceback",
+          strip.main([str(src), "--out", str(blocker / "out.png")]), 1)
+    check("and a later file in the same run is still processed",
+          strip.main([str(blocker / "nope.png"), str(src)]), 1)
+
+    dangling = d / "dl.png"
+    dangling.symlink_to(d / "made" / "here.png")
+    check("--out through a dangling link creates the link's target",
+          strip.main([str(src), "--out", str(dangling)]), 0)
+    truthy("the target now exists", (d / "made" / "here.png").exists())
+
+    ending = jpeg_with(16, 16, [])[:-2] + b"\xff\xff"
+    truthy("the segment walk stops at fill bytes that run to the end",
+           not raises(lambda: list(imgfacts.jpeg_segments(ending, through_scans=True)),
+                      IndexError))
+    real_strip = strip.strip
+    strip.strip = lambda *a, **k: [][0]           # any parser slip of this kind
+    try:
+        check("a parser IndexError is that file's failure, not a traceback",
+              strip.main([str(src)]), 1)
+    finally:
+        strip.strip = real_strip
+
+
+def reported_bytes(dropped: list[str]) -> int:
+    import re
+    return sum(int(m.replace(",", "")) for d in dropped
+               for m in re.findall(r"([\d,]+) (?:stray )?bytes", d))
+
+
+def test_strip_accounts_for_every_byte(tmp: Path) -> None:
+    """Every byte that does not reach the output is reported, and a file that is
+    cut short is refused — the same rules PNG already followed, now for JPEG
+    and WebP. A review found JPEG and WebP bytes going missing under "nothing
+    to remove", and truncated JPEGs written out as if whole."""
+    f = tmp / "acct.jpg"
+    jfif = (0xE0, b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00")
+    good = jpeg_with(16, 16, [jfif])
+    cut = good.index(b"\xff\xdb") if b"\xff\xdb" in good else good.index(b"\xff\xc0")
+    f.write_bytes(good[:cut] + b"JUNK!" + good[cut:])
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("stray bytes between segments are reported, not dropped silently",
+           any("between segments" in d for d in dropped))
+
+    f.write_bytes(good[:-2])                                  # no EOI
+    truthy("a JPEG with no EOI is refused as truncated", refuses(f, Opt(), "EOI"))
+    sos_at = good.index(b"\xff\xda")
+    f.write_bytes(good[:sos_at + 6])                          # a segment past the end
+    truthy("a segment running past the end is refused", refuses(f, Opt(), "truncated"))
+
+    thumb = b"\x02\x02" + b"\x11\x22\x33" * 4
+    f.write_bytes(jpeg_with(16, 16, [(0xE0, jfif[1][:-2] + thumb)]))
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("a thumbnail inside the JFIF APP0 is removed", b"\x11\x22\x33" not in out)
+    truthy("and reported", any("thumbnail" in d for d in dropped))
+    truthy("and the JFIF header itself stays", b"JFIF\x00\x01\x02" in out)
+    check("the result still reads as the same image",
+          imgfacts.probe_bytes(out)["size"], "16x16")
+
+    w = tmp / "acct.webp"
+    base = webp_with(16, 16, 0, [])
+    w.write_bytes(base + b"JUNKJUNKJUNK")
+    out, dropped, _ = strip.strip(w, Opt())
+    truthy("data after the RIFF end is reported", any("after RIFF" in d for d in dropped))
+    check("and not copied", out, base)
+    w.write_bytes(webp_with(16, 16, 0x08, []))                # EXIF flag, no EXIF
+    out, dropped, _ = strip.strip(w, Opt())
+    truthy("a cleared VP8X flag is reported", any("flag" in d for d in dropped))
+    w.write_bytes(webp_with(16, 16, 0x08, [(b"EXIF", exif(None))]))
+    out, dropped, _ = strip.strip(w, Opt())
+    check("a flag cleared with its chunk is one removal, not two lines",
+          [d for d in dropped if "flag" in d], [])
+    big = bytearray(webp_with(16, 16, 0, []))
+    big[4:8] = struct.pack("<I", len(big) + 100)
+    w.write_bytes(bytes(big))
+    truthy("a RIFF size past the end of the file is refused as truncated",
+           refuses(w, Opt(), "truncated"))
+
+    # An odd final chunk missing its pad ends exactly at the RIFF end; the
+    # byte after it belongs to the trailer, and must not ride along as the pad.
+    head = (bytes([0]) + b"\x00\x00\x00" + (15).to_bytes(3, "little")
+            + (15).to_bytes(3, "little"))
+    body = b"WEBP" + b"VP8X" + struct.pack("<I", len(head)) + head \
+        + b"ANIM" + struct.pack("<I", 1) + b"\x07"
+    w.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body + b"SECRET")
+    out, dropped, _ = strip.strip(w, Opt())
+    truthy("no trailer byte is copied in as a missing pad", b"S" not in out[-2:])
+    check("and the ledger still balances", reported_bytes(dropped), len(w.read_bytes()) - len(out))
+
+    # An unpadded odd final chunk that is dropped counts the bytes it had, not
+    # the pad it never had; and a short residue inside the RIFF is reported
+    # even when a trailer follows the RIFF end.
+    head = (bytes([0]) + b"\x00\x00\x00" + (15).to_bytes(3, "little")
+            + (15).to_bytes(3, "little"))
+    vp8x = b"VP8X" + struct.pack("<I", len(head)) + head
+    body = b"WEBP" + vp8x + b"EXIF" + struct.pack("<I", 1) + b"\x07"
+    w.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body)
+    out, dropped, _ = strip.strip(w, Opt())
+    check("an unpadded dropped chunk is counted as the bytes it had",
+          reported_bytes(dropped), len(w.read_bytes()) - len(out))
+    body = b"WEBP" + vp8x + b"abc"
+    w.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body + b"TRAILR")
+    out, dropped, _ = strip.strip(w, Opt())
+    check("residue inside the RIFF and a trailer after it are both counted",
+          reported_bytes(dropped), len(w.read_bytes()) - len(out))
+
+    # And the tool holds itself to that: a handler that under-counts is refused
+    # at run time, not shipped under a report that is wrong.
+    real = strip.HANDLERS["PNG"]
+    strip.HANDLERS["PNG"] = lambda raw, opt: (lambda o, d: (o, [(w, n - 1) for w, n in d]))(*real(raw, opt))
+    try:
+        f = tmp / "ledger-guard.png"
+        f.write_bytes(png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")))
+        truthy("a report that does not balance is refused", refuses(f, Opt(), "accounts for"))
+    finally:
+        strip.HANDLERS["PNG"] = real
+
+    # The report is a ledger: what it names adds up to what the file lost.
+    for name, raw in (
+            ("png", png(16, 16, extra=raw_chunk(b"tEXt", b"k\x00v")
+                        + raw_chunk(b"tIME", b"\x07\xea\x01\x01\x01\x01\x01")) + b"TAIL"),
+            ("jpg", jpeg_with(16, 16, [(0xE1, b"Exif\x00\x00" + exif(None)),
+                                       (0xFE, b"a comment")], pad=b"\xff") + b"after"),
+            ("webp", webp_with(16, 16, 0x08, [(b"EXIF", exif(None)), (b"XMP ", b"<x/>")])
+             + b"trailer!")):
+        f = tmp / f"ledger.{name}"
+        f.write_bytes(raw)
+        out, dropped, _ = strip.strip(f, Opt())
+        check(f"{name}: the bytes the report names are the bytes the file lost",
+              reported_bytes(dropped), len(raw) - len(out))
+
+
+def test_edges_round_four(tmp: Path) -> None:
+    """Edges a fourth review found in engine, imgfacts and render."""
+    check("engine.py with a missing prompt file exits 2, not a traceback",
+          engine.main(["--running", "claude", "codex", "--prompt-file",
+                       str(tmp / "nope.txt"), "--schema", str(tmp / "nope.json")]), 2)
+    bad = tmp / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    (tmp / "p.txt").write_text("p", encoding="utf-8")
+    check("and with a schema that is not JSON",
+          engine.main(["--running", "claude", "codex", "--prompt-file",
+                       str(tmp / "p.txt"), "--schema", str(bad)]), 2)
+    deep = engine.strict({"type": "object", "properties": {},
+                          "dependentSchemas": {"a": {"type": "object", "properties": {}}},
+                          "propertyNames": {"type": "object"},
+                          "additionalItems": {"type": "object"},
+                          "unevaluatedProperties": {"type": "object"}})
+    truthy("strict still closes objects under every schema keyword",
+           all(x.get("additionalProperties") is False for x in (
+               deep["dependentSchemas"]["a"], deep["propertyNames"],
+               deep["additionalItems"], deep["unevaluatedProperties"])))
+    check("1.0 is an integer, as JSON Schema says",
+          engine.conforms(1.0, {"type": "integer"}), [])
+    truthy("1.5 is not", engine.conforms(1.5, {"type": "integer"}))
+    schema = {"type": "object", "properties": {
+        "mode": {"type": "string", "default": {"type": "object", "properties": {}}},
+        "pick": {"const": {"type": "object"}}}}
+    closed = engine.strict(schema)
+    check("strict leaves a default that looks like a schema alone",
+          closed["properties"]["mode"]["default"], {"type": "object", "properties": {}})
+    check("and a const", closed["properties"]["pick"]["const"], {"type": "object"})
+
+    check("a size just past the ratio limit still has a legal neighbour inside "
+          "the tolerance", imgfacts.nearest_legal(3010, 1000) is not None, True)
+    # The cut-off uses the search's own drift rule, in both orientations: a
+    # fixed margin answered None for shapes the search itself would accept.
+    for w, h in ((75376, 25000), (1000, 3010)):
+        n = imgfacts.nearest_legal(w, h)
+        truthy(f"nearest_legal({w},{h}) answers inside the tolerance", n)
+        if n:
+            check(f"nearest_legal({w},{h}) is legal", imgfacts.illegal(*n), set())
+    for w, h in ((3840, 1024), (1024, 3840), (25000, 75376)):
+        check(f"nearest_legal({w},{h}) is past the limit by more than the tolerance",
+              imgfacts.nearest_legal(w, h), None)
+
+    skill = tmp / "SKILL2.md"
+    key = next(iter(render.H["delivered"]))
+    skill.write_text(f"<!-- /deliver:{key} -->\nx\n<!-- deliver:{key} -->\n", encoding="utf-8")
+    try:
+        render.render(skill)
+        said = ""
+    except SystemExit as e:
+        said = str(e)
+    truthy("render names markers in the wrong order as such", "order" in said)
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1019,8 +1469,12 @@ def main() -> int:
         test_no_writes_while_reporting(tmp)
         test_malformed_input(tmp)
         test_strip_leaks(tmp)
+        test_strip_writes(tmp)
+        test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_engine(tmp)
+        test_precommit_hook(tmp)
+        test_edges_round_four(tmp)
     if failures:
         print(f"{len(failures)} failure(s):")
         print("\n".join(failures))

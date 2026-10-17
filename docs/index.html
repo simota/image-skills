@@ -161,11 +161,11 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
   <p class="lede">Six skills over image work — deciding what a picture must say, wording the request a generator receives, running it, changing what comes back, judging whether it is usable, and getting the file into a project. None of them generate pixels: that is Codex&amp;rsquo;s own &lt;code&gt;imagegen&lt;/code&gt; skill, and this is the discipline around it.</p>
   <div class="facts">
     <div class="fact"><b>6</b><span>skills</span></div>
-    <div class="fact"><b>8</b><span>routes</span></div>
+    <div class="fact"><b>9</b><span>routes</span></div>
     <div class="fact"><b>13</b><span>playbooks</span></div>
     <div class="fact"><b>15</b><span>reference</span></div>
-    <div class="fact"><b>38</b><span>static rules</span></div>
-    <div class="fact"><b>1,106</b><span>listing chars</span></div>
+    <div class="fact"><b>39</b><span>static rules</span></div>
+    <div class="fact"><b>1,110</b><span>listing chars</span></div>
   </div>
 </header>
 
@@ -196,7 +196,7 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <text x="48" y="136" font-family="Archivo,sans-serif" font-weight="700"
             font-size="17" fill="currentColor">6 names + descriptions</text>
       <text x="48" y="156" font-family="'JetBrains Mono',monospace" font-size="10.5"
-            fill="currentColor" opacity=".6">1,106 characters</text>
+            fill="currentColor" opacity=".6">1,110 characters</text>
       <text x="48" y="180" font-family="Archivo,sans-serif" font-size="11.5"
             fill="currentColor" opacity=".72">selection happens here, and on nothing else</text>
       <rect x="420" y="60" width="330" height="132" rx="1" fill="none"
@@ -272,7 +272,7 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <span class="tag b">full</span>
     </div>
     <div class="card-body">
-      <p>The paid part. It invokes the generator, decides how many attempts the question is worth, records what each run was, opens what comes back, and names the one that survives. It does not write the prompt and does not place the file.</p>
+      <p>The paid part. It invokes the generator, decides how many attempts the question is worth, records what each run was, opens what comes back, and names the one that survives. Selection removes obvious failures and compares candidates; it is not the usability verdict. It does not write the prompt or place the file.</p>
       <ul class="rows"><li>invocation</li><li>candidate-count</li><li>batching</li><li>recipe-capture</li><li>selection</li><li>cost</li></ul>
     </div>
   </article>
@@ -360,26 +360,29 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <td>a picture is needed and nothing about it is decided yet</td><td class="chain">image-direction <b>&rarr;</b> image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-review <b>&rarr;</b> image-deliver</td>
       <td><b>gate</b> &middot; the brief names what the image is judged against before any prompt is written</td></tr>
       <tr><td><code>one-off</code></td><td><span class="tag c">linear</span></td>
-      <td>the look is already settled and one picture is missing</td><td class="chain">image-prompt <b>&rarr;</b> image-generate</td>
-      <td><b>gate</b> &middot; an existing image or brief is named as the thing this must match</td></tr>
+      <td>the look is settled; only an exploratory candidate is wanted, not an asset ready to use</td><td class="chain">image-prompt <b>&rarr;</b> image-generate</td>
+      <td><b>gate</b> &middot; the look or brief is named; report a candidate, never a production usability verdict</td></tr>
+      <tr><td><code>one-off-ship</code></td><td><span class="tag c">linear</span></td>
+      <td>the look is settled and one image is needed for use or publication</td><td class="chain">image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-review <b>&rarr;</b> image-deliver</td>
+      <td><b>gate</b> &middot; review the actual candidate for its intended use before delivery; text, people and brand constraints follow that use</td></tr>
       <tr><td><code>asset-set</code></td><td><span class="tag c">linear</span></td>
-      <td>a family of images that must read as one set</td><td class="chain">image-direction <b>&rarr;</b> image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-deliver</td>
-      <td><b>gate</b> &middot; what makes them a set is written down before the first is generated</td></tr>
+      <td>a family of images that must read as one set</td><td class="chain">image-direction <b>&rarr;</b> image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-review <b>&rarr;</b> image-deliver</td>
+      <td><b>gate</b> &middot; name the set constraints first; review every retained member and the set together before delivery</td></tr>
       <tr><td><code>repair</code></td><td><span class="tag c">linear</span></td>
-      <td>a picture that exists is wrong in a way someone can point at</td><td class="chain">image-review <b>&rarr;</b> image-refine</td>
-      <td><b>gate</b> &middot; each finding names the region it is in before anything is regenerated</td></tr>
+      <td>a picture that exists is wrong in a way someone can point at</td><td class="chain">image-review <b>&rarr;</b> image-refine <b>&rarr;</b> image-review</td>
+      <td><b>gate</b> &middot; locate findings before changing; the final review checks their removal and any new drift</td></tr>
       <tr><td><code>restyle</code></td><td><span class="tag c">linear</span></td>
-      <td>the content is right and the look is not</td><td class="chain">image-direction <b>&rarr;</b> image-refine</td>
+      <td>the content is right and the look is not</td><td class="chain">image-direction <b>&rarr;</b> image-refine <b>&rarr;</b> image-review</td>
       <td>&mdash;</td></tr>
       <tr><td><code>ship-existing</code></td><td><span class="tag c">linear</span></td>
-      <td>the picture is chosen and has to reach the project</td><td class="chain">image-deliver</td>
+      <td>the picture is already approved for the intended use and only delivery remains</td><td class="chain">image-deliver</td>
       <td>&mdash;</td></tr>
       <tr><td><code>look-check</code></td><td><span class="tag c">report-only</span></td>
       <td>is this image usable, and what is wrong with it</td><td class="chain">image-review</td>
       <td><b>stops at</b> &middot; one verdict with each defect located, ranked, and attributed to a cause. Nothing is regenerated</td></tr>
       <tr><td><code>refine-to-brief</code></td><td><span class="tag c">loop</span></td>
       <td>iterate a candidate until it meets the brief or the budget stops it</td><td class="chain">image-refine <b>&rarr;</b> image-review</td>
-      <td><b>oracle</b> &middot; no open defect at severity major or above, and one full pass over the image adds none</td></tr></tbody>
+      <td><b>gate</b> &middot; inherit all generation/edit attempts and spend; a new defect does not reset this loop or its budget</td></tr></tbody>
   </table></div>
 </section>
 
@@ -476,10 +479,10 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <h3>Measured now</h3>
       <div class="tw" style="border:0;background:transparent"><table style="min-width:0"><tbody>
         <tr><td>skills</td><td class="num-c">6 / 8</td></tr>
-        <tr><td>routes</td><td class="num-c">8 / 12</td></tr>
-        <tr><td>shared contract lines</td><td class="num-c">597 / 620</td></tr>
-        <tr><td>repository markdown</td><td class="num-c">3,941 / 4,200</td></tr>
-        <tr><td>static rules</td><td class="num-c">38</td></tr>
+        <tr><td>routes</td><td class="num-c">9 / 12</td></tr>
+        <tr><td>shared contract lines</td><td class="num-c">620 / 620</td></tr>
+        <tr><td>repository markdown</td><td class="num-c">4,046 / 4,200</td></tr>
+        <tr><td>static rules</td><td class="num-c">39</td></tr>
       </tbody></table></div>
       <p style="margin:14px 0 0;color:var(--muted);font-size:13.5px">Adding a rule means adding a
         deliberate violation and watching it fail. A check only ever seen passing may be checking
@@ -515,8 +518,8 @@ make hooks                      # run the rules on every commit</pre>
 </section>
 
 <footer>
-  <p>image-skills &middot; 6 skills &middot; 38 static rules
-     &middot; 3,941 lines of markdown.<br>
+  <p>image-skills &middot; 6 skills &middot; 39 static rules
+     &middot; 4,046 lines of markdown.<br>
      Every figure on this page is read off the repository by <code>tools/pages.py</code> in
      <code>agent-toolkit</code>. None of them are typed by hand, and a stale page fails a
      check rather than sitting there looking current.</p>

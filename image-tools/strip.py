@@ -64,6 +64,7 @@ JPEG_CREDENTIALS = {0xEB}                     # APP11, JUMBF
 JPEG_KEEP_APP = {0xE0: b"JFIF\x00",          # density
                  0xEE: b"Adobe"}               # colour transform
 EXIF_SIG = b"Exif\x00\x00"
+JFIF_HEAD = 14                                # "JFIF\0", version, units, density, thumb w/h
 
 WEBP_STRUCTURE = {b"VP8 ", b"VP8L", b"VP8X", b"ALPH", b"ANIM", b"ANMF"}
 WEBP_COLOUR = {b"ICCP"}
@@ -124,7 +125,7 @@ def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
         if keep:
             out += whole
         else:
-            dropped.append(f"{name} ({size:,} bytes)")
+            dropped.append((name, len(whole)))
         i += 12 + size
         if name == "IEND":
             ended = True
@@ -132,15 +133,23 @@ def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
     if not ended:
         raise Refused("PNG has no IEND, so it is truncated; nothing was changed")
     if i < len(raw):
-        dropped.append(f"data after IEND ({len(raw) - i:,} bytes)")
+        dropped.append(("data after IEND", len(raw) - i))
     return bytes(out), dropped
 
 
 # --- JPEG --------------------------------------------------------------------
 
 def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
-    out, dropped, tail = bytearray(b"\xff\xd8"), [], len(raw)
+    # `pos` is how far the input has been accounted for. Bytes the segment walk
+    # skips are reported rather than lost quietly, and a file that ends before
+    # EOI is refused as PNG's missing IEND is: half a picture is not stripped.
+    out, dropped, tail, pos = bytearray(b"\xff\xd8"), [], None, 2
     for marker, start, end, body in imgfacts.jpeg_segments(raw, through_scans=True):
+        if end > len(raw):
+            raise Refused("JPEG is truncated inside a segment; nothing was changed")
+        if start > pos:
+            dropped.append(("stray bytes between segments", start - pos))
+        pos = end
         whole = raw[start:end]
         if body is None:                       # entropy data, or a standalone marker
             out += whole
@@ -162,16 +171,24 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
             keep = not opt.drop_credentials
         else:
             keep = body.startswith(JPEG_KEEP_APP.get(marker, b"\x00unmatched"))
-        if keep:
+        if keep and marker == 0xE0 and len(body) > JFIF_HEAD and body[12:14] != b"\x00\x00":
+            # JFIF carries an optional thumbnail after its 14-byte header. The
+            # header stays, the thumbnail goes, and the segment says so.
+            head = body[:12] + b"\x00\x00"
+            out += b"\xff\xe0" + struct.pack(">H", len(head) + 2) + head
+            dropped.append(("JFIF thumbnail", len(whole) - len(head) - 4))
+        elif keep:
             out += whole
         else:
             label = "COM" if marker == 0xFE else f"APP{marker - 0xE0}"
             hint = body[:12].split(b"\x00")[0].decode("latin-1", "replace")
-            dropped.append(f"{label} {hint!r} ({len(body) + 2:,} bytes)")
+            dropped.append((f"{label} {hint!r}", end - start))
+    if tail is None:
+        raise Refused("JPEG has no EOI, so it is truncated; nothing was changed")
     if tail < len(raw):
         # Not this image: an appended second picture (a motion photo, an MPF
         # preview) carries its own Exif and location, and ships them if kept.
-        dropped.append(f"data after EOI ({len(raw) - tail:,} bytes)")
+        dropped.append(("data after EOI", len(raw) - tail))
     return bytes(out), dropped
 
 
@@ -179,13 +196,23 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
 
 def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
     body, dropped, i = bytearray(b"WEBP"), [], 12
-    while i + 8 <= len(raw):
+    # The RIFF header says where the file ends. Bytes past it are not chunks,
+    # and reading them as one called a file with a trailer "truncated".
+    end = 8 + struct.unpack("<I", raw[4:8])[0]
+    if end > len(raw):
+        raise Refused(f"WebP's RIFF header says {end:,} bytes and the file has "
+                      f"{len(raw):,}; it is truncated, and nothing was changed")
+    flags_note = None
+    while i + 8 <= end:
         tag = raw[i:i + 4]
         size = struct.unpack("<I", raw[i + 4:i + 8])[0]
         padded = size + (size & 1)
-        if i + 8 + size > len(raw):
+        if i + 8 + size > end:
             raise Refused(f"WebP is truncated inside {tag!r}; nothing was changed")
-        whole = raw[i:i + 8 + padded]
+        # Never past the RIFF end: a final chunk missing its pad stays missing
+        # (this edits containers, never repairs them), and the byte after it is
+        # the trailer's, not a pad to copy along.
+        whole = raw[i:min(i + 8 + padded, end)]
         keep = (tag in WEBP_STRUCTURE
                 or (tag in WEBP_COLOUR and not opt.drop_profile))
         if tag == b"EXIF":
@@ -199,11 +226,24 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
                 head[8] &= ~(VP8X_EXIF | VP8X_XMP)
                 if opt.drop_profile:
                     head[8] &= ~0x20
+                if head[8] != whole[8]:
+                    flags_note = (whole[8], head[8])
                 whole = bytes(head)
             body += whole
         else:
-            dropped.append(f"{tag.decode('latin-1').strip()} ({size:,} bytes)")
+            dropped.append((tag.decode("latin-1").strip(), len(whole)))
         i += 8 + padded
+    # A flag cleared along with the chunk it advertised is that chunk's
+    # removal, already reported; one advertising a chunk that was never there
+    # is a change of its own, and says so.
+    gone = {d for d, _ in dropped}
+    if flags_note and not gone & {"EXIF", "XMP", "ICCP"}:
+        dropped.append((f"VP8X flags {flags_note[0]:#04x} -> {flags_note[1]:#04x}, "
+                        "which advertised blocks the file does not have", 0))
+    if i < end:                                # reported independently of a
+        dropped.append(("residue too short to be a chunk", end - i))   # trailer
+    if end < len(raw):
+        dropped.append(("data after RIFF", len(raw) - end))
     return b"RIFF" + struct.pack("<I", len(body)) + bytes(body), dropped
 
 
@@ -217,7 +257,17 @@ def strip(path: Path, opt) -> tuple[bytes, list[str], dict]:
     fn = HANDLERS.get(before["format"])
     if fn is None:
         raise Refused(f"{before['format']} is not handled; nothing was changed")
-    out, dropped = fn(path.read_bytes(), opt)
+    raw = path.read_bytes()
+    out, ledger = fn(raw, opt)
+    # The report is a ledger and has to balance: what it names, byte for byte,
+    # is what the file lost. Each handler counts what it actually dropped, and
+    # a mismatch is refused rather than written under a report that is wrong —
+    # four reviews in a row found a new way for a per-branch count to drift.
+    named = sum(n for _, n in ledger)
+    if named != len(raw) - len(out):
+        raise Refused(f"the report accounts for {named:,} bytes and the file "
+                      f"lost {len(raw) - len(out):,}; nothing was written")
+    dropped = [f"{what} ({n:,} bytes)" for what, n in ledger]
 
     # The tool's own output gets the same treatment as anything else here: read
     # off the result, never assumed from the operation. From memory, because a
@@ -240,8 +290,67 @@ def _write_atomically(dest: Path, data: bytes) -> None:
     of an asset, and an interrupted plain write leaves half of one.
 
     A symlink is followed, not replaced: renaming over the link would leave the
-    image it points to unstripped while reporting it done."""
-    dest = dest.resolve() if dest.is_symlink() else dest
+    image it points to unstripped while reporting it done. The same holds for a
+    file with other hard links, and a directory that refuses new files has no
+    room for the temporary copy — both are written through the existing inode
+    instead, which also keeps its owner, extended attributes and ACLs.
+
+    That path cannot be atomic, so before the inode is touched the original is
+    written durably to the system temporary directory; if that copy cannot be
+    made, nothing is changed. A failed write is then undone from memory —
+    stripping only shrinks a file, so neither step needs new space on an
+    ordinary filesystem — and the copy is removed once the file is whole again.
+    If the restore fails too, the copy stays and the error names it: a
+    half-written only copy with no original anywhere is never the outcome."""
+    dest = dest.resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and (dest.stat().st_nlink > 1
+                          or not os.access(dest.parent, os.W_OK)):
+        original = dest.read_bytes()
+        keep, retain = None, False
+        try:                                 # the copy's whole lifetime: removed
+            try:                             # on every way out but one
+                fd, keep = tempfile.mkstemp(prefix=f"{dest.name}.original.")
+                with os.fdopen(fd, "wb") as k:
+                    k.write(original)
+                    k.flush()
+                    os.fsync(k.fileno())
+            except OSError as e:
+                raise OSError(e.errno, f"could not save a recovery copy of {dest} "
+                              f"({e.strerror}); nothing was changed") from None
+            with open(dest, "r+b") as f:
+                try:
+                    _overwrite(f, data)
+                except BaseException as failed:  # an interrupt too: the finally
+                    try:                         # below must not delete the copy
+                        _overwrite(f, original)  # of a half-written file
+                    except BaseException as again:
+                        retain = True            # the one way out that keeps it
+                        where = f"{dest} may be damaged, original saved to {keep}"
+                        if not isinstance(again, Exception):
+                            # Interrupted while restoring: that interrupt wins,
+                            # and is not turned into an error main() continues past.
+                            print(f"strip.py: {where}", file=sys.stderr)
+                            raise
+                        if not isinstance(failed, OSError):
+                            # The interrupt is what the caller is waiting for,
+                            # so it propagates — after the one fact that makes
+                            # the damage recoverable has been said.
+                            print(f"strip.py: {where}", file=sys.stderr)
+                            raise failed from None
+                        raise OSError(failed.errno, f"{failed.strerror}; {where}") from None
+                    if not isinstance(failed, OSError):
+                        raise
+                    raise OSError(failed.errno, f"{failed.strerror}; {dest} was "
+                                  "restored unchanged") from None
+        finally:
+            if keep and not retain:
+                try:
+                    Path(keep).unlink(missing_ok=True)
+                except OSError as e:             # never replaces what is in flight
+                    print(f"strip.py: could not remove the recovery copy {keep}: "
+                          f"{e.strerror}", file=sys.stderr)
+        return
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as f:
@@ -249,13 +358,26 @@ def _write_atomically(dest: Path, data: bytes) -> None:
             f.flush()
             os.fsync(f.fileno())
         if dest.exists():
-            os.chmod(tmp, dest.stat().st_mode & 0o7777)
+            st = dest.stat()
+            os.chmod(tmp, st.st_mode & 0o7777)
+            try:                               # keep the owner where allowed
+                os.chown(tmp, st.st_uid, st.st_gid)
+            except OSError:
+                pass
         else:
             os.chmod(tmp, 0o666 & ~_umask())
         os.replace(tmp, dest)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def _overwrite(f, data: bytes) -> None:
+    f.seek(0)
+    f.write(data)
+    f.truncate()
+    f.flush()
+    os.fsync(f.fileno())
 
 
 def _umask() -> int:
@@ -283,7 +405,7 @@ def main(argv: list[str] | None = None) -> int:
     for f in a.files:
         try:
             out, dropped, before = strip(f, a)
-        except (Refused, imgfacts.Unreadable, OSError, struct.error) as e:
+        except (Refused, imgfacts.Unreadable, OSError, struct.error, IndexError) as e:
             print(f"{f}: {e}", file=sys.stderr)
             failed = True
             continue
@@ -299,8 +421,12 @@ def main(argv: list[str] | None = None) -> int:
               + (f"   -{saved:,} bytes" if saved else ""))
         dest = a.out or (f if a.in_place else None)
         if dest:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            _write_atomically(dest, out)
+            try:
+                _write_atomically(dest, out)
+            except OSError as e:
+                print(f"{f}: could not write {dest}: {e}", file=sys.stderr)
+                failed = True
+                continue
             print(f"  wrote {dest}  {len(out):,} bytes")
     return 1 if failed else 0
 

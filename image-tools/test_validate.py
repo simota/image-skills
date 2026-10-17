@@ -249,37 +249,30 @@ def _(r):
 
 
 
-@case("V34")
+@case("V34", says="cannot reach")
 def _(r):
-    """Reachable and runnable must move together, whichever way they are split."""
-    for d in sorted((r / "skills").glob("image-*")):
-        link = d / "refute.py"
-        if link.is_symlink():
-            link.unlink()                      # runnable, and now out of reach
-            return
-    # No set-wide link to remove: make a skill runnable instead, and leave it
-    # unreachable. Widening a class trips V15 too, which the harness allows —
-    # it only asks that V34 appear.
-    sub(r / "image-registry/harness.yaml",
-        "tools: \"Read, Grep, Glob, Write", "tools: \"Read, Grep, Glob, Bash, Write")
+    """Runnable and declared, and out of reach."""
+    (r / "skills/image-review/refute.py").unlink()
 
 
-@case("V34-decoration")
+@case("V34-decoration", says="grants no Bash")
 def _(r):
-    """A link where the class grants no shell reads like a capability and is not one."""
-    import yaml as _y
-    caps = _y.safe_load((r / "image-registry/capabilities.yaml").read_text())
-    cls = _y.safe_load((r / "image-registry/harness.yaml").read_text())["permission_classes"]
-    for name, e in caps.items():
-        if "Bash" not in cls[e["class"]]["tools"]:
-            (r / "skills" / name / "refute.py").symlink_to("../../image-tools/refute.py")
-            return
-    for d in sorted((r / "skills").glob("image-*")):
-        link = d / "refute.py"
-        if link.is_symlink():
-            link.unlink()
-            link.symlink_to("../../image-tools/render.py")   # the set's own, but the wrong tool
-            return
+    """A link where the class grants no shell reads like a capability and is not
+    one. Every class this set declares grants Bash, so the case adds one that
+    does not; picking an existing class without Bash found none and fell
+    through to a different branch."""
+    sub(r / "image-registry/harness.yaml", "permission_classes:\n",
+        "permission_classes:\n  no-shell:\n    tools: \"Read, Grep, Glob\"\n"
+        "    writes: false\n")
+    sub(r / "image-registry/capabilities.yaml",
+        "image-review:\n  class: read-only", "image-review:\n  class: no-shell")
+
+
+@case("V34-wrong-target", says="not the set's own")
+def _(r):
+    link = r / "skills/image-review/refute.py"
+    link.unlink()
+    link.symlink_to("../../image-tools/render.py")   # the set's own, but the wrong tool
 
 
 @case("V34-undeclared")
@@ -464,6 +457,179 @@ def _(r):
     sub(r / "image-registry/harness.yaml", "reviews: [verdict]", "reviews: [verdict, judgement]")
 
 
+@case("V1-folded", says="description is")
+def _(r):
+    # A folded scalar is how a long description gets written, and a line
+    # parser reads it as the two characters `>-` — always under the limit.
+    f = r / f"{S}image-prompt/SKILL.md"
+    t = f.read_text(encoding="utf-8")
+    start = t.index("description:")
+    end = t.index("\n", start)
+    f.write_text(t[:start] + "description: >-\n  " + "word " * 60 + t[end:],
+                 encoding="utf-8")
+
+
+@case("V1-yaml", says="frontmatter")
+def _(r):
+    sub(r / f"{S}image-prompt/SKILL.md", "name: image-prompt", "name: [image-prompt")
+
+
+@case("V24-hyphen", says="image-colour-grade")
+def _(r):
+    f = r / f"{S}_image/ROUTING.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee `image-colour-grade`.\n",
+                 encoding="utf-8")
+
+
+@case("V10-substring", says="no signal matches")
+def _(r):
+    # A signal inside a longer word is not that signal — `seed` is not in
+    # `seedling` — so a fixture that only matches that way matches nothing.
+    import yaml as _y
+    caps = _y.safe_load((r / "image-registry/capabilities.yaml").read_text())
+    sig = next(s for s in caps["image-refine"]["signals"] if " " not in s)
+    f = r / "image-registry/fixtures.yaml"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + f"\n- ask: \"x{sig}y\"\n  expect: image-refine\n",
+                 encoding="utf-8")
+
+
+@case("V17-missing-source", says="no delivered/")
+def _(r):
+    sub(r / "image-registry/harness.yaml", "delivered:\n", "delivered:\n  nosuch:\n"
+        "    section: Owns\n")
+
+
+@case("V22-between-spans", says="residual class")
+def _(r):
+    # The text between two code spans is not code, whichever backtick a
+    # pattern happens to start from.
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nRun `make check` #"
+                 "TODO(agent): fix the walker `later`\n", encoding="utf-8")
+
+
+@case("V19-nested", says="does not resolve")
+def _(r):
+    sub_dir = r / f"{S}image-prompt/reference/deeper"
+    sub_dir.mkdir()
+    (sub_dir / "x.md").write_text("<!-- image:deferred -->\nSee `playbooks/nope.md`.\n",
+                                  encoding="utf-8")
+
+
+@case("V19-harness-path", says="image-tools/nope.py")
+def _(r):
+    f = r / f"{S}image-prompt/reference/sizes.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee `image-tools/nope.py`.\n",
+                 encoding="utf-8")
+
+
+# The other half: edits a rule must stay quiet about. A rule that fires on
+# ordinary writing gets switched off, which is a slower way to have no rule.
+QUIET: dict[str, callable] = {}
+
+
+def quiet(name):
+    def deco(fn):
+        QUIET[name] = fn
+        return fn
+    return deco
+
+
+@quiet("a heading that names formats is not an enumeration")
+def _(r):
+    f = r / f"{S}image-deliver/reference/export-targets.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\n# PNG | WEBP\n\n# Output: PNG | WEBP\n"
+                 "\n  # Output: PNG | WEBP\n", encoding="utf-8")   # indented, still a heading
+
+
+@quiet("a marker in double-backtick code is quoted too")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nWrite ``#" + "TODO(agent): <action>`` with a class.\n",
+                 encoding="utf-8")
+
+
+@case("V38-fenced-comment", says="MAYBE")
+def _(r):
+    # Inside a fence a leading `#` is a comment in the schema, not a heading.
+    f = r / f"{S}image-review/reference/report-template.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n```yaml\n# status: DONE | MAYBE\n```\n", encoding="utf-8")
+
+
+@case("V38-nested-fence", says="MAYBE")
+def _(r):
+    # Inside a four-backtick fence a three-backtick line is content, not a
+    # fence; toggling on it called the rest of the block unfenced.
+    f = r / f"{S}image-review/reference/report-template.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n````md\n```\n# status: DONE | MAYBE\n```\n````\n",
+                 encoding="utf-8")
+
+
+@quiet("a backtick run with a backtick in its info string opens no fence")
+def _(r):
+    # CommonMark: such a line is a paragraph, so the heading after it is still
+    # a heading — and a heading names things, it switches on nothing.
+    f = r / f"{S}image-review/reference/report-template.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n```bad`info\n\n# status: DONE | MAYBE\n", encoding="utf-8")
+
+
+@quiet("a marker inside a code span that runs across lines is quoted")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nA span can run on: `first line\n#" + "TODO(agent): <action>\nand close` here.\n",
+                 encoding="utf-8")
+
+
+@case("V22-after-multiline-span", says="residual class")
+def _(r):
+    # The span closes, and a live marker after it on the same paragraph is live.
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nA span `runs\non` and then #" + "TODO(agent): fix this\n",
+                 encoding="utf-8")
+
+
+@case("V22-across-blocks", says="residual class")
+def _(r):
+    # A heading is a block of its own: a backtick it leaves open cannot pair
+    # with one in the paragraph below and hide the marker between them.
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n## A heading with a stray `\n#" + "TODO(agent): fix\nand a line with `\n",
+                 encoding="utf-8")
+
+
+@quiet("a code span inside a block quote runs across its quoted lines")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n> A span `starts\n> #" + "TODO(agent): example\n> closes` here\n",
+                 encoding="utf-8")
+
+
+@case("V22-quoted-blank", says="residual class")
+def _(r):
+    # A `>` with nothing after it is a blank line inside the quote: the
+    # paragraphs either side cannot pair backticks across it.
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n> one `\n>\n> #" + "TODO(agent): fix `\n", encoding="utf-8")
+
+
+@quiet("a quoted marker is talked about, not left behind")
+def _(r):
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nA marker reads `#" + "TODO(agent): <action>` in a document.\n",
+                 encoding="utf-8")
+
+
 def main() -> int:
     code, baseline = run(ROOT)
     if code != 0:
@@ -484,9 +650,21 @@ def main() -> int:
                 bad.append(rule)
                 print(f"  {rule} did not fire\n{out}")
 
-    print(f"{len(CASES)} rules exercised, {len(bad)} silent")
+    for name, mutate in QUIET.items():
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "repo"
+            shutil.copytree(ROOT, copy, symlinks=True,
+                            ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            mutate(copy)
+            code, out = run(copy)
+            if code != 0:
+                bad.append(f"quiet: {name}")
+                print(f"  a rule fired on: {name}\n{out}")
+
+    print(f"{len(CASES)} rules exercised, {len(QUIET)} quiet cases, "
+          f"{len(bad)} wrong")
     if bad:
-        print("silent: " + ", ".join(bad))
+        print("wrong: " + ", ".join(bad))
         return 1
 
     # Counting the cases that exist says nothing about the rules that do. A rule

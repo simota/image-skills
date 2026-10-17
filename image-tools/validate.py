@@ -56,23 +56,63 @@ LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 # the directory the file writing it lives in.
 TICK_PATH_RE = re.compile(r"`([^`\s]*(?:/[^`\s]*|\.(?:md|yaml|py)))`")
 MARKER_RE = re.compile(r"#" + r"TODO\(agent\):")
-QUOTED_MARKER_RE = re.compile(r"`[^`]*#" + r"TODO\(agent\):[^`]*`")
+
+
+def _live_marker_offsets(text: str) -> list[int]:
+    """Where markers sit outside every code span, with spans found the
+    CommonMark way: a run of n backticks opens a span that only a run of
+    exactly n closes, and a run nothing closes is literal text. A pattern for
+    "inside backticks" called the prose between two spans code; splitting on
+    single backticks called ``double-quoted`` code prose. `text` is a whole
+    paragraph, because a span may run across its lines."""
+    prose, i = [], 0
+    runs = [(m.start(), m.end()) for m in re.finditer(r"`+", text)]
+    k = 0
+    while k < len(runs):
+        start, end = runs[k]
+        close = next((j for j in range(k + 1, len(runs))
+                      if runs[j][1] - runs[j][0] == end - start), None)
+        if close is None:
+            k += 1
+            continue
+        prose.append((i, start))
+        i = runs[close][1]
+        k = close + 1
+    prose.append((i, len(text)))
+    return [a + m.start() for a, b in prose for m in MARKER_RE.finditer(text[a:b])]
 
 
 def read(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
+class BadFrontmatter(ValueError):
+    """The block every CLI parses as YAML does not parse as YAML."""
+
+
 def frontmatter(text: str) -> dict:
+    """The frontmatter as the CLIs read it: YAML. A line parser read a folded
+    `description: >-` as the two characters `>-`, which made the length rule
+    vacuous for exactly the descriptions long enough to need folding."""
     if not text.startswith("---\n"):
         return {}
     body = text.split("---\n", 2)[1]
-    out = {}
-    for line in body.splitlines():
-        if ":" in line:
-            k, _, v = line.partition(":")
-            out[k.strip()] = v.strip().strip('"')
-    return out
+    try:
+        doc = yaml.safe_load(body)
+    except yaml.YAMLError as e:
+        raise BadFrontmatter(str(e).splitlines()[0]) from None
+    if not isinstance(doc, dict):
+        raise BadFrontmatter("not a mapping")
+    return {str(k): "" if v is None else str(v) for k, v in doc.items()}
+
+
+def _fm(d: Path) -> dict:
+    """A skill's frontmatter for the rules that read one field of it. A block
+    that does not parse is V1's to report, once; here it reads as empty."""
+    try:
+        return frontmatter(read(d / "SKILL.md"))
+    except BadFrontmatter:
+        return {}
 
 
 def sections(text: str) -> dict[str, str]:
@@ -101,7 +141,12 @@ def v1_sizes():
         n = len(t.splitlines())
         if n > LIM["skill_md_lines"]:
             fail("V1", f"{d.name}/SKILL.md is {n} lines (max {LIM['skill_md_lines']})")
-        desc = frontmatter(t).get("description", "")
+        try:
+            desc = frontmatter(t).get("description", "")
+        except BadFrontmatter as e:
+            fail("V1", f"{d.name}/SKILL.md frontmatter is not YAML ({e}); "
+                       "no CLI can read its name or description")
+            continue
         if len(desc) > LIM["description_chars"]:
             fail("V1", f"{d.name} description is {len(desc)} chars "
                        f"(max {LIM['description_chars']}; the listing truncates)")
@@ -110,7 +155,7 @@ def v1_sizes():
 def v2_description_terms():
     others = set(SKILLS)
     for d in SKILL_DIRS:
-        desc = frontmatter(read(d / "SKILL.md")).get("description", "")
+        desc = _fm(d).get("description", "")
         for term in H["forbidden_description_terms"]:
             if term in desc:
                 fail("V2", f"{d.name} description contains {term!r}; "
@@ -207,7 +252,10 @@ def v10_fixtures():
         return
     for entry in FIX:
         ask, expect = _norm(entry["ask"]), entry["expect"]
-        hits = [(len(sig), owner) for sig, owner in pairs if sig in ask]
+        # Whole words only: a signal inside a longer word is not that signal,
+        # and matching it there let a fixture pass that nothing really matched.
+        hits = [(len(sig), owner) for sig, owner in pairs
+                if re.search(rf"(?<!\w){re.escape(sig)}(?!\w)", ask)]
         if not hits:
             fail("V10", f"no signal matches {entry['ask']!r} (expected {expect})")
             continue
@@ -260,7 +308,7 @@ def v15_permission_class():
             fail("V15", f"{d.name} declares unknown class {declared!r}")
             continue
         want = classes[declared]["tools"]
-        got = frontmatter(read(d / "SKILL.md")).get("allowed-tools", "")
+        got = _fm(d).get("allowed-tools", "")
         if got != want:
             fail("V15", f"{d.name} allowed-tools is {got!r}, class {declared} requires {want!r}")
 
@@ -275,7 +323,11 @@ def v16_sections():
 
 def v17_delivery():
     for key, spec in H["delivered"].items():
-        want = read(ROOT / "image-registry" / "delivered" / f"{key}.md").rstrip("\n")
+        source = ROOT / "image-registry" / "delivered" / f"{key}.md"
+        if not source.exists():
+            fail("V17", f"harness.yaml delivers {key!r} and there is no delivered/{key}.md")
+            continue
+        want = read(source).rstrip("\n")
         open_m, close_m = f"<!-- deliver:{key} -->", f"<!-- /deliver:{key} -->"
         for d in SKILL_DIRS:
             text = read(d / "SKILL.md")
@@ -293,7 +345,7 @@ def v17_delivery():
 
 def v18_signals_in_description():
     for d in SKILL_DIRS:
-        desc = _norm(frontmatter(read(d / "SKILL.md")).get("description", ""))
+        desc = _norm(_fm(d).get("description", ""))
         for s in CAP.get(d.name, {}).get("signals", []):
             if _norm(s) not in desc:
                 fail("V18", f"{d.name} signal {s!r} is not literal in its description; "
@@ -308,12 +360,14 @@ def v19_paths_resolve():
     applies to the shared contracts too — they are read *by* a skill, so a
     sibling-relative path in them points at nothing once installed.
     """
+    if not SKILL_DIRS:
+        return                            # V3 reports the roster mismatch
     probe = SKILL_DIRS[0]
     shared = sorted((SKILLS_ROOT / SHARED).glob("*.md"))
     for d in SKILL_DIRS:
         # reference/ is read by the skill too, so its paths resolve the same way
-        readable = [d / "SKILL.md"] + sorted((d / "playbooks").glob("*.md")) \
-            + sorted((d / "reference").glob("*.md"))
+        readable = [d / "SKILL.md"] + sorted((d / "playbooks").rglob("*.md")) \
+            + sorted((d / "reference").rglob("*.md"))
         for f in readable:
             _check_paths(f, d, f"{d.name}/{f.relative_to(d)}")
     for f in shared:                      # checked once, against one skill dir
@@ -324,7 +378,11 @@ def v19_paths_resolve():
 # under one of the set's own roots. `node_modules/` in a search playbook is an
 # example of the reader's project, not a pointer into this repo.
 def _is_own_reference(p: str) -> bool:
-    if any(p.startswith(x) or p == x for x in H.get("external_paths", [])):
+    # An entry ending in `/` is a directory and covers what is under it; any
+    # other entry is one name. A bare prefix exempted every path that merely
+    # began with the same characters.
+    if any(p == x or (x.endswith("/") and p.startswith(x))
+           for x in H.get("external_paths", [])):
         return False
     if p.endswith((".md", ".yaml", ".py")):
         return True
@@ -335,7 +393,12 @@ def _check_paths(f: Path, base: Path, label: str) -> None:
     for p in TICK_PATH_RE.findall(read(f)):
         if p.startswith(("http", "~", "/")) or " " in p or not _is_own_reference(p):
             continue
-        if ".." in p:
+        if p.startswith(f"{SET}-tools/"):
+            # The harness, named for maintainers; no skill reads it, but the
+            # name still has to point at something that exists.
+            if not (ROOT / p).exists():
+                fail("V19", f"{label} names {p}, which is not in the repository")
+        elif ".." in p:
             fail("V19", f"{label} references {p!r}; paths are normalised lexically, "
                         "so `..` does not traverse the install symlink")
         elif not (base / p).exists():
@@ -388,12 +451,43 @@ def v22_markers_classified():
     for f in ROOT.rglob("*.md"):
         if ".git" in f.parts or f.parts[-2:-1] == ("delivered",):
             continue
-        for i, line in enumerate(read(f).splitlines(), 1):
-            # Exempt only a marker quoted inside backticks — one that is being
-            # talked about. A live marker on a line with other code is still live.
-            if MARKER_RE.search(line) and not QUOTED_MARKER_RE.search(line):
-                if not any(c in line for c in VOCAB["residual_classes"]):
-                    fail("V22", f"{f.relative_to(ROOT)}:{i} marker carries no residual class")
+        lines = read(f).splitlines()
+        # Exempt only a marker quoted inside a code span — one that is being
+        # talked about. Spans are found per paragraph, since one may run across
+        # lines; a live marker beside other code is still live.
+        for first, para in _paragraphs(lines):
+            text = "\n".join(para)
+            for at in _live_marker_offsets(text):
+                i = first + text.count("\n", 0, at)
+                if not any(c in lines[i] for c in VOCAB["residual_classes"]):
+                    fail("V22", f"{f.relative_to(ROOT)}:{i + 1} marker carries no residual class")
+
+
+# Lines that are a block of their own, or open one: an ATX heading, a fence,
+# a table row, a list item, a block quote. A code span cannot pair backticks
+# across a block boundary, and a blank line is not the only one. This is the
+# part of CommonMark's block structure the corpus uses, not all of it: a full
+# parser would be a dependency, and this set deliberately has none.
+_BLOCK_START = re.compile(r" {0,3}(#{1,6}(\s|$)|`{3,}|~{3,}|\||[-*+]\s|\d+[.)]\s|>)")
+_ONE_LINE_BLOCK = re.compile(r" {0,3}(#{1,6}(\s|$)|`{3,}|~{3,}|\|)")   # nothing continues these
+
+
+def _paragraphs(lines: list[str]):
+    """Runs of lines inside one block, with the index of each run's first line."""
+    start, closed, quoted = None, False, False
+    for n, line in enumerate(lines + [""]):
+        in_quote = bool(re.match(r" {0,3}>", line))
+        # Consecutive quoted lines are one block quote, and one paragraph in it.
+        blank = not line.strip() or re.fullmatch(r" {0,3}>\s*", line)   # `>` alone too
+        boundary = (blank or closed
+                    or (_BLOCK_START.match(line) and not (in_quote and quoted)))
+        if start is not None and boundary:
+            yield start, lines[start:n]
+            start = None
+        if not blank and start is None:
+            start = n
+        closed = bool(_ONE_LINE_BLOCK.match(line))
+        quoted = in_quote
 
 
 def v23_labels():
@@ -427,7 +521,7 @@ def v24_rendered_tables():
         if name not in readme:
             fail("V24", f"README.md does not list {name}")
     for doc, text in ((SKILLS_ROOT / ROUTING_FILE, routing), (ROOT / "README.md", readme)):
-        for found in set(re.findall(rf"`({PREFIX}[a-z]+)`", text)):
+        for found in set(re.findall(rf"`({re.escape(PREFIX)}[a-z0-9]+(?:-[a-z0-9]+)*)`", text)):
             if found not in SKILLS:
                 fail("V24", f"{doc.relative_to(ROOT)} names {found}, which does not exist")
 
@@ -841,8 +935,26 @@ def v38_enumerations_declared():
     for f in sorted(SKILLS_ROOT.rglob("*.md")):
         if ".git" in f.parts:
             continue
+        fence = None                     # the opening run, while inside one
         for i, line in enumerate(read(f).splitlines(), 1):
-            for m in _enumerations(line):
+            run = re.match(r" {0,3}(`{3,}|~{3,})", line)
+            if run and fence is None and run.group(1)[0] == "`" \
+                    and "`" in line[run.end():]:
+                run = None                       # CommonMark: no backtick in a
+                                                 # backtick fence's info string
+            if run:
+                mark = run.group(1)
+                if fence is None:
+                    fence = mark
+                    continue
+                # Only a run of the same character, at least as long and with
+                # nothing after it, closes a fence (CommonMark); anything else
+                # inside is content.
+                if mark[0] == fence[0] and len(mark) >= len(fence) \
+                        and not line[run.end():].strip():
+                    fence = None
+                    continue
+            for m in _enumerations(line, fence is not None):
                 seen += 1
                 words = [w.strip() for w in m.split("|")]
                 missing = [w for w in words if w not in declared]
@@ -855,12 +967,17 @@ def v38_enumerations_declared():
                     "drifted from how pages write one, and this check is vacuous")
 
 
-def _enumerations(line: str) -> list[str]:
+def _enumerations(line: str, fenced: bool = False) -> list[str]:
     """The enumerations on a line: in the text, and in a trailing comment — the
     place a schema line usually lists its values — with backticks and a closing
     parenthetical removed, both of which hid the one real enumeration here."""
     out = []
-    text, _, comment = line.partition("#")
+    if not fenced and re.match(r" {0,3}#{1,6}(\s|$)", line):   # CommonMark ATX heading
+        return out                          # a heading names things; it switches on nothing
+    # A comment starts at a `#` after whitespace, as in YAML; a `#` inside a
+    # word is not one.
+    m = re.search(r"\s#", line)
+    text, comment = (line[:m.start()], line[m.end():]) if m else (line, "")
     for part in (text, comment) if comment else (text,):
         part = re.sub(r"\s*\([^()]*\)\s*$", "", part.replace("`", "")).strip()
         m = ENUM_RE.search(part)
@@ -926,12 +1043,29 @@ RULES = [v1_sizes, v2_description_terms, v3_roster, v4_playbook_orphans,
          v39_post_change_review]
 
 
+def _hook_state() -> str:
+    """Whether the pre-commit hook is installed, asked of git: in a worktree
+    `.git` is a file, and core.hooksPath may point anywhere. Outside a
+    repository — the hook runs this on an export of the index — nothing is
+    said, rather than a confident "off"."""
+    import subprocess
+    try:
+        # No --path-format: git before 2.31 echoes an option it does not know
+        # and exits 0, which read as a path that never exists.
+        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--git-path", "hooks"],
+                           capture_output=True, text=True)
+    except OSError:
+        return ""
+    if r.returncode != 0 or not r.stdout.strip():
+        return ""
+    on = (ROOT / r.stdout.strip() / "pre-commit").exists()   # absolute stays absolute
+    return f" · hooks {'on' if on else 'off — run: make hooks'}"
+
+
 def main() -> int:
     for rule in RULES:
         rule()
-    hooks = (ROOT / ".git" / "hooks" / "pre-commit").exists()
-    print(f"{len(RULES)} rules · {len(SKILLS)} skills · "
-          f"hooks {'on' if hooks else 'off — run: make hooks'}")
+    print(f"{len(RULES)} rules · {len(SKILLS)} skills{_hook_state()}")
     if FAILURES:
         for f in sorted(FAILURES):
             print(f"  {f}")

@@ -332,7 +332,7 @@ def complete(raw: bytes) -> bool:
     end the WebP RIFF header declares, GIF's trailer. A header can be whole
     while the rest is still being written, and a header is all `probe` reads."""
     if raw.startswith(PNG_SIG):
-        return b"\x00\x00\x00\x00IEND\xaeB`\x82" in raw[-64:]
+        return _png_reaches_iend(raw)
     if raw.startswith(b"\xff\xd8"):
         try:
             return any(m == 0xD9 for m, *_ in jpeg_segments(raw, through_scans=True))
@@ -341,8 +341,48 @@ def complete(raw: bytes) -> bool:
     if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
         return 8 + struct.unpack("<I", raw[4:8])[0] <= len(raw)
     if raw[:4] == b"GIF8":
-        return raw.rstrip(b"\x00").endswith(b";")
+        try:
+            return _gif_reaches_trailer(raw)
+        except IndexError:
+            return False
     return False
+
+
+def _png_reaches_iend(raw: bytes) -> bool:
+    """Walked chunk by chunk, so bytes appended after IEND (which strip
+    removes) do not hide it, and an IEND-shaped run inside a cut-short chunk
+    does not stand in for it."""
+    pos = len(PNG_SIG)
+    while pos + 12 <= len(raw):
+        length, kind = struct.unpack(">I4s", raw[pos:pos + 8])
+        pos += 12 + length
+        if kind == b"IEND":
+            return pos <= len(raw)
+    return False
+
+
+def _gif_reaches_trailer(raw: bytes) -> bool:
+    """Walked block by block to the 0x3B trailer: that byte also turns up
+    inside image data, so a file cut short there is not finished."""
+    def table(flags: int) -> int:
+        return 3 * 2 ** ((flags & 7) + 1) if flags & 0x80 else 0
+
+    def sub_blocks(pos: int) -> int:
+        while raw[pos]:
+            pos += 1 + raw[pos]
+        return pos + 1
+
+    pos = 13 + table(raw[10])
+    while True:
+        tag = raw[pos]
+        if tag == 0x3B:
+            return True
+        if tag == 0x21:                      # extension: label, then sub-blocks
+            pos = sub_blocks(pos + 2)
+        elif tag == 0x2C:                    # image: descriptor, table, LZW size
+            pos = sub_blocks(pos + 10 + table(raw[pos + 9]) + 1)
+        else:
+            return False
 
 
 # --- canvas legality ---------------------------------------------------------
@@ -502,8 +542,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.check_size:
         if a.generator not in (None, CANVAS_GENERATOR):
-            print(f"--check-size answers for {CANVAS_GENERATOR}'s canvas; "
-                  f"{a.generator} takes no pixel size (ask --check-aspect)", file=sys.stderr)
+            print(f"--check-size answers for {CANVAS_GENERATOR}'s canvas; " + (
+                  f"{a.generator} takes no pixel size (ask --check-aspect)"
+                  if a.generator in GENERATORS else
+                  f"{a.generator} is not a generator the registry lists"), file=sys.stderr)
             return 2
         try:
             w, h = (int(x) for x in a.check_size.lower().split("x"))

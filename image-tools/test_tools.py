@@ -1694,6 +1694,14 @@ def test_recipe_integrity(tmp: Path) -> None:
         code = recipe.main(["capture", "--from", str(cut), "--generator", "codex",
                             "--to", str(d / "cut-out.png"), "--prompt", PROMPT])
     check("a file that is not complete yet is not captured", code, 2)
+    check("bytes appended after IEND do not hide it",
+          imgfacts.complete(png(64, 32) + b"\x00" * 100), True)
+    data = b"\x05\x3b\x3b\x01\x02\x3b"                   # 0x3B inside image data
+    whole = (gif(2, 2) + b"\x2c" + struct.pack("<HHHH", 0, 0, 2, 2) + b"\x00"
+             + b"\x02" + bytes([len(data)]) + data + b"\x00" + b"\x3b")
+    check("a GIF read block by block reaches its trailer", imgfacts.complete(whole), True)
+    check("a GIF cut where its image data holds a 0x3B is not complete",
+          [n for n in range(len(whole)) if imgfacts.complete(whole[:n])], [])
 
     # Two captures racing to one name: one wins, the other is refused, and
     # the image and recipe that land are from the same run.

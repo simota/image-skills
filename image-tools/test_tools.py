@@ -879,16 +879,27 @@ def test_strip_leaks(tmp: Path) -> None:
 # --- engine, refute, render -------------------------------------------------
 
 FAKE = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, subprocess, sys
 argv = sys.argv[1:]
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a") as log:
     log.write(json.dumps({"argv": argv, "stdin": prompt}) + "\\n")
+me = os.path.basename(sys.argv[0])
+only = os.environ.get("FAKE_ONLY")
+if only and me not in only.split(","):
+    sys.exit(1)                                    # this engine is unreachable
+if os.environ.get("FAKE_SPAWN"):                   # a tree that outlives a kill of
+    p = subprocess.Popen(["sleep", "30"])          # the direct child alone
+    open(os.environ["FAKE_SPAWN"], "w").write(str(p.pid))
+    import time; time.sleep(30)
 answer = os.environ["FAKE_ANSWER"]
 if "-o" in argv:                                   # codex writes a file
     open(argv[argv.index("-o") + 1], "w").write(answer)
 else:                                              # claude and agy print an envelope
-    print(json.dumps({"structured_output": json.loads(answer)}))
+    print(json.dumps({"type": "result", "structured_output": json.loads(answer)}))
+    noise = os.environ.get("FAKE_NOISE")
+    if noise:
+        print(noise)                               # a log line after the answer
 """
 
 
@@ -1463,6 +1474,90 @@ def test_strip_concurrent_change(tmp: Path) -> None:
         truthy(f"{path}: and the refusal says why", "changed" in err.getvalue())
 
 
+def test_engine_integrity(tmp: Path) -> None:
+    """A verdict is the engine's answer, from an engine allowed to give one, in
+    the shape that was asked for — and the exit code says what was found."""
+    import os
+    good = {"refuted": False, "reason": "r", "what_would_settle_it": "w"}
+    noise = json.dumps({"type": "telemetry",
+                        "structured_output": dict(good, refuted=True)})
+    os.environ["FAKE_NOISE"] = noise
+    try:
+        with fake_engines(tmp, good):
+            check("a log line after the answer does not replace it",
+                  engine.run("claude", "p", refute.SCHEMA), good)
+    finally:
+        os.environ.pop("FAKE_NOISE")
+    truthy("two unlabelled objects are ambiguous, not a choice",
+           raises(lambda: engine._parse("x", '{"a": 1}\n{"a": 2}'), engine.EngineError))
+
+    for running in ("Claude", "nonsense"):
+        check(f"--running {running!r} is refused even with a checker named",
+              exits(lambda: engine.main(["--running", running, "codex", "--prompt-file",
+                                         "p", "--schema", "s"])), 2)
+
+    with fake_engines(tmp, good):
+        # agy takes the prompt as an argument, where a NUL cannot go; stdin can
+        # carry one. A lone surrogate cannot be encoded on either route.
+        truthy("a NUL in an argument-borne prompt is an EngineError, not a traceback",
+               raises(lambda: engine.run("agy", "a\x00b", refute.SCHEMA), engine.EngineError))
+        for name in ("agy", "claude"):
+            truthy(f"{name}: an unencodable prompt is an EngineError, not a traceback",
+                   raises(lambda: engine.run(name, "a\ud800b", refute.SCHEMA),
+                          engine.EngineError))
+
+    with fake_engines(tmp, dict(good, ok=True)):
+        truthy("a key the schema closed is outside it",
+               raises(lambda: engine.run("claude", "p", refute.SCHEMA), engine.EngineError))
+    check("enum is enforced", bool(engine.conforms("maybe", {"enum": ["yes", "no"]})), True)
+    check("const is enforced", bool(engine.conforms(2, {"const": 1})), True)
+    check("items are enforced",
+          bool(engine.conforms([1, "x"], {"type": "array", "items": {"type": "integer"}})), True)
+    check("NaN is not a number", bool(engine.conforms(float("nan"), {"type": "number"})), True)
+    sfile = tmp / "list.json"
+    sfile.write_text("[]", encoding="utf-8")
+    (tmp / "p.txt").write_text("p", encoding="utf-8")
+    check("a schema that is not an object exits 2",
+          engine.main(["--running", "claude", "codex", "--prompt-file",
+                       str(tmp / "p.txt"), "--schema", str(sfile)]), 2)
+
+    pidfile = tmp / "grandchild.pid"
+    os.environ["FAKE_SPAWN"] = str(pidfile)
+    saved_timeout, engine.TIMEOUT = engine.TIMEOUT, 2
+    try:
+        with fake_engines(tmp, good):
+            truthy("a timeout is an EngineError",
+                   raises(lambda: engine.run("claude", "p", refute.SCHEMA), engine.EngineError))
+    finally:
+        engine.TIMEOUT = saved_timeout
+        os.environ.pop("FAKE_SPAWN")
+    if pidfile.exists():
+        pid = int(pidfile.read_text())
+        import time
+        time.sleep(0.2)
+        try:                                  # a zombie awaiting its reaper is gone
+            state = Path(f"/proc/{pid}/stat").read_text().split(")")[-1].split()[0]
+            alive = state != "Z"
+            if alive:
+                os.kill(pid, 9)
+        except OSError:
+            alive = False
+        check("and the engine's whole process tree is gone, not just its parent", alive, False)
+
+    claims = tmp / "verdict.json"
+    claims.write_text(json.dumps([{"id": "c1", "claim": "the file is 1536x1024"}]))
+    with fake_engines(tmp, dict(good, refuted=True)):
+        check("a refuted claim exits 3, not 0",
+              refute.main(["--running", "claude", str(claims)]), 3)
+    os.environ["FAKE_ONLY"] = "codex"
+    try:
+        with fake_engines(tmp, good):
+            check("a claim only some refuters read exits 1, not 0",
+                  refute.main(["--running", "claude", str(claims)]), 1)
+    finally:
+        os.environ.pop("FAKE_ONLY")
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1509,6 +1604,7 @@ def main() -> int:
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_engine(tmp)
+        test_engine_integrity(tmp)
         test_precommit_hook(tmp)
         test_edges_round_four(tmp)
     if failures:

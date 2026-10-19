@@ -158,12 +158,19 @@ def main(argv: list[str] | None = None) -> int:
                         "independent_readings": len(votes),
                         "votes": votes, "unreachable": silent})
 
-    # A claim nobody could check is not a claim that stood, and an exit of 0
-    # is what a caller reads as "it stood".
-    unchecked = any(r["verdict"] == "UNCHECKED" for r in results)
+    # The exit code is what a caller reads without the report: 0 only when
+    # every claim stood under every refuter there was; 3 when any claim was
+    # refuted or contested; 1 when any claim was read by fewer refuters than
+    # the pool holds — unchecked, or checked by some and not others.
+    if any(r["verdict"] in ("REFUTED", "CONTESTED") for r in results):
+        code = 3
+    elif any(r["independent_readings"] < len(pool) for r in results):
+        code = 1
+    else:
+        code = 0
     if a.json:
         print(json.dumps(results, ensure_ascii=False, indent=2))
-        return 1 if unchecked else 0
+        return code
 
     for r in results:
         print(f"\n[{r['verdict']}] {r['id']}   "
@@ -176,8 +183,11 @@ def main(argv: list[str] | None = None) -> int:
     kinds = [r["verdict"] for r in results]
     print(f"\n{kinds.count('REFUTED')} refuted · {kinds.count('CONTESTED')} contested · "
           f"{kinds.count('STANDS')} unrefuted · {kinds.count('UNCHECKED')} unchecked")
+    partial = sum(1 for r in results if 0 < r["independent_readings"] < len(pool))
+    if partial:
+        print(f"{partial} claim(s) were read by fewer refuters than the {len(pool)} available")
     print("Unrefuted means nothing was found, not that nothing is there.")
-    return 1 if unchecked else 0
+    return code
 
 
 if __name__ == "__main__":

@@ -60,6 +60,11 @@ CANVAS_GENERATOR = next(iter(_canvas))
 CANVAS = _canvas[CANVAS_GENERATOR]["canvas"]
 ASPECT_GENERATORS = _by_control("aspect")
 
+# Past any canvas or screen by orders of magnitude, and still small enough that
+# the ratio and log arithmetic below stays inside a float. A larger number is
+# a typo, and answering it would mean a traceback rather than an input error.
+MAX_EDGE = 10**6
+
 
 class Unreadable(Exception):
     """The bytes are not an image this tool knows how to read."""
@@ -476,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
             offered = aspect_offered(name)
             ratio = a.check_aspect if ":" in a.check_aspect else ""
             w, h = (int(x) for x in ratio.split(":"))
-            if w <= 0 or h <= 0:
+            if not (0 < w <= MAX_EDGE and 0 < h <= MAX_EDGE):
                 raise ValueError(ratio)
         except (KeyError, ValueError) as e:
             print(e if isinstance(e, KeyError) else
@@ -496,12 +501,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if ok else 1
 
     if a.check_size:
+        if a.generator not in (None, CANVAS_GENERATOR):
+            print(f"--check-size answers for {CANVAS_GENERATOR}'s canvas; "
+                  f"{a.generator} takes no pixel size (ask --check-aspect)", file=sys.stderr)
+            return 2
         try:
             w, h = (int(x) for x in a.check_size.lower().split("x"))
-            if w <= 0 or h <= 0:
+            if not (0 < w <= MAX_EDGE and 0 < h <= MAX_EDGE):
                 raise ValueError(a.check_size)
         except ValueError:
-            print(f"not a size: {a.check_size!r} (want WxH)", file=sys.stderr)
+            print(f"not a size: {a.check_size!r} (want WxH, each edge 1..{MAX_EDGE})",
+                  file=sys.stderr)
             return 2
         broken = sorted(illegal(w, h))
         near = None if not broken else nearest_legal(w, h)

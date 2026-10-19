@@ -1673,6 +1673,43 @@ def test_recipe_integrity(tmp: Path) -> None:
           any("folder.png" in p for p in recipe.check_one(d / "good.png")), False)
 
 
+def test_cli_bounds_and_render_sections(tmp: Path) -> None:
+    """Numbers past any canvas, the wrong lever, and sections found by text
+    that only looked like their heading."""
+    huge = "1" + "0" * 400
+    for args in ([f"--check-size={huge}x16"], [f"--check-aspect=1:{huge}"],
+                 [f"--check-aspect={huge}:1"]):
+        with contextlib.redirect_stderr(io.StringIO()):
+            check(f"{args[0][:24]}… is refused as input, not a traceback",
+                  exits(lambda: imgfacts.main(args)), 2)
+    aspect_gen = sorted(imgfacts.ASPECT_GENERATORS)[0]
+    with contextlib.redirect_stderr(io.StringIO()):
+        check("--check-size asked of a generator that takes no pixel size is refused",
+              imgfacts.main(["--check-size", "1024x1024", "--generator", aspect_gen]), 2)
+
+    key, spec = next(iter(render.H["delivered"].items()))
+    section = spec["section"]
+    block = f"<!-- deliver:{key} -->"
+    cases = {
+        "an H3 with the same words is not the section":
+            f"# T\n\n### {section}\n\nsub\n\n## {section}\n\nreal\n\n## Next\n",
+        "a heading inside a fence is not the section":
+            f"# T\n\n```\n## {section}\n```\n\n## {section}\n\nreal\n\n## Next\n",
+        "an H1 ends the section":
+            f"# T\n\n## {section}\n\nreal\n\n# Appendix\n\nlater\n",
+    }
+    for name, text in cases.items():
+        f = tmp / "render-case.md"
+        f.write_text(text, encoding="utf-8")
+        render.render(f)
+        out = f.read_text(encoding="utf-8")
+        at = out.find(block)
+        real = out.find("real")
+        after = min(i for i in (out.find("## Next"), out.find("# Appendix"), len(out))
+                    if i != -1)
+        truthy(name, at > real and at < after)
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1719,6 +1756,7 @@ def main() -> int:
         test_strip_concurrent_change(tmp)
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
+        test_cli_bounds_and_render_sections(tmp)
         test_engine(tmp)
         test_engine_integrity(tmp)
         test_precommit_hook(tmp)

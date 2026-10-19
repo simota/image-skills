@@ -879,8 +879,11 @@ def test_strip_leaks(tmp: Path) -> None:
     full = webp_with(16, 16, 0, [(b"EXIF", exif(None) * 4)])
     f.write_bytes(full[:-6])
     truthy("a truncated WebP is refused", refuses(f, Opt(), "truncated"))
-    whole_webp = webp_vp8x(16, 16, False, False)
+    whole_webp = webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4))])
     check("a whole WebP is complete", imgfacts.complete(whole_webp), True)
+    check("a VP8X canvas with no image chunk after it is not",
+          imgfacts.complete(webp_vp8x(16, 16, False, False)), False)
+    check("a lossless WebP with its pixels is", imgfacts.complete(webp_vp8l(16, 16, False)), True)
     check("one whose RIFF size is still zero is not",
           imgfacts.complete(whole_webp[:4] + b"\0\0\0\0" + whole_webp[8:]), False)
 

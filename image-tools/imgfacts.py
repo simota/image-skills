@@ -338,19 +338,32 @@ def complete(raw: bytes) -> bool:
             return any(m == 0xD9 for m, *_ in jpeg_segments(raw, through_scans=True))
         except (struct.error, IndexError):
             return False
-    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP" and len(raw) >= 20:
-        # The declared extent has to hold the form type and the first chunk
-        # whole: a size field still zero, as a writer leaves it until the end,
-        # declares a file that is not there yet.
-        end = 8 + struct.unpack("<I", raw[4:8])[0]
-        first = 20 + struct.unpack("<I", raw[16:20])[0]
-        return first <= end <= len(raw)
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return _webp_holds_image(raw)
     if raw[:4] == b"GIF8":
         try:
             return _gif_reaches_trailer(raw)
         except IndexError:
             return False
     return False
+
+
+def _webp_holds_image(raw: bytes) -> bool:
+    """The RIFF size the file declares is all there, and the chunks inside it
+    include one that carries pixels. A size field still zero, as a writer
+    leaves it until the end, declares a file that is not there yet; a VP8X
+    chunk alone states a canvas and holds no image."""
+    end = 8 + struct.unpack("<I", raw[4:8])[0]
+    if end > len(raw):
+        return False
+    pos, pixels = 12, False
+    while pos + 8 <= end:
+        kind, size = raw[pos:pos + 4], struct.unpack("<I", raw[pos + 4:pos + 8])[0]
+        if pos + 8 + size > end:
+            return False
+        pixels = pixels or kind in (b"VP8 ", b"VP8L", b"ANMF")
+        pos += 8 + size + (size & 1)
+    return pixels
 
 
 def _png_reaches_iend(raw: bytes) -> bool:

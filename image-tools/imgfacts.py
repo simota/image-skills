@@ -322,6 +322,24 @@ def probe_bytes(raw: bytes, name: str = "<bytes>") -> dict:
     return out
 
 
+def complete(raw: bytes) -> bool:
+    """Whether the file reaches its own end marker — PNG's IEND, JPEG's EOI, the
+    end the WebP RIFF header declares, GIF's trailer. A header can be whole
+    while the rest is still being written, and a header is all `probe` reads."""
+    if raw.startswith(PNG_SIG):
+        return b"\x00\x00\x00\x00IEND\xaeB`\x82" in raw[-64:]
+    if raw.startswith(b"\xff\xd8"):
+        try:
+            return any(m == 0xD9 for m, *_ in jpeg_segments(raw, through_scans=True))
+        except (struct.error, IndexError):
+            return False
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return 8 + struct.unpack("<I", raw[4:8])[0] <= len(raw)
+    if raw[:4] == b"GIF8":
+        return raw.rstrip(b"\x00").endswith(b";")
+    return False
+
+
 # --- canvas legality ---------------------------------------------------------
 
 def illegal(w: int, h: int) -> set[str]:

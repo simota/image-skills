@@ -33,6 +33,7 @@ import argparse
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -113,8 +114,8 @@ def generator_holding(path: Path) -> str | None:
 
 # What a placed file's extension promises. A JPEG written to `hero.png` is a
 # conversion nobody performed, and every later reader trusts the name.
-SUFFIX_FORMAT = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG",
-                 ".webp": "WebP", ".gif": "GIF"}
+SUFFIX_FORMAT = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".jpe": "JPEG",
+                 ".jfif": "JPEG", ".webp": "WebP", ".gif": "GIF"}
 
 
 def _searched(name: str | None) -> str:
@@ -156,12 +157,24 @@ def capture(a: argparse.Namespace) -> int:
         print(f"{dest} is a directory; --to names the file to write", file=sys.stderr)
         return 2
     side = sidecar_of(dest)
+    # A link at either name would carry the write somewhere else — outside the
+    # project, or over an unrelated file. Placing never follows one.
+    try:
+        for p in (dest, side):
+            if p.is_symlink():
+                print(f"{p} is a symbolic link; a capture places files, it does not "
+                      "write through links", file=sys.stderr)
+                return 2
+            p.exists()                       # a name the filesystem refuses, now
+    except OSError as e:
+        print(f"{e}; nothing was written", file=sys.stderr)
+        return 2
     if (dest.exists() or side.exists()) and not a.replace:
         print(f"{dest if dest.exists() else side} already exists. Write a sibling "
               "version instead, or pass --replace once a person has decided to "
               "retire the old one", file=sys.stderr)
         return 2
-    if dest.exists() and dest.resolve() == src.resolve():
+    if dest.exists() and os.path.samefile(dest, src):
         print(f"{dest} is the generated file itself; place it somewhere else",
               file=sys.stderr)
         return 2
@@ -173,8 +186,15 @@ def capture(a: argparse.Namespace) -> int:
         prompt = (a.prompt_file.read_bytes().decode("utf-8") if a.prompt_file
                   else a.prompt)
         facts = imgfacts.probe(src)
+        whole = imgfacts.complete(src.read_bytes())
     except (OSError, UnicodeDecodeError, imgfacts.Unreadable) as e:
         print(f"{e}; nothing was written", file=sys.stderr)
+        return 2
+    if not whole:
+        # The newest-file fallback is exactly where a file still being written
+        # is found; a header can be whole long before the picture is.
+        print(f"{src} does not reach its end marker — still being written, or "
+              "cut short; nothing was written", file=sys.stderr)
         return 2
     if not prompt.strip():
         print("the prompt is blank; the prompt is the asset", file=sys.stderr)
@@ -186,9 +206,6 @@ def capture(a: argparse.Namespace) -> int:
               "extension; a conversion is its own operation and its own line "
               "in the recipe", file=sys.stderr)
         return 2
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest)
 
     inputs = []
     for spec in a.input or []:
@@ -206,14 +223,68 @@ def capture(a: argparse.Namespace) -> int:
         "output": {"generated": str(src), "placed": str(dest)},
         "note": NO_SEED,
     }
-    side.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
-                                   default_flow_style=False), encoding="utf-8")
+    try:
+        _place(src, dest, yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
+                                         default_flow_style=False), a.replace)
+    except FileExistsError as e:
+        print(f"{e.filename} appeared while this capture ran; nothing was written",
+              file=sys.stderr)
+        return 2
+    except (OSError, shutil.Error) as e:
+        print(f"{e}; nothing was written", file=sys.stderr)
+        return 2
     print(f"{dest}  {facts['size']}  {facts['bytes']:,} bytes")
     if doc["size"]["asked"] not in (UNASKED[gen["control"]], facts["size"]):
         print(f"  asked for {doc['size']['asked']}, on disk {facts['size']} — "
               "both recorded")
     print(f"{side}  {len(FIELDS)} fields")
     return 0
+
+
+def _place(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
+    """Put the image and its recipe in place together, or neither.
+
+    Without `replace`, both names are reserved first with O_EXCL — which also
+    refuses a link and a capture racing for the same name — then each is
+    filled by renaming a finished temporary file over its reservation. Any
+    failure removes whatever this capture created, so the result is never an
+    image without its recipe, nor a recipe from another run beside it."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    side = sidecar_of(dest)
+    made: list[Path] = []                    # names this capture now owns
+    temps: list[str] = []
+    try:
+        if not replace:
+            for p in (dest, side):
+                os.close(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666))
+                made.append(p)
+        fd, tmp_img = tempfile.mkstemp(dir=dest.parent, prefix=".capture.")
+        os.close(fd)
+        temps.append(tmp_img)
+        shutil.copyfile(src, tmp_img)
+        shutil.copystat(src, tmp_img)
+        fd, tmp_side = tempfile.mkstemp(dir=dest.parent, prefix=".capture.")
+        temps.append(tmp_side)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(recipe_text)
+        os.chmod(tmp_side, 0o666 & ~_umask())
+        os.replace(tmp_img, dest)
+        made.append(dest)
+        os.replace(tmp_side, side)
+        made.append(side)
+    except BaseException:
+        for p in set(made):
+            Path(p).unlink(missing_ok=True)
+        raise
+    finally:
+        for t in temps:
+            Path(t).unlink(missing_ok=True)
+
+
+def _umask() -> int:
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
 
 
 # --- check -------------------------------------------------------------------
@@ -227,6 +298,8 @@ def check_one(image: Path) -> list[str]:
         doc = yaml.safe_load(side.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
         return [f"{side}: not readable as YAML ({e.__class__.__name__})"]
+    except UnicodeDecodeError:
+        return [f"{side}: not UTF-8 text; a recipe is written as UTF-8"]
     if not isinstance(doc, dict):
         return [f"{side}: a recipe is a mapping of fields, not a "
                 f"{type(doc).__name__}; a chain of edits is one recipe per file"]
@@ -243,6 +316,20 @@ def check_one(image: Path) -> list[str]:
     for f in ("size", "output"):
         if f in doc and not isinstance(doc[f], dict):
             problems.append(f"{side}: {f} must be a mapping, not {doc[f]!r}")
+    # Present is not the same as said: each field holds what it is for.
+    for f in ("engine", "model", "excluded"):
+        if f in doc and doc[f] not in (None, "", {}) and not (
+                isinstance(doc[f], str) and doc[f].strip()):
+            problems.append(f"{side}: {f} must be text, not {doc[f]!r}")
+    if "inputs" in doc and not (isinstance(doc["inputs"], list) and all(
+            isinstance(i, dict) and isinstance(i.get("path"), str) for i in doc["inputs"])):
+        problems.append(f"{side}: inputs must be a list of entries with a path, "
+                        f"not {doc['inputs']!r}")
+    if isinstance(doc.get("output"), dict):
+        for k in ("placed", "generated"):
+            v = doc["output"].get(k)
+            if not (isinstance(v, str) and v.strip()):
+                problems.append(f"{side}: output.{k} must be a path, not {v!r}")
     note = doc.get("note")
     if not isinstance(note, str) or "IRREPRODUCIBLE" not in note:
         problems.append(f"{side}: no note stating IRREPRODUCIBLE — the limit on "
@@ -251,7 +338,8 @@ def check_one(image: Path) -> list[str]:
     placed = output.get("placed")
     # Resolved from where `capture` ran or from beside the sidecar: the same
     # file, checked from another directory, is still the same file.
-    if placed and not _same_file(str(placed), image, side.parent):
+    if isinstance(placed, str) and placed.strip() \
+            and not _same_file(placed, image, side.parent):
         problems.append(f"{side}: output.placed is {placed}, beside {image}")
 
     try:
@@ -282,7 +370,7 @@ def check(a: argparse.Namespace) -> int:
     targets = list(a.images)
     if a.dir:
         targets += [p for p in sorted(a.dir.rglob("*"))
-                    if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}]
+                    if p.suffix.lower() in SUFFIX_FORMAT and p.is_file()]
     if not targets:
         print("nothing to check", file=sys.stderr)
         return 2
@@ -299,8 +387,11 @@ def show(a: argparse.Namespace) -> int:
     for image in a.images:
         side = sidecar_of(image)
         print(f"=== {image}")
-        print(side.read_text(encoding="utf-8") if side.exists()
-              else "origin: unknown   # no recipe beside this file")
+        try:
+            print(side.read_text(encoding="utf-8") if side.exists()
+                  else "origin: unknown   # no recipe beside this file")
+        except UnicodeDecodeError:
+            print(f"{side}: not UTF-8 text")
     return 0
 
 

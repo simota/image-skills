@@ -1558,6 +1558,121 @@ def test_engine_integrity(tmp: Path) -> None:
         os.environ.pop("FAKE_ONLY")
 
 
+def test_recipe_integrity(tmp: Path) -> None:
+    """A capture either places the image and its recipe together, under names it
+    reserved, or places nothing — and check reads what a recipe says, not only
+    whether its keys are there."""
+    import os
+    import threading
+    d = tmp / "integ"
+    d.mkdir()
+    src = d / "src.png"
+    src.write_bytes(png(64, 32))
+    outside = d / "outside"
+    outside.mkdir()
+
+    def cap(dest, *extra):
+        with contextlib.redirect_stderr(io.StringIO()):
+            return recipe.main(["capture", "--from", str(src), "--generator", "codex",
+                                "--to", str(dest), "--prompt", PROMPT, *extra])
+
+    dangling = d / "dangling.png"
+    dangling.symlink_to(outside / "victim.png")
+    check("a dangling symlink as --to is refused", cap(dangling), 2)
+    check("and nothing was written through it", (outside / "victim.png").exists(), False)
+    keep = outside / "keep.png"
+    keep.write_bytes(png(10, 10))
+    linked = d / "linked.png"
+    linked.symlink_to(keep)
+    check("a symlink to another file is refused even with --replace",
+          cap(linked, "--replace"), 2)
+    check("and that file is untouched", imgfacts.probe(keep)["size"], "10x10")
+    hard = d / "hard.png"
+    os.link(src, hard)
+    check("a hard link to the generated file is refused, not a traceback",
+          cap(hard, "--replace"), 2)
+
+    deep = d / "long"
+    deep.mkdir()
+    name = "x" * 248 + ".png"                # its sidecar name is too long
+    check("a recipe that cannot be written fails the capture", cap(deep / name), 2)
+    check("and leaves no image without its recipe", sorted(deep.iterdir()), [])
+
+    # The recipe failing after the image is in place takes the image back out.
+    roll = d / "roll"
+    roll.mkdir()
+    real_replace, calls = recipe.os.replace, []
+
+    def second_fails(a_, b_):
+        calls.append(b_)
+        if len(calls) == 2:
+            raise OSError(28, "No space left on device")
+        return real_replace(a_, b_)
+
+    recipe.os.replace = second_fails
+    try:
+        check("a recipe that fails after the image was placed fails the capture",
+              cap(roll / "h.png"), 2)
+    finally:
+        recipe.os.replace = real_replace
+    check("and the image placed before it is taken back out",
+          sorted(x.name for x in roll.iterdir()), [])
+
+    cut = d / "cut.png"
+    cut.write_bytes(png(64, 32)[:-12])        # no IEND: still being written
+    with contextlib.redirect_stderr(io.StringIO()):
+        code = recipe.main(["capture", "--from", str(cut), "--generator", "codex",
+                            "--to", str(d / "cut-out.png"), "--prompt", PROMPT])
+    check("a file that is not complete yet is not captured", code, 2)
+
+    # Two captures racing to one name: one wins, the other is refused, and
+    # the image and recipe that land are from the same run.
+    real_probe, codes = imgfacts.probe, []
+
+    def slow(path):
+        import time
+        time.sleep(0.3)
+        return real_probe(path)
+
+    imgfacts.probe = slow
+    try:
+        racers = [threading.Thread(target=lambda: codes.append(cap(d / "race.png")))
+                  for _ in range(2)]
+        for r in racers:
+            r.start()
+        for r in racers:
+            r.join()
+    finally:
+        imgfacts.probe = real_probe
+    check("of two captures to one name, exactly one succeeds", sorted(codes), [0, 2])
+
+    good = d / "good.png"
+    check("a capture still works", cap(good), 0)
+    side = recipe.sidecar_of(good)
+    original = side.read_text(encoding="utf-8")
+    for change, says in (
+            ({"output": {"note": "x"}}, "output.placed"),
+            ({"output": {"placed": None, "generated": "g"}}, "output.placed"),
+            ({"inputs": 5}, "inputs"),
+            ({"engine": 0}, "engine"),
+            ({"model": False}, "model"),
+            ({"excluded": []}, "excluded")):
+        doc = yaml.safe_load(original)
+        doc.update(change)
+        side.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        truthy(f"check reports a malformed {says}",
+               any(says in p for p in recipe.check_one(good)))
+    side.write_bytes(original.encode("utf-8") + b"\xff\xfe")
+    truthy("a sidecar that is not UTF-8 is a problem, not a traceback",
+           any("UTF-8" in p for p in recipe.check_one(good)))
+    side.write_text(original, encoding="utf-8")
+    (d / "folder.png").mkdir()
+    with contextlib.redirect_stdout(io.StringIO()):
+        recipe.main(["check", "--dir", str(d)])          # must not treat it as an image
+    check("a directory named like an image is not checked as one",
+          any("folder.png" in p for p in recipe.check_one(d / "good.png")), False)
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1595,6 +1710,7 @@ def main() -> int:
         test_recipe_verbatim(tmp)
         test_recipe_generators(tmp)
         test_recipe_hardening(tmp)
+        test_recipe_integrity(tmp)
         test_strip(tmp)
         test_no_writes_while_reporting(tmp)
         test_malformed_input(tmp)

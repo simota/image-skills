@@ -879,6 +879,10 @@ def test_strip_leaks(tmp: Path) -> None:
     full = webp_with(16, 16, 0, [(b"EXIF", exif(None) * 4)])
     f.write_bytes(full[:-6])
     truthy("a truncated WebP is refused", refuses(f, Opt(), "truncated"))
+    whole_webp = webp_vp8x(16, 16, False, False)
+    check("a whole WebP is complete", imgfacts.complete(whole_webp), True)
+    check("one whose RIFF size is still zero is not",
+          imgfacts.complete(whole_webp[:4] + b"\0\0\0\0" + whole_webp[8:]), False)
 
 
 # --- engine, refute, render -------------------------------------------------
@@ -1721,6 +1725,34 @@ def test_recipe_integrity(tmp: Path) -> None:
         x.unlink()
     (roll / "h.png").write_bytes(old["h.png"])      # put back what the failure left
 
+    # The same, on a directory where the temporaries cannot be removed either:
+    # that cleanup failing must not replace the error naming the saved copy.
+    real_unlink = Path.unlink
+
+    def stuck(self, missing_ok=False):
+        if self.name.startswith(".capture."):
+            raise OSError(30, "Read-only file system")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    calls.clear()
+    src.write_bytes(png(48, 32))
+    recipe.os.replace, Path.unlink = second_and_third_fail, stuck
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            code = recipe.main(["capture", "--from", str(src), "--generator", "codex",
+                                "--to", str(roll / "h.png"), "--prompt", PROMPT,
+                                "--replace"])
+    finally:
+        recipe.os.replace, Path.unlink = real_replace, real_unlink
+        src.write_bytes(png(64, 32))
+    check("a cleanup that fails too still reports where the old image is",
+          (code, "Move it back by hand" in err.getvalue()), (1, True))
+    for x in roll.iterdir():
+        if x.name.startswith(".capture."):
+            x.unlink()
+    (roll / "h.png").write_bytes(old["h.png"])
+
     # Two captures into one directory place one after the other: one held
     # the lock, so the other waits rather than interleaving its renames.
     import fcntl
@@ -1847,6 +1879,8 @@ def test_cli_bounds_and_render_sections(tmp: Path) -> None:
             f"# T\n\n```\n## {section}\n```\n\n## {section}\n\nreal\n\n## Next\n",
         "an H1 ends the section":
             f"# T\n\n## {section}\n\nreal\n\n# Appendix\n\nlater\n",
+        "a backtick run whose info string holds a backtick opens no fence":
+            f"# T\n\n```bad`info\n\n## {section}\n\nreal\n\n## Next\n",
     }
     for name, text in cases.items():
         f = tmp / "render-case.md"

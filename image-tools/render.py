@@ -36,8 +36,9 @@ def section_span(text: str, section: str) -> tuple[int, int] | None:
             if run and run.group(1)[0] == fence[0] and len(run.group(1)) >= len(fence) \
                     and not bare[run.end():].strip():
                 fence = None
-        elif run:
-            fence = run.group(1)
+        elif run and not (run.group(1)[0] == "`" and "`" in bare[run.end():]):
+            fence = run.group(1)             # (a backtick in a backtick fence's
+                                             # info string makes it plain text)
         elif start is None:
             if own.fullmatch(bare):
                 start = pos + len(line)

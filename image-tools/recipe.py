@@ -332,7 +332,11 @@ def _place_locked(src: Path, image: bytes, dest: Path, recipe_text: str,
         raise
     finally:
         for t in temps:
-            Path(t).unlink(missing_ok=True)
+            try:
+                Path(t).unlink(missing_ok=True)
+            except OSError:
+                pass                         # a leftover temporary must not mask
+                                             # the error that is on its way out
 
 
 def _umask() -> int:

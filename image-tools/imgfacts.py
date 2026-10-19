@@ -338,8 +338,13 @@ def complete(raw: bytes) -> bool:
             return any(m == 0xD9 for m, *_ in jpeg_segments(raw, through_scans=True))
         except (struct.error, IndexError):
             return False
-    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
-        return 8 + struct.unpack("<I", raw[4:8])[0] <= len(raw)
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP" and len(raw) >= 20:
+        # The declared extent has to hold the form type and the first chunk
+        # whole: a size field still zero, as a writer leaves it until the end,
+        # declares a file that is not there yet.
+        end = 8 + struct.unpack("<I", raw[4:8])[0]
+        first = 20 + struct.unpack("<I", raw[16:20])[0]
+        return first <= end <= len(raw)
     if raw[:4] == b"GIF8":
         try:
             return _gif_reaches_trailer(raw)

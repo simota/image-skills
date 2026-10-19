@@ -348,6 +348,13 @@ def complete(raw: bytes) -> bool:
     return False
 
 
+# The smallest payload each image chunk can have and still hold a frame: VP8's
+# frame tag, start code and dimensions; VP8L's signature byte and dimensions;
+# ANMF's 16-byte frame header and the header of the chunk nested in it. A
+# structural check, not a decoder — enough that a name alone is not pixels.
+_WEBP_IMAGE_MIN = {b"VP8 ": 10, b"VP8L": 5, b"ANMF": 24}
+
+
 def _webp_holds_image(raw: bytes) -> bool:
     """The RIFF size the file declares is all there, and the chunks inside it
     include one that carries pixels. A size field still zero, as a writer
@@ -362,20 +369,22 @@ def _webp_holds_image(raw: bytes) -> bool:
         pos += 8 + size + (size & 1)         # an odd payload's pad byte is part
         if pos > end:                        # of the file, though not of size
             return False
-        pixels = pixels or kind in (b"VP8 ", b"VP8L", b"ANMF")
+        pixels = pixels or size >= _WEBP_IMAGE_MIN.get(kind, 1 << 32)
     return pixels and pos == end
 
 
 def _png_reaches_iend(raw: bytes) -> bool:
     """Walked chunk by chunk, so bytes appended after IEND (which strip
     removes) do not hide it, and an IEND-shaped run inside a cut-short chunk
-    does not stand in for it."""
-    pos = len(PNG_SIG)
+    does not stand in for it. IEND counts only after an IDAT: a header with
+    no image data declares a picture that is not in the file."""
+    pos, data = len(PNG_SIG), False
     while pos + 12 <= len(raw):
         length, kind = struct.unpack(">I4s", raw[pos:pos + 8])
         pos += 12 + length
+        data = data or (kind == b"IDAT" and length > 0)
         if kind == b"IEND":
-            return pos <= len(raw)
+            return data and pos <= len(raw)
     return False
 
 

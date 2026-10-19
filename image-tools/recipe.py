@@ -380,9 +380,13 @@ def check_one(image: Path) -> list[str]:
                 isinstance(doc[f], str) and doc[f].strip()):
             problems.append(f"{side}: {f} must be text, not {doc[f]!r}")
     if "inputs" in doc and not (isinstance(doc["inputs"], list) and all(
-            isinstance(i, dict) and isinstance(i.get("path"), str) for i in doc["inputs"])):
-        problems.append(f"{side}: inputs must be a list of entries with a path, "
-                        f"not {doc['inputs']!r}")
+            isinstance(i, dict) and all(isinstance(i.get(k), str) and i[k].strip()
+                                        for k in ("path", "role"))
+            for i in doc["inputs"])):
+        # capture writes "unstated" for a role nobody gave: an absent one is
+        # a recipe that lost what the input was for, not one that never said.
+        problems.append(f"{side}: inputs must be a list of entries with a path "
+                        f"and a role, not {doc['inputs']!r}")
     if isinstance(doc.get("output"), dict):
         for k in ("placed", "generated"):
             v = doc["output"].get(k)

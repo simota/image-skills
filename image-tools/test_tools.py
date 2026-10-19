@@ -884,6 +884,13 @@ def test_strip_leaks(tmp: Path) -> None:
     check("a VP8X canvas with no image chunk after it is not",
           imgfacts.complete(webp_vp8x(16, 16, False, False)), False)
     check("a lossless WebP with its pixels is", imgfacts.complete(webp_vp8l(16, 16, False)), True)
+    check("a VP8X canvas whose image chunk is empty is not",
+          imgfacts.complete(webp_with(16, 16, 0, [(b"VP8 ", b"")])), False)
+    no_idat = png(16, 16)
+    at = no_idat.index(b"IDAT") - 4
+    no_idat = no_idat[:at] + no_idat[at + 12 + struct.unpack(">I", no_idat[at:at + 4])[0]:]
+    check("a PNG whose IEND follows its header with no IDAT is not",
+          imgfacts.complete(no_idat), False)
     odd = webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4))])     # 5 bytes: padded
     cut = odd[:-1]
     check("one cut at the pad byte its odd last chunk needs is not",
@@ -1854,6 +1861,8 @@ def test_recipe_integrity(tmp: Path) -> None:
             ({"output": {"note": "x"}}, "output.placed"),
             ({"output": {"placed": None, "generated": "g"}}, "output.placed"),
             ({"inputs": 5}, "inputs"),
+            ({"inputs": [{"path": "brand/mark.png"}]}, "inputs"),
+            ({"inputs": [{"path": "brand/mark.png", "role": " "}]}, "inputs"),
             ({"engine": 0}, "engine"),
             ({"model": False}, "model"),
             ({"excluded": []}, "excluded")):

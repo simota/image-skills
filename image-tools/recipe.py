@@ -87,6 +87,12 @@ def home_of(name: str) -> Path:
                 else os.path.expanduser(gen["home_default"]))
 
 
+def blank(text: str) -> bool:
+    """Nothing but whitespace — counting a byte-order mark, which str.strip
+    keeps and which a prompt file saved by an editor may hold on its own."""
+    return not text.replace("\ufeff", "").strip()
+
+
 def newest_generated(name: str | None = None) -> tuple[str, Path] | None:
     """The newest file left by `name`, or across every generator when unnamed."""
     hits = []
@@ -196,7 +202,7 @@ def capture(a: argparse.Namespace) -> int:
         print(f"{src} does not reach its end marker — still being written, or "
               "cut short; nothing was written", file=sys.stderr)
         return 2
-    if not prompt.strip():
+    if blank(prompt):
         print("the prompt is blank; the prompt is the asset", file=sys.stderr)
         return 2
     promised = SUFFIX_FORMAT.get(dest.suffix.lower())
@@ -311,7 +317,7 @@ def check_one(image: Path) -> list[str]:
         elif doc[f] in (None, "", {}) and f != "inputs":
             problems.append(f"{side}: {f} is blank — a field nobody decided, "
                             "not one that does not apply")
-    if not isinstance(doc.get("prompt"), str) or not doc["prompt"].strip():
+    if not isinstance(doc.get("prompt"), str) or blank(doc["prompt"]):
         problems.append(f"{side}: prompt must be non-empty text; length cannot prove provenance")
     for f in ("size", "output"):
         if f in doc and not isinstance(doc[f], dict):

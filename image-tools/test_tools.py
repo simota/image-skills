@@ -384,7 +384,7 @@ def test_recipe(tmp: Path) -> None:
     side.write_text(good)
 
     # Length cannot distinguish a sent prompt from a summary; type can.
-    for value in (17, [], "   "):
+    for value in (17, [], "   ", "\ufeff\n"):
         doc = yaml.safe_load(good)
         doc["prompt"] = value
         side.write_text(yaml.safe_dump(doc, sort_keys=False))
@@ -484,6 +484,10 @@ def test_recipe_hardening(tmp: Path) -> None:
               "--prompt-file", str(d / "latin1.txt")), 2)
     check("a blank prompt is refused at capture, not left for check",
           cap("--to", str(d / "a.png"), "--generator", "codex", "--prompt", "   "), 2)
+    (d / "bom.txt").write_bytes(b"\xef\xbb\xbf\n")
+    check("a prompt file holding only a byte-order mark is blank too",
+          cap("--to", str(d / "a.png"), "--generator", "codex",
+              "--prompt-file", str(d / "bom.txt")), 2)
     check("--from outside every generator's directory needs --generator",
           cap("--to", str(d / "a.png"), "--prompt", PROMPT), 2)
     check("a PNG placed under .jpg is refused",

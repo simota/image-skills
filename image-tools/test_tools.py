@@ -901,6 +901,13 @@ def test_strip_leaks(tmp: Path) -> None:
     lossless = b"VP8L" + struct.pack("<I", 5) + b"\x2f" + bytes(4) + b"\x00"
     check("an ANMF frame holding a bitstream is pixels",
           imgfacts.complete(webp_with(16, 16, 0x02, [(b"ANMF", frame + lossless)])), True)
+    check("a VP8L chunk without its 0x2f signature is not pixels",
+          imgfacts.complete(webp_with(16, 16, 0, [(b"VP8L", bytes(5))])), False)
+    check("nor a VP8 chunk without its frame start code",
+          imgfacts.complete(webp_with(16, 16, 0, [(b"VP8 ", bytes(10))])), False)
+    check("an ANMF whose nested odd chunk lacks its own pad byte is not",
+          imgfacts.complete(webp_with(16, 16, 0x02, [(b"ANMF", frame + lossless[:-1])])),
+          False)
     check("an ANMF frame whose nested chunk is empty is not",
           imgfacts.complete(webp_with(16, 16, 0x02,
                                       [(b"ANMF", frame + b"VP8L" + bytes(4))])), False)
@@ -1959,6 +1966,8 @@ def test_cli_bounds_and_render_sections(tmp: Path) -> None:
             f"# T\n\n```\n## {section}\n```\n\n## {section}\n\nreal\n\n## Next\n",
         "an H1 ends the section":
             f"# T\n\n## {section}\n\nreal\n\n# Appendix\n\nlater\n",
+        "hashes with no space before them are text, not a closing sequence":
+            f"# T\n\n## {section}###\n\nwrong\n\n## {section}\n\nreal\n\n## Next\n",
         "a backtick run whose info string holds a backtick opens no fence":
             f"# T\n\n```bad`info\n\n## {section}\n\nreal\n\n## Next\n",
     }

@@ -27,7 +27,9 @@ def section_span(text: str, section: str) -> tuple[int, int] | None:
     Read line by line, as a renderer would: an H3 with the same words, or a
     heading quoted inside a fence, is not the section, and the section ends at
     the next heading of level 1 or 2 rather than only at the next H2."""
-    own = re.compile(rf" {{0,3}}## +{re.escape(section)}[ \t]*(#+[ \t]*)?")
+    # A closing run of #s needs a space before it (CommonMark); "Name###" is
+    # another heading's text, not this one closed.
+    own = re.compile(rf" {{0,3}}## +{re.escape(section)}([ \t]+#+)?[ \t]*")
     pos, start, fence = 0, None, None
     for line in text.splitlines(keepends=True):
         bare = line.rstrip("\r\n")

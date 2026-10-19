@@ -359,22 +359,31 @@ def complete(raw: bytes) -> bool:
 _WEBP_IMAGE_MIN = {b"VP8 ": 10, b"VP8L": 5}
 
 
+def _webp_bitstream(kind: bytes, body: bytes) -> bool:
+    """A bitstream chunk of at least its smallest size that opens the way its
+    format must: VP8L with its 0x2f signature, VP8 with its frame start code."""
+    if len(body) < _WEBP_IMAGE_MIN.get(kind, 1 << 32):
+        return False
+    return body[0] == 0x2F if kind == b"VP8L" else body[3:6] == b"\x9d\x01\x2a"
+
+
 def _webp_frame(kind: bytes, body: bytes) -> bool:
-    """Whether one chunk carries a frame: a bitstream chunk of at least its
-    smallest size, or an ANMF whose nested chunks, after its 16-byte frame
-    header, include one."""
+    """Whether one chunk carries a frame: a bitstream chunk, or an ANMF whose
+    nested chunks, after its 16-byte frame header, include one — each nested
+    chunk whole, its pad byte included."""
     if kind in _WEBP_IMAGE_MIN:
-        return len(body) >= _WEBP_IMAGE_MIN[kind]
+        return _webp_bitstream(kind, body)
     if kind != b"ANMF":
         return False
     pos = 16
     while pos + 8 <= len(body):
         inner, size = body[pos:pos + 4], struct.unpack("<I", body[pos + 4:pos + 8])[0]
-        if pos + 8 + size > len(body):
+        nxt = pos + 8 + size + (size & 1)
+        if nxt > len(body):
             return False
-        if inner in _WEBP_IMAGE_MIN and size >= _WEBP_IMAGE_MIN[inner]:
+        if _webp_bitstream(inner, body[pos + 8:pos + 8 + size]):
             return True
-        pos += 8 + size + (size & 1)
+        pos = nxt
     return False
 
 

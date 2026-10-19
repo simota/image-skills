@@ -85,29 +85,34 @@ def table_rows(text: str, head: re.Pattern) -> list[tuple[int, str]]:
     would stay green, so the row is collected first and judged second.
     """
     lines = text.splitlines()
-    start = next((i for i, l in enumerate(lines) if head.match(l.strip())), None)
-    if start is None:
-        return []
     out = []
-    for i in range(start + 1, len(lines)):
-        s = lines[i].strip()
-        if SEP.match(s):
-            continue
-        if not (s.startswith("|") and s.endswith("|")):
-            break
-        out.append((i + 1, s))
+    # Every table under this header, not the first: a second one was a table
+    # whose arithmetic nothing read.
+    for start in (i for i, l in enumerate(lines) if head.match(l.strip())):
+        for i in range(start + 1, len(lines)):
+            s = lines[i].strip()
+            if SEP.match(s):
+                continue
+            if not (s.startswith("|") and s.endswith("|")):
+                break
+            out.append((i + 1, s))
     return out
 
 
 def _limits(text: str) -> dict:
     out = {}
     for name, rx in CONSTRAINT_RE.items():
-        m = rx.search(text)
-        if not m:
+        stated = [[int(g.replace(",", "")) for g in m.groups()] for m in rx.finditer(text)]
+        if not stated:
             fail("sizes.md", f"the {name!r} constraint is no longer stated in a "
                              "form this checker can read — it is checking nothing")
             return {}
-        out[name] = [int(g.replace(",", "")) for g in m.groups()]
+        # Every statement, not the first: a later sentence saying otherwise
+        # was a second definition nobody compared with the first.
+        if any(v != stated[0] for v in stated[1:]):
+            fail("sizes.md", f"the {name!r} constraint is stated "
+                             f"{len(stated)} times with different values: {stated}")
+        out[name] = stated[0]
     return out
 
 

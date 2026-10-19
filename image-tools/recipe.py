@@ -309,13 +309,15 @@ def _place_locked(src: Path, image: bytes, dest: Path, recipe_text: str,
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(recipe_text)
         os.chmod(tmp_side, 0o666 & ~_umask())
-        os.replace(tmp_img, dest)
+        # Owned before the rename, so an interrupt landing between the two
+        # still finds the name in `made` and rolls it back.
         made.append(dest)
-        os.replace(tmp_side, side)
+        os.replace(tmp_img, dest)
         made.append(side)
+        os.replace(tmp_side, side)
     except BaseException as failure:
         stranded = []
-        for p in set(made):
+        for p in dict.fromkeys(reversed(made)):   # undone newest first, once each
             try:
                 if p in kept:
                     os.replace(kept[p], p)
@@ -324,11 +326,14 @@ def _place_locked(src: Path, image: bytes, dest: Path, recipe_text: str,
             except OSError:
                 if p in kept:                # the only copy left: keep it
                     temps.remove(kept[p])
-                    stranded.append(f"{p} is saved as {kept[p]}")
+                    stranded.append(f"{p} could not be put back; the original "
+                                    f"is saved as {kept[p]}")
+                else:
+                    stranded.append(f"{p} is from this failed capture and could "
+                                    "not be removed")
         if stranded:
-            raise Stranded(f"the capture failed ({failure}) and so did putting back "
-                           f"what it replaced: {'; '.join(stranded)}. Move "
-                           "it back by hand") from failure
+            raise Stranded(f"the capture failed ({failure}) and so did undoing it: "
+                           f"{'; '.join(stranded)}. Move it back by hand") from failure
         raise
     finally:
         for t in temps:

@@ -891,6 +891,19 @@ def test_strip_leaks(tmp: Path) -> None:
     no_idat = no_idat[:at] + no_idat[at + 12 + struct.unpack(">I", no_idat[at:at + 4])[0]:]
     check("a PNG whose IEND follows its header with no IDAT is not",
           imgfacts.complete(no_idat), False)
+    jpg = jpeg_with(8, 8, [])
+    check("a JPEG with a scan reaches EOI", imgfacts.complete(jpg), True)
+    check("one whose EOI follows its header with no scan does not",
+          imgfacts.complete(jpg[:jpg.index(b"\xff\xda")] + b"\xff\xd9"), False)
+    check("a GIF whose trailer follows its header with no image is not complete",
+          imgfacts.complete(gif(2, 2) + b"\x3b"), False)
+    frame = bytes(16)                                  # ANMF's own frame header
+    lossless = b"VP8L" + struct.pack("<I", 5) + b"\x2f" + bytes(4) + b"\x00"
+    check("an ANMF frame holding a bitstream is pixels",
+          imgfacts.complete(webp_with(16, 16, 0x02, [(b"ANMF", frame + lossless)])), True)
+    check("an ANMF frame whose nested chunk is empty is not",
+          imgfacts.complete(webp_with(16, 16, 0x02,
+                                      [(b"ANMF", frame + b"VP8L" + bytes(4))])), False)
     odd = webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4))])     # 5 bytes: padded
     cut = odd[:-1]
     check("one cut at the pad byte its odd last chunk needs is not",
@@ -1723,9 +1736,9 @@ def test_recipe_integrity(tmp: Path) -> None:
 
     # If putting the old image back fails too, its copy is the only one left:
     # it is kept and named, not cleaned up with the temporaries.
-    def second_and_third_fail(a_, b_):
-        calls.append(b_)
-        if len(calls) in (2, 3):
+    def second_and_third_fail(a_, b_):           # the recipe's placement, then
+        calls.append(b_)                          # putting the image back
+        if len(calls) == 2 or (len(calls) > 2 and Path(b_).name == "h.png"):
             raise OSError(30, "Read-only file system")
         return real_replace(a_, b_)
 
@@ -1798,6 +1811,46 @@ def test_recipe_integrity(tmp: Path) -> None:
         t.join(10)
         src.write_bytes(png(64, 32))
     check("and places once the other is done", codes, [0])
+
+    # An interrupt landing right after a rename: the name it replaced is
+    # still put back, because it was owned before the rename ran.
+    (roll / "h.png").write_bytes(old["h.png"])
+    def interrupted_after(a_, b_):
+        real_replace(a_, b_)
+        if Path(b_).name == "h.png":
+            raise KeyboardInterrupt
+    src.write_bytes(png(48, 32))
+    recipe.os.replace = interrupted_after
+    try:
+        truthy("an interrupt after the image rename is passed on",
+               raises(lambda: cap(roll / "h.png", "--replace"), KeyboardInterrupt))
+    finally:
+        recipe.os.replace = real_replace
+        src.write_bytes(png(64, 32))
+    check("and the image it replaced is back", (roll / "h.png").read_bytes(), old["h.png"])
+
+    # A new capture whose undoing fails says what it left, not that nothing was.
+    fresh = d / "fresh"
+    fresh.mkdir()
+    calls.clear()
+    real_unlink = Path.unlink
+
+    def stuck_new(self, missing_ok=False):
+        if self.parent == fresh and not self.name.startswith(".capture."):
+            raise OSError(30, "Read-only file system")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    recipe.os.replace, Path.unlink = second_fails, stuck_new
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            code = recipe.main(["capture", "--from", str(src), "--generator", "codex",
+                                "--to", str(fresh / "n.png"), "--prompt", PROMPT])
+    finally:
+        recipe.os.replace, Path.unlink = real_replace, real_unlink
+    check("a new capture that cannot be undone reports what it left",
+          (code, str(fresh / "n.png") in err.getvalue(),
+           "nothing was written" in err.getvalue()), (1, True, False))
 
     cut = d / "cut.png"
     cut.write_bytes(png(64, 32)[:-12])        # no IEND: still being written

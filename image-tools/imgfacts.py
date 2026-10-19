@@ -335,7 +335,12 @@ def complete(raw: bytes) -> bool:
         return _png_reaches_iend(raw)
     if raw.startswith(b"\xff\xd8"):
         try:
-            return any(m == 0xD9 for m, *_ in jpeg_segments(raw, through_scans=True))
+            scanned = False                  # EOI counts after a scan with data in it
+            for m, start, stop, _ in jpeg_segments(raw, through_scans=True):
+                scanned = scanned or (m is None and stop > start)
+                if m == 0xD9:
+                    return scanned
+            return False
         except (struct.error, IndexError):
             return False
     if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
@@ -348,11 +353,29 @@ def complete(raw: bytes) -> bool:
     return False
 
 
-# The smallest payload each image chunk can have and still hold a frame: VP8's
-# frame tag, start code and dimensions; VP8L's signature byte and dimensions;
-# ANMF's 16-byte frame header and the header of the chunk nested in it. A
-# structural check, not a decoder — enough that a name alone is not pixels.
-_WEBP_IMAGE_MIN = {b"VP8 ": 10, b"VP8L": 5, b"ANMF": 24}
+# The smallest payload a bitstream chunk can have and still hold a frame: VP8's
+# frame tag, start code and dimensions; VP8L's signature byte and dimensions.
+# A structural check, not a decoder — enough that a name alone is not pixels.
+_WEBP_IMAGE_MIN = {b"VP8 ": 10, b"VP8L": 5}
+
+
+def _webp_frame(kind: bytes, body: bytes) -> bool:
+    """Whether one chunk carries a frame: a bitstream chunk of at least its
+    smallest size, or an ANMF whose nested chunks, after its 16-byte frame
+    header, include one."""
+    if kind in _WEBP_IMAGE_MIN:
+        return len(body) >= _WEBP_IMAGE_MIN[kind]
+    if kind != b"ANMF":
+        return False
+    pos = 16
+    while pos + 8 <= len(body):
+        inner, size = body[pos:pos + 4], struct.unpack("<I", body[pos + 4:pos + 8])[0]
+        if pos + 8 + size > len(body):
+            return False
+        if inner in _WEBP_IMAGE_MIN and size >= _WEBP_IMAGE_MIN[inner]:
+            return True
+        pos += 8 + size + (size & 1)
+    return False
 
 
 def _webp_holds_image(raw: bytes) -> bool:
@@ -366,10 +389,11 @@ def _webp_holds_image(raw: bytes) -> bool:
     pos, pixels = 12, False
     while pos + 8 <= end:
         kind, size = raw[pos:pos + 4], struct.unpack("<I", raw[pos + 4:pos + 8])[0]
+        body = raw[pos + 8:pos + 8 + size]
         pos += 8 + size + (size & 1)         # an odd payload's pad byte is part
         if pos > end:                        # of the file, though not of size
             return False
-        pixels = pixels or size >= _WEBP_IMAGE_MIN.get(kind, 1 << 32)
+        pixels = pixels or _webp_frame(kind, body)
     return pixels and pos == end
 
 
@@ -390,7 +414,8 @@ def _png_reaches_iend(raw: bytes) -> bool:
 
 def _gif_reaches_trailer(raw: bytes) -> bool:
     """Walked block by block to the 0x3B trailer: that byte also turns up
-    inside image data, so a file cut short there is not finished."""
+    inside image data, so a file cut short there is not finished. The trailer
+    counts after an image block with data in it, not after a header alone."""
     def table(flags: int) -> int:
         return 3 * 2 ** ((flags & 7) + 1) if flags & 0x80 else 0
 
@@ -399,15 +424,17 @@ def _gif_reaches_trailer(raw: bytes) -> bool:
             pos += 1 + raw[pos]
         return pos + 1
 
-    pos = 13 + table(raw[10])
+    pos, image = 13 + table(raw[10]), False
     while True:
         tag = raw[pos]
         if tag == 0x3B:
-            return True
+            return image
         if tag == 0x21:                      # extension: label, then sub-blocks
             pos = sub_blocks(pos + 2)
         elif tag == 0x2C:                    # image: descriptor, table, LZW size
-            pos = sub_blocks(pos + 10 + table(raw[pos + 9]) + 1)
+            data = pos + 10 + table(raw[pos + 9]) + 1
+            image = image or raw[data] > 0
+            pos = sub_blocks(data)
         else:
             return False
 

@@ -107,7 +107,7 @@ def webp_vp8x(w: int, h: int, alpha: bool, icc: bool) -> bytes:
 def webp_vp8l(w: int, h: int, alpha: bool) -> bytes:
     bits = (w - 1) | ((h - 1) << 14) | (int(alpha) << 28)
     body = b"\x2f" + struct.pack("<I", bits)
-    chunk = b"VP8L" + struct.pack("<I", len(body)) + body
+    chunk = b"VP8L" + struct.pack("<I", len(body)) + body + b"\x00"   # RIFF pad
     return b"RIFF" + struct.pack("<I", 4 + len(chunk)) + b"WEBP" + chunk
 
 
@@ -884,6 +884,10 @@ def test_strip_leaks(tmp: Path) -> None:
     check("a VP8X canvas with no image chunk after it is not",
           imgfacts.complete(webp_vp8x(16, 16, False, False)), False)
     check("a lossless WebP with its pixels is", imgfacts.complete(webp_vp8l(16, 16, False)), True)
+    odd = webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4))])     # 5 bytes: padded
+    cut = odd[:-1]
+    check("one cut at the pad byte its odd last chunk needs is not",
+          imgfacts.complete(cut[:4] + struct.pack("<I", len(cut) - 8) + cut[8:]), False)
     check("one whose RIFF size is still zero is not",
           imgfacts.complete(whole_webp[:4] + b"\0\0\0\0" + whole_webp[8:]), False)
 
@@ -1525,6 +1529,17 @@ def test_engine_integrity(tmp: Path) -> None:
     check("const is enforced", bool(engine.conforms(2, {"const": 1})), True)
     check("items are enforced",
           bool(engine.conforms([1, "x"], {"type": "array", "items": {"type": "integer"}})), True)
+    check("so are list-form positional items",
+          bool(engine.conforms(["bad"], {"type": "array", "items": [{"type": "integer"}]})), True)
+    check("and prefixItems",
+          bool(engine.conforms(["bad"], {"type": "array", "prefixItems": [{"type": "integer"}]})),
+          True)
+    check("and additionalItems: false past them",
+          bool(engine.conforms([1, 2], {"items": [{"type": "integer"}],
+                                        "additionalItems": False})), True)
+    check("a list that fits its positional items conforms",
+          engine.conforms([1, "a"], {"prefixItems": [{"type": "integer"}],
+                                     "items": {"type": "string"}}), [])
     check("NaN is not a number", bool(engine.conforms(float("nan"), {"type": "number"})), True)
     check("infinity is not a number", bool(engine.conforms(float("inf"), {"type": "number"})), True)
     check("true is not the enum member 1", bool(engine.conforms(True, {"enum": [1]})), True)

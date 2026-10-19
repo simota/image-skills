@@ -359,11 +359,11 @@ def _webp_holds_image(raw: bytes) -> bool:
     pos, pixels = 12, False
     while pos + 8 <= end:
         kind, size = raw[pos:pos + 4], struct.unpack("<I", raw[pos + 4:pos + 8])[0]
-        if pos + 8 + size > end:
+        pos += 8 + size + (size & 1)         # an odd payload's pad byte is part
+        if pos > end:                        # of the file, though not of size
             return False
         pixels = pixels or kind in (b"VP8 ", b"VP8L", b"ANMF")
-        pos += 8 + size + (size & 1)
-    return pixels
+    return pixels and pos == end
 
 
 def _png_reaches_iend(raw: bytes) -> bool:

@@ -118,7 +118,7 @@ def _same(a, b) -> bool:
 def conforms(got, schema: dict, where: str = "answer") -> list[str]:
     """What is wrong with `got` against the parts of `schema` this set uses:
     `type`, `enum`, `const`, `required`, `properties`, `additionalProperties:
-    false` and `items`. Not a full validator — `anyOf` and friends are not
+    false`, `items` and positional `prefixItems`. Not a full validator — `anyOf` and friends are not
     checked — and not a lenient one either: `"false"` is not a boolean, and
     reading it as one turned a pass into a refutation."""
     wrong = []
@@ -148,9 +148,21 @@ def conforms(got, schema: dict, where: str = "answer") -> list[str]:
             for key in got:
                 if key not in props:
                     wrong.append(f"{where} has {key}, which the schema closed out")
-    if isinstance(got, list) and isinstance(schema.get("items"), dict):
+    if isinstance(got, list):
+        # Positional schemas (`prefixItems`, or the older list-form `items`)
+        # hold the first elements; the rest go to `items` when that is one
+        # schema, or to `additionalItems` beside list-form `items`.
+        lead = schema.get("prefixItems")
+        rest = schema.get("items")
+        if lead is None and isinstance(rest, list):
+            lead, rest = rest, schema.get("additionalItems")
+        lead = lead if isinstance(lead, list) else []
         for n, item in enumerate(got):
-            wrong += conforms(item, schema["items"], f"{where}[{n}]")
+            sub = lead[n] if n < len(lead) else rest
+            if sub is False:
+                wrong.append(f"{where}[{n}] is past the {len(lead)} the schema allows")
+            elif isinstance(sub, dict):
+                wrong += conforms(item, sub, f"{where}[{n}]")
     return wrong
 
 

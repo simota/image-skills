@@ -1672,6 +1672,22 @@ def test_recipe_integrity(tmp: Path) -> None:
     check("and the image placed before it is taken back out",
           sorted(x.name for x in roll.iterdir()), [])
 
+    # With --replace the image placed first was over an old one: a failure
+    # puts the old one back rather than leaving its recipe beside nothing.
+    check("a capture to replace", cap(roll / "h.png"), 0)
+    old = {x.name: x.read_bytes() for x in roll.iterdir()}
+    src.write_bytes(png(48, 32))
+    calls.clear()
+    recipe.os.replace = second_fails
+    try:
+        check("a --replace whose recipe fails fails the capture",
+              cap(roll / "h.png", "--replace"), 2)
+    finally:
+        recipe.os.replace = real_replace
+        src.write_bytes(png(64, 32))
+    check("and the old image and recipe are both still there, unchanged",
+          {x.name: x.read_bytes() for x in roll.iterdir()}, old)
+
     cut = d / "cut.png"
     cut.write_bytes(png(64, 32)[:-12])        # no IEND: still being written
     with contextlib.redirect_stderr(io.StringIO()):

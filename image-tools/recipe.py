@@ -252,15 +252,25 @@ def _place(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
 
     Without `replace`, both names are reserved first with O_EXCL — which also
     refuses a link and a capture racing for the same name — then each is
-    filled by renaming a finished temporary file over its reservation. Any
-    failure removes whatever this capture created, so the result is never an
-    image without its recipe, nor a recipe from another run beside it."""
+    filled by renaming a finished temporary file over its reservation. With
+    `replace`, the files already there are copied aside first. Any failure
+    removes whatever this capture created and puts back what it replaced, so
+    the result is never an image without its recipe, nor a recipe from
+    another run beside it."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     side = sidecar_of(dest)
     made: list[Path] = []                    # names this capture now owns
     temps: list[str] = []
+    kept: dict[Path, str] = {}               # what --replace is replacing
     try:
-        if not replace:
+        if replace:
+            for p in (dest, side):
+                if p.exists():
+                    fd, kept[p] = tempfile.mkstemp(dir=dest.parent, prefix=".capture.")
+                    os.close(fd)
+                    temps.append(kept[p])
+                    shutil.copy2(p, kept[p])
+        else:
             for p in (dest, side):
                 os.close(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666))
                 made.append(p)
@@ -280,7 +290,10 @@ def _place(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
         made.append(side)
     except BaseException:
         for p in set(made):
-            Path(p).unlink(missing_ok=True)
+            if p in kept:
+                os.replace(kept[p], p)
+            else:
+                Path(p).unlink(missing_ok=True)
         raise
     finally:
         for t in temps:

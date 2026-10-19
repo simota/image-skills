@@ -30,6 +30,7 @@ while nobody is looking.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import shutil
 import sys
@@ -232,6 +233,9 @@ def capture(a: argparse.Namespace) -> int:
     try:
         _place(src, dest, yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
                                          default_flow_style=False), a.replace)
+    except Stranded as e:
+        print(e, file=sys.stderr)
+        return 1
     except FileExistsError as e:
         print(f"{e.filename} appeared while this capture ran; nothing was written",
               file=sys.stderr)
@@ -247,6 +251,11 @@ def capture(a: argparse.Namespace) -> int:
     return 0
 
 
+class Stranded(OSError):
+    """A failed capture whose rollback failed too: what it replaced is kept
+    under the names this carries, not deleted with the temporaries."""
+
+
 def _place(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
     """Put the image and its recipe in place together, or neither.
 
@@ -256,8 +265,19 @@ def _place(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
     `replace`, the files already there are copied aside first. Any failure
     removes whatever this capture created and puts back what it replaced, so
     the result is never an image without its recipe, nor a recipe from
-    another run beside it."""
+    another run beside it. Captures into one directory hold its lock while
+    they place, so two replacing the same name cannot interleave their
+    renames and pair one run's image with the other's recipe."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+    lock = os.open(dest.parent, os.O_RDONLY)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)     # released with the descriptor,
+        _place_locked(src, dest, recipe_text, replace)   # even if killed
+    finally:
+        os.close(lock)
+
+
+def _place_locked(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
     side = sidecar_of(dest)
     made: list[Path] = []                    # names this capture now owns
     temps: list[str] = []
@@ -288,12 +308,22 @@ def _place(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
         made.append(dest)
         os.replace(tmp_side, side)
         made.append(side)
-    except BaseException:
+    except BaseException as failure:
+        stranded = []
         for p in set(made):
-            if p in kept:
-                os.replace(kept[p], p)
-            else:
-                Path(p).unlink(missing_ok=True)
+            try:
+                if p in kept:
+                    os.replace(kept[p], p)
+                else:
+                    Path(p).unlink(missing_ok=True)
+            except OSError:
+                if p in kept:                # the only copy left: keep it
+                    temps.remove(kept[p])
+                    stranded.append(f"{p} is saved as {kept[p]}")
+        if stranded:
+            raise Stranded(f"the capture failed ({failure}) and so did putting back "
+                           f"what it replaced: {'; '.join(stranded)}. Move "
+                           "it back by hand") from failure
         raise
     finally:
         for t in temps:

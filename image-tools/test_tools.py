@@ -1522,6 +1522,10 @@ def test_engine_integrity(tmp: Path) -> None:
     check("infinity is not a number", bool(engine.conforms(float("inf"), {"type": "number"})), True)
     check("true is not the enum member 1", bool(engine.conforms(True, {"enum": [1]})), True)
     check("false is not the const 0", bool(engine.conforms(False, {"const": 0})), True)
+    check("nor inside an object", bool(engine.conforms({"x": True}, {"const": {"x": 1}})), True)
+    check("nor inside an array", bool(engine.conforms([True], {"enum": [[1]]})), True)
+    check("an equal nested value still conforms",
+          engine.conforms({"x": [1, True]}, {"const": {"x": [1, True]}}), [])
     optional = {"type": "object", "properties": {"ok": {"type": "boolean"},
                                                  "note": {"type": "string"}},
                 "required": ["ok"]}
@@ -1687,6 +1691,56 @@ def test_recipe_integrity(tmp: Path) -> None:
         src.write_bytes(png(64, 32))
     check("and the old image and recipe are both still there, unchanged",
           {x.name: x.read_bytes() for x in roll.iterdir()}, old)
+
+    # If putting the old image back fails too, its copy is the only one left:
+    # it is kept and named, not cleaned up with the temporaries.
+    def second_and_third_fail(a_, b_):
+        calls.append(b_)
+        if len(calls) in (2, 3):
+            raise OSError(30, "Read-only file system")
+        return real_replace(a_, b_)
+
+    calls.clear()
+    src.write_bytes(png(48, 32))
+    recipe.os.replace = second_and_third_fail
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            code = recipe.main(["capture", "--from", str(src), "--generator", "codex",
+                                "--to", str(roll / "h.png"), "--prompt", PROMPT,
+                                "--replace"])
+    finally:
+        recipe.os.replace = real_replace
+        src.write_bytes(png(64, 32))
+    check("a rollback that fails too is a failure of its own", code, 1)
+    saved = [x for x in roll.iterdir() if x.name.startswith(".capture.")]
+    check("and the old image survives in the copy the message names",
+          [(x.read_bytes(), str(x) in err.getvalue()) for x in saved],
+          [(old["h.png"], True)])
+    for x in saved:
+        x.unlink()
+    (roll / "h.png").write_bytes(old["h.png"])      # put back what the failure left
+
+    # Two captures into one directory place one after the other: one held
+    # the lock, so the other waits rather than interleaving its renames.
+    import fcntl
+    roll_old = (roll / "h.png").read_bytes()
+    held = os.open(roll, os.O_RDONLY)
+    fcntl.flock(held, fcntl.LOCK_EX)
+    codes = []
+    t = threading.Thread(target=lambda: codes.append(cap(roll / "h.png", "--replace")))
+    try:
+        src.write_bytes(png(48, 32))
+        t.start()
+        t.join(0.5)
+        check("a capture waits while another holds its directory",
+              ((roll / "h.png").read_bytes() == roll_old, codes), (True, []))
+    finally:
+        fcntl.flock(held, fcntl.LOCK_UN)
+        os.close(held)
+        t.join(10)
+        src.write_bytes(png(64, 32))
+    check("and places once the other is done", codes, [0])
 
     cut = d / "cut.png"
     cut.write_bytes(png(64, 32)[:-12])        # no IEND: still being written

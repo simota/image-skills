@@ -106,7 +106,12 @@ def _is_type(got, kind: str) -> bool:
 
 
 def _same(a, b) -> bool:
-    """Equal as JSON values: Python's True == 1 and False == 0, JSON's do not."""
+    """Equal as JSON values, at every depth: Python's True == 1 and
+    False == 0, JSON's do not."""
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
     return (isinstance(a, bool), a) == (isinstance(b, bool), b)
 
 

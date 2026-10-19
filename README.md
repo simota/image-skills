@@ -121,17 +121,19 @@ because a grade that costs effort gets skipped.
 [`recipe.py`](image-tools/recipe.py) captures a generated file out of whichever
 generator produced it and writes its recipe in the same move. Prefer the
 returned path and actual generator explicitly; the newest-file fallback does
-not establish invocation provenance. It reads the prompt and the file before it
-copies anything, so a failure leaves no recipe-less asset behind, and it refuses
-a destination whose extension names another format. It checks fields and
+not establish invocation provenance. It reads the prompt and the whole file
+before it copies anything — a file that stops short of its end marker, as one
+still being written does, is refused — and places the file and its recipe
+together, so a failure leaves no recipe-less asset behind. It refuses a
+destination whose extension names another format, and a link at either name. It checks fields and
 dimensions later. [`strip.py`](image-tools/strip.py) removes what
 should not ship — Exif, XMP, generation parameters, comments, timestamps,
 embedded thumbnails, and anything appended after the image ends — while
 keeping the colour profile, the alpha channel and any content credential the
 project decided to carry. [`refute.py`](image-tools/refute.py) puts a claim to
 the engines that did not make it and asks them to break it; an answer outside
-its schema is no answer, a claim no engine could read exits non-zero, and
-unrefuted is never proof.
+its schema is no answer, a claim refuted or contested exits 3, one that not
+every refuter could read exits 1, and unrefuted is never proof.
 
 None of the three file tools needs an image library: they read and edit headers rather than
 decoding pixels, so there is nothing to install beyond the PyYAML the harness
@@ -149,8 +151,10 @@ output in memory, before touching the disk, refusing if the dimensions, format,
 alpha or profile moved, and it replaces a lone file whole or not at all; a file
 with other hard links, or in a directory that refuses new files, is rewritten
 through its own inode so every name sees the result, with the original put
-back if that write fails part-way. A run with neither
-`--out` nor `--in-place` writes nothing.
+back if that write fails part-way. In place, it writes only over the bytes it
+read: a file another process saved in the meantime is left as that process
+saved it, and the run says so. A run with neither `--out` nor `--in-place`
+writes nothing.
 
 **One parser per format, shared.** `strip.py` reads JPEG through the same marker
 scanner `imgfacts.py` uses. Two parsers of one format is two chances to disagree

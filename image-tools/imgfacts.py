@@ -60,6 +60,11 @@ CANVAS_GENERATOR = next(iter(_canvas))
 CANVAS = _canvas[CANVAS_GENERATOR]["canvas"]
 ASPECT_GENERATORS = _by_control("aspect")
 
+# Past any canvas or screen by orders of magnitude, and still small enough that
+# the ratio and log arithmetic below stays inside a float. A larger number is
+# a typo, and answering it would mean a traceback rather than an input error.
+MAX_EDGE = 10**6
+
 
 class Unreadable(Exception):
     """The bytes are not an image this tool knows how to read."""
@@ -322,6 +327,127 @@ def probe_bytes(raw: bytes, name: str = "<bytes>") -> dict:
     return out
 
 
+def complete(raw: bytes) -> bool:
+    """Whether the file reaches its own end marker — PNG's IEND, JPEG's EOI, the
+    end the WebP RIFF header declares, GIF's trailer. A header can be whole
+    while the rest is still being written, and a header is all `probe` reads."""
+    if raw.startswith(PNG_SIG):
+        return _png_reaches_iend(raw)
+    if raw.startswith(b"\xff\xd8"):
+        try:
+            scanned = False                  # EOI counts after a scan with data in it
+            for m, start, stop, _ in jpeg_segments(raw, through_scans=True):
+                scanned = scanned or (m is None and stop > start)
+                if m == 0xD9:
+                    return scanned
+            return False
+        except (struct.error, IndexError):
+            return False
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return _webp_holds_image(raw)
+    if raw[:4] == b"GIF8":
+        try:
+            return _gif_reaches_trailer(raw)
+        except IndexError:
+            return False
+    return False
+
+
+# The smallest payload a bitstream chunk can have and still hold a frame: VP8's
+# frame tag, start code and dimensions; VP8L's signature byte and dimensions.
+# A structural check, not a decoder — enough that a name alone is not pixels.
+_WEBP_IMAGE_MIN = {b"VP8 ": 10, b"VP8L": 5}
+
+
+def _webp_bitstream(kind: bytes, body: bytes) -> bool:
+    """A bitstream chunk of at least its smallest size that opens the way its
+    format must: VP8L with its 0x2f signature, VP8 with its frame start code."""
+    if len(body) < _WEBP_IMAGE_MIN.get(kind, 1 << 32):
+        return False
+    return body[0] == 0x2F if kind == b"VP8L" else body[3:6] == b"\x9d\x01\x2a"
+
+
+def _webp_frame(kind: bytes, body: bytes) -> bool:
+    """Whether one chunk carries a frame: a bitstream chunk, or an ANMF whose
+    nested chunks, after its 16-byte frame header, include one — each nested
+    chunk whole, its pad byte included."""
+    if kind in _WEBP_IMAGE_MIN:
+        return _webp_bitstream(kind, body)
+    if kind != b"ANMF":
+        return False
+    pos = 16
+    while pos + 8 <= len(body):
+        inner, size = body[pos:pos + 4], struct.unpack("<I", body[pos + 4:pos + 8])[0]
+        nxt = pos + 8 + size + (size & 1)
+        if nxt > len(body):
+            return False
+        if _webp_bitstream(inner, body[pos + 8:pos + 8 + size]):
+            return True
+        pos = nxt
+    return False
+
+
+def _webp_holds_image(raw: bytes) -> bool:
+    """The RIFF size the file declares is all there, and the chunks inside it
+    include one that carries pixels. A size field still zero, as a writer
+    leaves it until the end, declares a file that is not there yet; a VP8X
+    chunk alone states a canvas and holds no image."""
+    end = 8 + struct.unpack("<I", raw[4:8])[0]
+    if end > len(raw):
+        return False
+    pos, pixels = 12, False
+    while pos + 8 <= end:
+        kind, size = raw[pos:pos + 4], struct.unpack("<I", raw[pos + 4:pos + 8])[0]
+        body = raw[pos + 8:pos + 8 + size]
+        pos += 8 + size + (size & 1)         # an odd payload's pad byte is part
+        if pos > end:                        # of the file, though not of size
+            return False
+        pixels = pixels or _webp_frame(kind, body)
+    return pixels and pos == end
+
+
+def _png_reaches_iend(raw: bytes) -> bool:
+    """Walked chunk by chunk, so bytes appended after IEND (which strip
+    removes) do not hide it, and an IEND-shaped run inside a cut-short chunk
+    does not stand in for it. IEND counts only after an IDAT: a header with
+    no image data declares a picture that is not in the file."""
+    pos, data = len(PNG_SIG), False
+    while pos + 12 <= len(raw):
+        length, kind = struct.unpack(">I4s", raw[pos:pos + 8])
+        pos += 12 + length
+        data = data or (kind == b"IDAT" and length > 0)
+        if kind == b"IEND":
+            return data and pos <= len(raw)
+    return False
+
+
+def _gif_reaches_trailer(raw: bytes) -> bool:
+    """Walked block by block to the 0x3B trailer: that byte also turns up
+    inside image data, so a file cut short there is not finished. The trailer
+    counts after an image block with data in it, not after a header alone."""
+    def table(flags: int) -> int:
+        return 3 * 2 ** ((flags & 7) + 1) if flags & 0x80 else 0
+
+    def sub_blocks(pos: int) -> int:
+        while raw[pos]:
+            pos += 1 + raw[pos]
+        return pos + 1
+
+    pos, image = 13 + table(raw[10]), False
+    while True:
+        tag = raw[pos]
+        if tag == 0x3B:
+            return image
+        if tag == 0x21:                      # extension: label, then sub-blocks
+            pos = sub_blocks(pos + 2)
+        elif tag == 0x2C:                    # image: descriptor, table, LZW size
+            data = pos + 10 + table(raw[pos + 9]) + 1
+            image = image or raw[data] > 0
+            pos = sub_blocks(data)
+        else:
+            return False
+
+
 # --- canvas legality ---------------------------------------------------------
 
 def illegal(w: int, h: int) -> set[str]:
@@ -458,7 +584,7 @@ def main(argv: list[str] | None = None) -> int:
             offered = aspect_offered(name)
             ratio = a.check_aspect if ":" in a.check_aspect else ""
             w, h = (int(x) for x in ratio.split(":"))
-            if w <= 0 or h <= 0:
+            if not (0 < w <= MAX_EDGE and 0 < h <= MAX_EDGE):
                 raise ValueError(ratio)
         except (KeyError, ValueError) as e:
             print(e if isinstance(e, KeyError) else
@@ -478,12 +604,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if ok else 1
 
     if a.check_size:
+        if a.generator not in (None, CANVAS_GENERATOR):
+            print(f"--check-size answers for {CANVAS_GENERATOR}'s canvas; " + (
+                  f"{a.generator} takes no pixel size (ask --check-aspect)"
+                  if a.generator in GENERATORS else
+                  f"{a.generator} is not a generator the registry lists"), file=sys.stderr)
+            return 2
         try:
             w, h = (int(x) for x in a.check_size.lower().split("x"))
-            if w <= 0 or h <= 0:
+            if not (0 < w <= MAX_EDGE and 0 < h <= MAX_EDGE):
                 raise ValueError(a.check_size)
         except ValueError:
-            print(f"not a size: {a.check_size!r} (want WxH)", file=sys.stderr)
+            print(f"not a size: {a.check_size!r} (want WxH, each edge 1..{MAX_EDGE})",
+                  file=sys.stderr)
             return 2
         broken = sorted(illegal(w, h))
         near = None if not broken else nearest_legal(w, h)

@@ -30,9 +30,11 @@ while nobody is looking.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -86,6 +88,12 @@ def home_of(name: str) -> Path:
                 else os.path.expanduser(gen["home_default"]))
 
 
+def blank(text: str) -> bool:
+    """Nothing but whitespace — counting a byte-order mark, which str.strip
+    keeps and which a prompt file saved by an editor may hold on its own."""
+    return not text.replace("\ufeff", "").strip()
+
+
 def newest_generated(name: str | None = None) -> tuple[str, Path] | None:
     """The newest file left by `name`, or across every generator when unnamed."""
     hits = []
@@ -113,8 +121,8 @@ def generator_holding(path: Path) -> str | None:
 
 # What a placed file's extension promises. A JPEG written to `hero.png` is a
 # conversion nobody performed, and every later reader trusts the name.
-SUFFIX_FORMAT = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG",
-                 ".webp": "WebP", ".gif": "GIF"}
+SUFFIX_FORMAT = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".jpe": "JPEG",
+                 ".jfif": "JPEG", ".webp": "WebP", ".gif": "GIF"}
 
 
 def _searched(name: str | None) -> str:
@@ -156,12 +164,24 @@ def capture(a: argparse.Namespace) -> int:
         print(f"{dest} is a directory; --to names the file to write", file=sys.stderr)
         return 2
     side = sidecar_of(dest)
+    # A link at either name would carry the write somewhere else — outside the
+    # project, or over an unrelated file. Placing never follows one.
+    try:
+        for p in (dest, side):
+            if p.is_symlink():
+                print(f"{p} is a symbolic link; a capture places files, it does not "
+                      "write through links", file=sys.stderr)
+                return 2
+            p.exists()                       # a name the filesystem refuses, now
+    except OSError as e:
+        print(f"{e}; nothing was written", file=sys.stderr)
+        return 2
     if (dest.exists() or side.exists()) and not a.replace:
         print(f"{dest if dest.exists() else side} already exists. Write a sibling "
               "version instead, or pass --replace once a person has decided to "
               "retire the old one", file=sys.stderr)
         return 2
-    if dest.exists() and dest.resolve() == src.resolve():
+    if dest.exists() and os.path.samefile(dest, src):
         print(f"{dest} is the generated file itself; place it somewhere else",
               file=sys.stderr)
         return 2
@@ -172,11 +192,22 @@ def capture(a: argparse.Namespace) -> int:
     try:
         prompt = (a.prompt_file.read_bytes().decode("utf-8") if a.prompt_file
                   else a.prompt)
-        facts = imgfacts.probe(src)
+        # One read, then that snapshot is what is probed, checked and placed:
+        # a generator still rewriting the file cannot swap in other bytes
+        # between the check and the copy.
+        image = src.read_bytes()
+        facts = imgfacts.probe_bytes(image, str(src))
+        whole = imgfacts.complete(image)
     except (OSError, UnicodeDecodeError, imgfacts.Unreadable) as e:
         print(f"{e}; nothing was written", file=sys.stderr)
         return 2
-    if not prompt.strip():
+    if not whole:
+        # The newest-file fallback is exactly where a file still being written
+        # is found; a header can be whole long before the picture is.
+        print(f"{src} does not reach its end marker — still being written, or "
+              "cut short; nothing was written", file=sys.stderr)
+        return 2
+    if blank(prompt):
         print("the prompt is blank; the prompt is the asset", file=sys.stderr)
         return 2
     promised = SUFFIX_FORMAT.get(dest.suffix.lower())
@@ -186,9 +217,6 @@ def capture(a: argparse.Namespace) -> int:
               "extension; a conversion is its own operation and its own line "
               "in the recipe", file=sys.stderr)
         return 2
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest)
 
     inputs = []
     for spec in a.input or []:
@@ -206,14 +234,120 @@ def capture(a: argparse.Namespace) -> int:
         "output": {"generated": str(src), "placed": str(dest)},
         "note": NO_SEED,
     }
-    side.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
-                                   default_flow_style=False), encoding="utf-8")
+    try:
+        _place(src, image, dest, yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
+                                         default_flow_style=False), a.replace)
+    except Stranded as e:
+        print(e, file=sys.stderr)
+        return 1
+    except FileExistsError as e:
+        print(f"{e.filename} appeared while this capture ran; nothing was written",
+              file=sys.stderr)
+        return 2
+    except (OSError, shutil.Error) as e:
+        print(f"{e}; nothing was written", file=sys.stderr)
+        return 2
     print(f"{dest}  {facts['size']}  {facts['bytes']:,} bytes")
     if doc["size"]["asked"] not in (UNASKED[gen["control"]], facts["size"]):
         print(f"  asked for {doc['size']['asked']}, on disk {facts['size']} — "
               "both recorded")
     print(f"{side}  {len(FIELDS)} fields")
     return 0
+
+
+class Stranded(OSError):
+    """A failed capture whose rollback failed too: what it replaced is kept
+    under the names this carries, not deleted with the temporaries."""
+
+
+def _place(src: Path, image: bytes, dest: Path, recipe_text: str, replace: bool) -> None:
+    """Put the image and its recipe in place together, or neither.
+
+    Without `replace`, both names are reserved first with O_EXCL — which also
+    refuses a link and a capture racing for the same name — then each is
+    filled by renaming a finished temporary file over its reservation. With
+    `replace`, the files already there are copied aside first. Any failure
+    removes whatever this capture created and puts back what it replaced, so
+    the result is never an image without its recipe, nor a recipe from
+    another run beside it. Captures into one directory hold its lock while
+    they place, so two replacing the same name cannot interleave their
+    renames and pair one run's image with the other's recipe."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    lock = os.open(dest.parent, os.O_RDONLY)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)     # released with the descriptor,
+        _place_locked(src, image, dest, recipe_text, replace)   # even if killed
+    finally:
+        os.close(lock)
+
+
+def _place_locked(src: Path, image: bytes, dest: Path, recipe_text: str,
+                  replace: bool) -> None:
+    side = sidecar_of(dest)
+    made: list[Path] = []                    # names this capture now owns
+    temps: list[str] = []
+    kept: dict[Path, str] = {}               # what --replace is replacing
+    try:
+        if replace:
+            for p in (dest, side):
+                if p.exists():
+                    fd, kept[p] = tempfile.mkstemp(dir=dest.parent, prefix=".capture.")
+                    os.close(fd)
+                    temps.append(kept[p])
+                    shutil.copy2(p, kept[p])
+        else:
+            for p in (dest, side):
+                os.close(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666))
+                made.append(p)
+        fd, tmp_img = tempfile.mkstemp(dir=dest.parent, prefix=".capture.")
+        temps.append(tmp_img)
+        with os.fdopen(fd, "wb") as f:
+            f.write(image)                   # the bytes that were checked
+        shutil.copystat(src, tmp_img)
+        fd, tmp_side = tempfile.mkstemp(dir=dest.parent, prefix=".capture.")
+        temps.append(tmp_side)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(recipe_text)
+        os.chmod(tmp_side, 0o666 & ~_umask())
+        # Owned before the rename, so an interrupt landing between the two
+        # still finds the name in `made` and rolls it back.
+        made.append(dest)
+        os.replace(tmp_img, dest)
+        made.append(side)
+        os.replace(tmp_side, side)
+    except BaseException as failure:
+        stranded = []
+        for p in dict.fromkeys(reversed(made)):   # undone newest first, once each
+            try:
+                if p in kept:
+                    os.replace(kept[p], p)
+                else:
+                    Path(p).unlink(missing_ok=True)
+            except OSError:
+                if p in kept:                # the only copy left: keep it
+                    temps.remove(kept[p])
+                    stranded.append(f"{p} could not be put back; the original "
+                                    f"is saved as {kept[p]}")
+                else:
+                    stranded.append(f"{p} is from this failed capture and could "
+                                    "not be removed")
+        if stranded:
+            raise Stranded(f"the capture failed ({failure}) and so did undoing it: "
+                           f"{'; '.join(stranded)}. Move it back by hand") from failure
+        raise
+    finally:
+        for t in temps:
+            try:
+                Path(t).unlink(missing_ok=True)
+            except OSError:
+                pass                         # a leftover temporary must not mask
+                                             # the error that is on its way out
+
+
+def _umask() -> int:
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
 
 
 # --- check -------------------------------------------------------------------
@@ -227,6 +361,8 @@ def check_one(image: Path) -> list[str]:
         doc = yaml.safe_load(side.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
         return [f"{side}: not readable as YAML ({e.__class__.__name__})"]
+    except UnicodeDecodeError:
+        return [f"{side}: not UTF-8 text; a recipe is written as UTF-8"]
     if not isinstance(doc, dict):
         return [f"{side}: a recipe is a mapping of fields, not a "
                 f"{type(doc).__name__}; a chain of edits is one recipe per file"]
@@ -238,11 +374,29 @@ def check_one(image: Path) -> list[str]:
         elif doc[f] in (None, "", {}) and f != "inputs":
             problems.append(f"{side}: {f} is blank — a field nobody decided, "
                             "not one that does not apply")
-    if not isinstance(doc.get("prompt"), str) or not doc["prompt"].strip():
+    if not isinstance(doc.get("prompt"), str) or blank(doc["prompt"]):
         problems.append(f"{side}: prompt must be non-empty text; length cannot prove provenance")
     for f in ("size", "output"):
         if f in doc and not isinstance(doc[f], dict):
             problems.append(f"{side}: {f} must be a mapping, not {doc[f]!r}")
+    # Present is not the same as said: each field holds what it is for.
+    for f in ("engine", "model", "excluded"):
+        if f in doc and doc[f] not in (None, "", {}) and not (
+                isinstance(doc[f], str) and doc[f].strip()):
+            problems.append(f"{side}: {f} must be text, not {doc[f]!r}")
+    if "inputs" in doc and not (isinstance(doc["inputs"], list) and all(
+            isinstance(i, dict) and all(isinstance(i.get(k), str) and i[k].strip()
+                                        for k in ("path", "role"))
+            for i in doc["inputs"])):
+        # capture writes "unstated" for a role nobody gave: an absent one is
+        # a recipe that lost what the input was for, not one that never said.
+        problems.append(f"{side}: inputs must be a list of entries with a path "
+                        f"and a role, not {doc['inputs']!r}")
+    if isinstance(doc.get("output"), dict):
+        for k in ("placed", "generated"):
+            v = doc["output"].get(k)
+            if not (isinstance(v, str) and v.strip()):
+                problems.append(f"{side}: output.{k} must be a path, not {v!r}")
     note = doc.get("note")
     if not isinstance(note, str) or "IRREPRODUCIBLE" not in note:
         problems.append(f"{side}: no note stating IRREPRODUCIBLE — the limit on "
@@ -251,7 +405,8 @@ def check_one(image: Path) -> list[str]:
     placed = output.get("placed")
     # Resolved from where `capture` ran or from beside the sidecar: the same
     # file, checked from another directory, is still the same file.
-    if placed and not _same_file(str(placed), image, side.parent):
+    if isinstance(placed, str) and placed.strip() \
+            and not _same_file(placed, image, side.parent):
         problems.append(f"{side}: output.placed is {placed}, beside {image}")
 
     try:
@@ -282,7 +437,7 @@ def check(a: argparse.Namespace) -> int:
     targets = list(a.images)
     if a.dir:
         targets += [p for p in sorted(a.dir.rglob("*"))
-                    if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}]
+                    if p.suffix.lower() in SUFFIX_FORMAT and p.is_file()]
     if not targets:
         print("nothing to check", file=sys.stderr)
         return 2
@@ -299,8 +454,11 @@ def show(a: argparse.Namespace) -> int:
     for image in a.images:
         side = sidecar_of(image)
         print(f"=== {image}")
-        print(side.read_text(encoding="utf-8") if side.exists()
-              else "origin: unknown   # no recipe beside this file")
+        try:
+            print(side.read_text(encoding="utf-8") if side.exists()
+                  else "origin: unknown   # no recipe beside this file")
+        except UnicodeDecodeError:
+            print(f"{side}: not UTF-8 text")
     return 0
 
 

@@ -60,6 +60,19 @@ CASES: list[tuple[str, str, str, str, str]] = [
     ("check_density", "vacuous", RUNGS,
      "| `@1x` | 768x512 | 1.0 | 768x512 |", "| `@1x` | the CSS box | none | the same again |"),
     ("check_canvas", "wrong", REG, "    max_edge: 3840", "    max_edge: 4096"),
+    # a second statement of a constraint that disagrees with the first; only
+    # the first was ever read, so the page could say both
+    ("check_sizes", "wrong", SIZES,
+     "## Sizes that are rejected, and by which rule",
+     "Note: Maximum edge is 4096px or less on newer installs.\n\n"
+     "## Sizes that are rejected, and by which rule"),
+    # a second table under the same header, with a row its own arithmetic
+    # refutes; only the first table with a header was ever read
+    ("check_sizes", "wrong", SIZES,
+     "## Sizes that are rejected, and by which rule",
+     "| Size | Ratio | Megapixels | Use |\n|---|---|---|---|\n"
+     "| `1000x1000` | 1:1 | 1.00 MP | not a multiple of 16 |\n\n"
+     "## Sizes that are rejected, and by which rule"),
     ("check_canvas", "wrong", REG, "    min_pixels: 655360", "    min_pixels: 65536"),
     ("check_canvas", "wrong", SIZES,
      "3. The long-to-short ratio is 3:1 or less", "3. The long-to-short ratio is 2:1 or less"),

@@ -23,6 +23,7 @@ import io
 import json
 import struct
 import sys
+import subprocess
 import tempfile
 import zlib
 from pathlib import Path
@@ -106,7 +107,7 @@ def webp_vp8x(w: int, h: int, alpha: bool, icc: bool) -> bytes:
 def webp_vp8l(w: int, h: int, alpha: bool) -> bytes:
     bits = (w - 1) | ((h - 1) << 14) | (int(alpha) << 28)
     body = b"\x2f" + struct.pack("<I", bits)
-    chunk = b"VP8L" + struct.pack("<I", len(body)) + body
+    chunk = b"VP8L" + struct.pack("<I", len(body)) + body + b"\x00"   # RIFF pad
     return b"RIFF" + struct.pack("<I", 4 + len(chunk)) + b"WEBP" + chunk
 
 
@@ -384,7 +385,7 @@ def test_recipe(tmp: Path) -> None:
     side.write_text(good)
 
     # Length cannot distinguish a sent prompt from a summary; type can.
-    for value in (17, [], "   "):
+    for value in (17, [], "   ", "\ufeff\n"):
         doc = yaml.safe_load(good)
         doc["prompt"] = value
         side.write_text(yaml.safe_dump(doc, sort_keys=False))
@@ -484,6 +485,10 @@ def test_recipe_hardening(tmp: Path) -> None:
               "--prompt-file", str(d / "latin1.txt")), 2)
     check("a blank prompt is refused at capture, not left for check",
           cap("--to", str(d / "a.png"), "--generator", "codex", "--prompt", "   "), 2)
+    (d / "bom.txt").write_bytes(b"\xef\xbb\xbf\n")
+    check("a prompt file holding only a byte-order mark is blank too",
+          cap("--to", str(d / "a.png"), "--generator", "codex",
+              "--prompt-file", str(d / "bom.txt")), 2)
     check("--from outside every generator's directory needs --generator",
           cap("--to", str(d / "a.png"), "--prompt", PROMPT), 2)
     check("a PNG placed under .jpg is refused",
@@ -721,9 +726,9 @@ def test_no_writes_while_reporting(tmp: Path) -> None:
     seen = []
     real = strip._write_atomically
 
-    def spy(dest, data):
+    def spy(dest, data, **kw):
         seen.append(str(dest))
-        return real(dest, data)
+        return real(dest, data, **kw)
 
     strip._write_atomically = spy
     listing = sorted(tmp.iterdir())
@@ -874,21 +879,70 @@ def test_strip_leaks(tmp: Path) -> None:
     full = webp_with(16, 16, 0, [(b"EXIF", exif(None) * 4)])
     f.write_bytes(full[:-6])
     truthy("a truncated WebP is refused", refuses(f, Opt(), "truncated"))
+    whole_webp = webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4))])
+    check("a whole WebP is complete", imgfacts.complete(whole_webp), True)
+    check("a VP8X canvas with no image chunk after it is not",
+          imgfacts.complete(webp_vp8x(16, 16, False, False)), False)
+    check("a lossless WebP with its pixels is", imgfacts.complete(webp_vp8l(16, 16, False)), True)
+    check("a VP8X canvas whose image chunk is empty is not",
+          imgfacts.complete(webp_with(16, 16, 0, [(b"VP8 ", b"")])), False)
+    no_idat = png(16, 16)
+    at = no_idat.index(b"IDAT") - 4
+    no_idat = no_idat[:at] + no_idat[at + 12 + struct.unpack(">I", no_idat[at:at + 4])[0]:]
+    check("a PNG whose IEND follows its header with no IDAT is not",
+          imgfacts.complete(no_idat), False)
+    jpg = jpeg_with(8, 8, [])
+    check("a JPEG with a scan reaches EOI", imgfacts.complete(jpg), True)
+    check("one whose EOI follows its header with no scan does not",
+          imgfacts.complete(jpg[:jpg.index(b"\xff\xda")] + b"\xff\xd9"), False)
+    check("a GIF whose trailer follows its header with no image is not complete",
+          imgfacts.complete(gif(2, 2) + b"\x3b"), False)
+    frame = bytes(16)                                  # ANMF's own frame header
+    lossless = b"VP8L" + struct.pack("<I", 5) + b"\x2f" + bytes(4) + b"\x00"
+    check("an ANMF frame holding a bitstream is pixels",
+          imgfacts.complete(webp_with(16, 16, 0x02, [(b"ANMF", frame + lossless)])), True)
+    check("a VP8L chunk without its 0x2f signature is not pixels",
+          imgfacts.complete(webp_with(16, 16, 0, [(b"VP8L", bytes(5))])), False)
+    check("nor a VP8 chunk without its frame start code",
+          imgfacts.complete(webp_with(16, 16, 0, [(b"VP8 ", bytes(10))])), False)
+    check("an ANMF whose nested odd chunk lacks its own pad byte is not",
+          imgfacts.complete(webp_with(16, 16, 0x02, [(b"ANMF", frame + lossless[:-1])])),
+          False)
+    check("an ANMF frame whose nested chunk is empty is not",
+          imgfacts.complete(webp_with(16, 16, 0x02,
+                                      [(b"ANMF", frame + b"VP8L" + bytes(4))])), False)
+    odd = webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4))])     # 5 bytes: padded
+    cut = odd[:-1]
+    check("one cut at the pad byte its odd last chunk needs is not",
+          imgfacts.complete(cut[:4] + struct.pack("<I", len(cut) - 8) + cut[8:]), False)
+    check("one whose RIFF size is still zero is not",
+          imgfacts.complete(whole_webp[:4] + b"\0\0\0\0" + whole_webp[8:]), False)
 
 
 # --- engine, refute, render -------------------------------------------------
 
 FAKE = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, subprocess, sys
 argv = sys.argv[1:]
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a") as log:
     log.write(json.dumps({"argv": argv, "stdin": prompt}) + "\\n")
+me = os.path.basename(sys.argv[0])
+only = os.environ.get("FAKE_ONLY")
+if only and me not in only.split(","):
+    sys.exit(1)                                    # this engine is unreachable
+if os.environ.get("FAKE_SPAWN"):                   # a tree that outlives a kill of
+    p = subprocess.Popen(["sleep", "30"])          # the direct child alone
+    open(os.environ["FAKE_SPAWN"], "w").write(str(p.pid))
+    import time; time.sleep(30)
 answer = os.environ["FAKE_ANSWER"]
 if "-o" in argv:                                   # codex writes a file
     open(argv[argv.index("-o") + 1], "w").write(answer)
 else:                                              # claude and agy print an envelope
-    print(json.dumps({"structured_output": json.loads(answer)}))
+    print(json.dumps({"type": "result", "structured_output": json.loads(answer)}))
+    noise = os.environ.get("FAKE_NOISE")
+    if noise:
+        print(noise)                               # a log line after the answer
 """
 
 
@@ -1428,6 +1482,507 @@ def test_edges_round_four(tmp: Path) -> None:
     truthy("render names markers in the wrong order as such", "order" in said)
 
 
+def test_strip_concurrent_change(tmp: Path) -> None:
+    """--in-place writes back only over the bytes it stripped. Another process
+    changing the file in between keeps its change: the run refuses instead of
+    overwriting it with a stripped copy of the old content — on both the
+    atomic path and the write-through path."""
+    import os
+    d = tmp / "race"
+    d.mkdir()
+    junk = raw_chunk(b"tEXt", b"k\x00v")
+    for linked in (False, True):
+        f = d / f"race-{linked}.png"
+        f.write_bytes(png(16, 16, extra=junk))
+        if linked:
+            os.link(f, d / f"race-{linked}-other.png")    # the write-through path
+        newer = png(32, 32)                               # what the other writer saves
+        real = strip.strip
+
+        def strip_then_someone_saves(path, opt):
+            result = real(path, opt)
+            path.write_bytes(newer)
+            return result
+
+        strip.strip = strip_then_someone_saves
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                code = strip.main([str(f), "--in-place"])
+        finally:
+            strip.strip = real
+        path = "write-through" if linked else "atomic"
+        check(f"{path}: a file changed after stripping is refused", code, 1)
+        check(f"{path}: and the other writer's change is kept", f.read_bytes(), newer)
+        truthy(f"{path}: and the refusal says why", "changed" in err.getvalue())
+
+
+def test_engine_integrity(tmp: Path) -> None:
+    """A verdict is the engine's answer, from an engine allowed to give one, in
+    the shape that was asked for — and the exit code says what was found."""
+    import os
+    good = {"refuted": False, "reason": "r", "what_would_settle_it": "w"}
+    noise = json.dumps({"type": "telemetry",
+                        "structured_output": dict(good, refuted=True)})
+    os.environ["FAKE_NOISE"] = noise
+    try:
+        with fake_engines(tmp, good):
+            check("a log line after the answer does not replace it",
+                  engine.run("claude", "p", refute.SCHEMA), good)
+    finally:
+        os.environ.pop("FAKE_NOISE")
+    truthy("two unlabelled objects are ambiguous, not a choice",
+           raises(lambda: engine._parse("x", '{"a": 1}\n{"a": 2}'), engine.EngineError))
+
+    for running in ("Claude", "nonsense"):
+        check(f"--running {running!r} is refused even with a checker named",
+              exits(lambda: engine.main(["--running", running, "codex", "--prompt-file",
+                                         "p", "--schema", "s"])), 2)
+
+    with fake_engines(tmp, good):
+        # agy takes the prompt as an argument, where a NUL cannot go; stdin can
+        # carry one. A lone surrogate cannot be encoded on either route.
+        truthy("a NUL in an argument-borne prompt is an EngineError, not a traceback",
+               raises(lambda: engine.run("agy", "a\x00b", refute.SCHEMA), engine.EngineError))
+        for name in ("agy", "claude"):
+            truthy(f"{name}: an unencodable prompt is an EngineError, not a traceback",
+                   raises(lambda: engine.run(name, "a\ud800b", refute.SCHEMA),
+                          engine.EngineError))
+
+    with fake_engines(tmp, dict(good, ok=True)):
+        truthy("a key the schema closed is outside it",
+               raises(lambda: engine.run("claude", "p", refute.SCHEMA), engine.EngineError))
+    check("enum is enforced", bool(engine.conforms("maybe", {"enum": ["yes", "no"]})), True)
+    check("const is enforced", bool(engine.conforms(2, {"const": 1})), True)
+    check("items are enforced",
+          bool(engine.conforms([1, "x"], {"type": "array", "items": {"type": "integer"}})), True)
+    check("so are list-form positional items",
+          bool(engine.conforms(["bad"], {"type": "array", "items": [{"type": "integer"}]})), True)
+    check("and prefixItems",
+          bool(engine.conforms(["bad"], {"type": "array", "prefixItems": [{"type": "integer"}]})),
+          True)
+    check("and additionalItems: false past them",
+          bool(engine.conforms([1, 2], {"items": [{"type": "integer"}],
+                                        "additionalItems": False})), True)
+    check("a list that fits its positional items conforms",
+          engine.conforms([1, "a"], {"prefixItems": [{"type": "integer"}],
+                                     "items": {"type": "string"}}), [])
+    check("NaN is not a number", bool(engine.conforms(float("nan"), {"type": "number"})), True)
+    check("infinity is not a number", bool(engine.conforms(float("inf"), {"type": "number"})), True)
+    check("true is not the enum member 1", bool(engine.conforms(True, {"enum": [1]})), True)
+    check("false is not the const 0", bool(engine.conforms(False, {"const": 0})), True)
+    check("nor inside an object", bool(engine.conforms({"x": True}, {"const": {"x": 1}})), True)
+    check("nor inside an array", bool(engine.conforms([True], {"enum": [[1]]})), True)
+    check("an equal nested value still conforms",
+          engine.conforms({"x": [1, True]}, {"const": {"x": [1, True]}}), [])
+    optional = {"type": "object", "properties": {"ok": {"type": "boolean"},
+                                                 "note": {"type": "string"}},
+                "required": ["ok"]}
+    with fake_engines(tmp, {"ok": True, "note": "n"}) as log:
+        engine.run("claude", "p", optional)
+        told = json.loads(log.read_text().splitlines()[-1])["argv"]
+        check("claude is told the closed schema its answer is checked against",
+              json.loads(told[told.index("--json-schema") + 1]),
+              engine.strict(optional))
+    sfile = tmp / "list.json"
+    sfile.write_text("[]", encoding="utf-8")
+    (tmp / "p.txt").write_text("p", encoding="utf-8")
+    check("a schema that is not an object exits 2",
+          engine.main(["--running", "claude", "codex", "--prompt-file",
+                       str(tmp / "p.txt"), "--schema", str(sfile)]), 2)
+
+    pidfile = tmp / "grandchild.pid"
+    os.environ["FAKE_SPAWN"] = str(pidfile)
+    saved_timeout, engine.TIMEOUT = engine.TIMEOUT, 2
+    try:
+        with fake_engines(tmp, good):
+            truthy("a timeout is an EngineError",
+                   raises(lambda: engine.run("claude", "p", refute.SCHEMA), engine.EngineError))
+    finally:
+        engine.TIMEOUT = saved_timeout
+        os.environ.pop("FAKE_SPAWN")
+    if pidfile.exists():
+        check("and the engine's whole process tree is gone, not just its parent",
+              alive(int(pidfile.read_text())), False)
+
+    # Ctrl-C reaches Python, not the engine's own session: the tree must still go.
+    # agy, because its prompt is an argument: the fake reads no stdin first.
+    pidfile.unlink(missing_ok=True)
+    os.environ["FAKE_SPAWN"] = str(pidfile)
+    real = subprocess.Popen.communicate
+
+    def interrupted(self, *args, **kw):
+        import time
+        for _ in range(100):
+            if pidfile.exists() and pidfile.read_text():
+                break
+            time.sleep(0.05)
+        raise KeyboardInterrupt
+    subprocess.Popen.communicate = interrupted
+    try:
+        with fake_engines(tmp, good):
+            truthy("an interrupt is passed on",
+                   raises(lambda: engine.run("agy", "p", refute.SCHEMA), KeyboardInterrupt))
+    finally:
+        subprocess.Popen.communicate = real
+        os.environ.pop("FAKE_SPAWN")
+    check("and the engine's tree does not outlive it", alive(int(pidfile.read_text())), False)
+
+    claims = tmp / "verdict.json"
+    claims.write_text(json.dumps([{"id": "c1", "claim": "the file is 1536x1024"}]))
+    with fake_engines(tmp, dict(good, refuted=True)):
+        check("a refuted claim exits 3, not 0",
+              refute.main(["--running", "claude", str(claims)]), 3)
+    os.environ["FAKE_ONLY"] = "codex"
+    try:
+        with fake_engines(tmp, good):
+            check("a claim only some refuters read exits 1, not 0",
+                  refute.main(["--running", "claude", str(claims)]), 1)
+    finally:
+        os.environ.pop("FAKE_ONLY")
+    real_pool = refute.refuters
+    refute.refuters = lambda running: []
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            check("no refuter at all leaves every claim unchecked, and exits 1",
+                  refute.main(["--running", "claude", str(claims)]), 1)
+    finally:
+        refute.refuters = real_pool
+
+
+def alive(pid: int) -> bool:
+    """Whether `pid` still runs — a zombie awaiting its reaper does not; one
+    found running is killed so that a failed check leaves nothing behind."""
+    import os
+    import time
+    time.sleep(0.2)
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().split(")")[-1].split()[0]
+    except OSError:
+        return False
+    if state != "Z":
+        os.kill(pid, 9)
+    return state != "Z"
+
+
+def test_recipe_integrity(tmp: Path) -> None:
+    """A capture either places the image and its recipe together, under names it
+    reserved, or places nothing — and check reads what a recipe says, not only
+    whether its keys are there."""
+    import os
+    import threading
+    d = tmp / "integ"
+    d.mkdir()
+    src = d / "src.png"
+    src.write_bytes(png(64, 32))
+    outside = d / "outside"
+    outside.mkdir()
+
+    def cap(dest, *extra):
+        with contextlib.redirect_stderr(io.StringIO()):
+            return recipe.main(["capture", "--from", str(src), "--generator", "codex",
+                                "--to", str(dest), "--prompt", PROMPT, *extra])
+
+    dangling = d / "dangling.png"
+    dangling.symlink_to(outside / "victim.png")
+    check("a dangling symlink as --to is refused", cap(dangling), 2)
+    check("and nothing was written through it", (outside / "victim.png").exists(), False)
+    keep = outside / "keep.png"
+    keep.write_bytes(png(10, 10))
+    linked = d / "linked.png"
+    linked.symlink_to(keep)
+    check("a symlink to another file is refused even with --replace",
+          cap(linked, "--replace"), 2)
+    check("and that file is untouched", imgfacts.probe(keep)["size"], "10x10")
+    hard = d / "hard.png"
+    os.link(src, hard)
+    check("a hard link to the generated file is refused, not a traceback",
+          cap(hard, "--replace"), 2)
+
+    deep = d / "long"
+    deep.mkdir()
+    name = "x" * 248 + ".png"                # its sidecar name is too long
+    check("a recipe that cannot be written fails the capture", cap(deep / name), 2)
+    check("and leaves no image without its recipe", sorted(deep.iterdir()), [])
+
+    # The recipe failing after the image is in place takes the image back out.
+    roll = d / "roll"
+    roll.mkdir()
+    real_replace, calls = recipe.os.replace, []
+
+    def second_fails(a_, b_):
+        calls.append(b_)
+        if len(calls) == 2:
+            raise OSError(28, "No space left on device")
+        return real_replace(a_, b_)
+
+    recipe.os.replace = second_fails
+    try:
+        check("a recipe that fails after the image was placed fails the capture",
+              cap(roll / "h.png"), 2)
+    finally:
+        recipe.os.replace = real_replace
+    check("and the image placed before it is taken back out",
+          sorted(x.name for x in roll.iterdir()), [])
+
+    # With --replace the image placed first was over an old one: a failure
+    # puts the old one back rather than leaving its recipe beside nothing.
+    check("a capture to replace", cap(roll / "h.png"), 0)
+    old = {x.name: x.read_bytes() for x in roll.iterdir()}
+    src.write_bytes(png(48, 32))
+    calls.clear()
+    recipe.os.replace = second_fails
+    try:
+        check("a --replace whose recipe fails fails the capture",
+              cap(roll / "h.png", "--replace"), 2)
+    finally:
+        recipe.os.replace = real_replace
+        src.write_bytes(png(64, 32))
+    check("and the old image and recipe are both still there, unchanged",
+          {x.name: x.read_bytes() for x in roll.iterdir()}, old)
+
+    # If putting the old image back fails too, its copy is the only one left:
+    # it is kept and named, not cleaned up with the temporaries.
+    def second_and_third_fail(a_, b_):           # the recipe's placement, then
+        calls.append(b_)                          # putting the image back
+        if len(calls) == 2 or (len(calls) > 2 and Path(b_).name == "h.png"):
+            raise OSError(30, "Read-only file system")
+        return real_replace(a_, b_)
+
+    calls.clear()
+    src.write_bytes(png(48, 32))
+    recipe.os.replace = second_and_third_fail
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            code = recipe.main(["capture", "--from", str(src), "--generator", "codex",
+                                "--to", str(roll / "h.png"), "--prompt", PROMPT,
+                                "--replace"])
+    finally:
+        recipe.os.replace = real_replace
+        src.write_bytes(png(64, 32))
+    check("a rollback that fails too is a failure of its own", code, 1)
+    saved = [x for x in roll.iterdir() if x.name.startswith(".capture.")]
+    check("and the old image survives in the copy the message names",
+          [(x.read_bytes(), str(x) in err.getvalue()) for x in saved],
+          [(old["h.png"], True)])
+    for x in saved:
+        x.unlink()
+    (roll / "h.png").write_bytes(old["h.png"])      # put back what the failure left
+
+    # The same, on a directory where the temporaries cannot be removed either:
+    # that cleanup failing must not replace the error naming the saved copy.
+    real_unlink = Path.unlink
+
+    def stuck(self, missing_ok=False):
+        if self.name.startswith(".capture."):
+            raise OSError(30, "Read-only file system")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    calls.clear()
+    src.write_bytes(png(48, 32))
+    recipe.os.replace, Path.unlink = second_and_third_fail, stuck
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            code = recipe.main(["capture", "--from", str(src), "--generator", "codex",
+                                "--to", str(roll / "h.png"), "--prompt", PROMPT,
+                                "--replace"])
+    finally:
+        recipe.os.replace, Path.unlink = real_replace, real_unlink
+        src.write_bytes(png(64, 32))
+    check("a cleanup that fails too still reports where the old image is",
+          (code, "Move it back by hand" in err.getvalue()), (1, True))
+    for x in roll.iterdir():
+        if x.name.startswith(".capture."):
+            x.unlink()
+    (roll / "h.png").write_bytes(old["h.png"])
+
+    # Two captures into one directory place one after the other: one held
+    # the lock, so the other waits rather than interleaving its renames.
+    import fcntl
+    roll_old = (roll / "h.png").read_bytes()
+    held = os.open(roll, os.O_RDONLY)
+    fcntl.flock(held, fcntl.LOCK_EX)
+    codes = []
+    t = threading.Thread(target=lambda: codes.append(cap(roll / "h.png", "--replace")))
+    try:
+        src.write_bytes(png(48, 32))
+        t.start()
+        t.join(0.5)
+        check("a capture waits while another holds its directory",
+              ((roll / "h.png").read_bytes() == roll_old, codes), (True, []))
+    finally:
+        fcntl.flock(held, fcntl.LOCK_UN)
+        os.close(held)
+        t.join(10)
+        src.write_bytes(png(64, 32))
+    check("and places once the other is done", codes, [0])
+
+    # An interrupt landing right after a rename: the name it replaced is
+    # still put back, because it was owned before the rename ran.
+    (roll / "h.png").write_bytes(old["h.png"])
+    def interrupted_after(a_, b_):
+        real_replace(a_, b_)
+        if Path(b_).name == "h.png":
+            raise KeyboardInterrupt
+    src.write_bytes(png(48, 32))
+    recipe.os.replace = interrupted_after
+    try:
+        truthy("an interrupt after the image rename is passed on",
+               raises(lambda: cap(roll / "h.png", "--replace"), KeyboardInterrupt))
+    finally:
+        recipe.os.replace = real_replace
+        src.write_bytes(png(64, 32))
+    check("and the image it replaced is back", (roll / "h.png").read_bytes(), old["h.png"])
+
+    # A new capture whose undoing fails says what it left, not that nothing was.
+    fresh = d / "fresh"
+    fresh.mkdir()
+    calls.clear()
+    real_unlink = Path.unlink
+
+    def stuck_new(self, missing_ok=False):
+        if self.parent == fresh and not self.name.startswith(".capture."):
+            raise OSError(30, "Read-only file system")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    recipe.os.replace, Path.unlink = second_fails, stuck_new
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            code = recipe.main(["capture", "--from", str(src), "--generator", "codex",
+                                "--to", str(fresh / "n.png"), "--prompt", PROMPT])
+    finally:
+        recipe.os.replace, Path.unlink = real_replace, real_unlink
+    check("a new capture that cannot be undone reports what it left",
+          (code, str(fresh / "n.png") in err.getvalue(),
+           "nothing was written" in err.getvalue()), (1, True, False))
+
+    cut = d / "cut.png"
+    cut.write_bytes(png(64, 32)[:-12])        # no IEND: still being written
+    with contextlib.redirect_stderr(io.StringIO()):
+        code = recipe.main(["capture", "--from", str(cut), "--generator", "codex",
+                            "--to", str(d / "cut-out.png"), "--prompt", PROMPT])
+    check("a file that is not complete yet is not captured", code, 2)
+    check("bytes appended after IEND do not hide it",
+          imgfacts.complete(png(64, 32) + b"\x00" * 100), True)
+    data = b"\x05\x3b\x3b\x01\x02\x3b"                   # 0x3B inside image data
+    whole = (gif(2, 2) + b"\x2c" + struct.pack("<HHHH", 0, 0, 2, 2) + b"\x00"
+             + b"\x02" + bytes([len(data)]) + data + b"\x00" + b"\x3b")
+    check("a GIF read block by block reaches its trailer", imgfacts.complete(whole), True)
+    check("a GIF cut where its image data holds a 0x3B is not complete",
+          [n for n in range(len(whole)) if imgfacts.complete(whole[:n])], [])
+
+    # Two captures racing to one name: one wins, the other is refused, and
+    # the image and recipe that land are from the same run.
+    real_probe, codes = imgfacts.probe_bytes, []
+
+    def slow(*args):
+        import time
+        time.sleep(0.3)
+        return real_probe(*args)
+
+    imgfacts.probe_bytes = slow
+    try:
+        racers = [threading.Thread(target=lambda: codes.append(cap(d / "race.png")))
+                  for _ in range(2)]
+        for r in racers:
+            r.start()
+        for r in racers:
+            r.join()
+    finally:
+        imgfacts.probe_bytes = real_probe
+    check("of two captures to one name, exactly one succeeds", sorted(codes), [0, 2])
+
+    # The source rewritten after its check: what lands is what was checked.
+    real_complete = imgfacts.complete
+    checked = src.read_bytes()
+
+    def then_rewritten(raw):
+        src.write_bytes(checked[:-12])       # cut short, as a writer mid-save
+        return real_complete(raw)
+
+    imgfacts.complete = then_rewritten
+    try:
+        check("a capture whose source changes after the check still succeeds",
+              cap(d / "snap.png"), 0)
+    finally:
+        imgfacts.complete = real_complete
+        src.write_bytes(checked)
+    check("and places the bytes it checked, not the ones written since",
+          (d / "snap.png").read_bytes(), checked)
+
+    good = d / "good.png"
+    check("a capture still works", cap(good), 0)
+    side = recipe.sidecar_of(good)
+    original = side.read_text(encoding="utf-8")
+    for change, says in (
+            ({"output": {"note": "x"}}, "output.placed"),
+            ({"output": {"placed": None, "generated": "g"}}, "output.placed"),
+            ({"inputs": 5}, "inputs"),
+            ({"inputs": [{"path": "brand/mark.png"}]}, "inputs"),
+            ({"inputs": [{"path": "brand/mark.png", "role": " "}]}, "inputs"),
+            ({"engine": 0}, "engine"),
+            ({"model": False}, "model"),
+            ({"excluded": []}, "excluded")):
+        doc = yaml.safe_load(original)
+        doc.update(change)
+        side.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        truthy(f"check reports a malformed {says}",
+               any(says in p for p in recipe.check_one(good)))
+    side.write_bytes(original.encode("utf-8") + b"\xff\xfe")
+    truthy("a sidecar that is not UTF-8 is a problem, not a traceback",
+           any("UTF-8" in p for p in recipe.check_one(good)))
+    side.write_text(original, encoding="utf-8")
+    (d / "folder.png").mkdir()
+    with contextlib.redirect_stdout(io.StringIO()):
+        recipe.main(["check", "--dir", str(d)])          # must not treat it as an image
+    check("a directory named like an image is not checked as one",
+          any("folder.png" in p for p in recipe.check_one(d / "good.png")), False)
+
+
+def test_cli_bounds_and_render_sections(tmp: Path) -> None:
+    """Numbers past any canvas, the wrong lever, and sections found by text
+    that only looked like their heading."""
+    huge = "1" + "0" * 400
+    for args in ([f"--check-size={huge}x16"], [f"--check-aspect=1:{huge}"],
+                 [f"--check-aspect={huge}:1"]):
+        with contextlib.redirect_stderr(io.StringIO()):
+            check(f"{args[0][:24]}… is refused as input, not a traceback",
+                  exits(lambda: imgfacts.main(args)), 2)
+    aspect_gen = sorted(imgfacts.ASPECT_GENERATORS)[0]
+    with contextlib.redirect_stderr(io.StringIO()):
+        check("--check-size asked of a generator that takes no pixel size is refused",
+              imgfacts.main(["--check-size", "1024x1024", "--generator", aspect_gen]), 2)
+
+    key, spec = next(iter(render.H["delivered"].items()))
+    section = spec["section"]
+    block = f"<!-- deliver:{key} -->"
+    cases = {
+        "an H3 with the same words is not the section":
+            f"# T\n\n### {section}\n\nsub\n\n## {section}\n\nreal\n\n## Next\n",
+        "a heading inside a fence is not the section":
+            f"# T\n\n```\n## {section}\n```\n\n## {section}\n\nreal\n\n## Next\n",
+        "an H1 ends the section":
+            f"# T\n\n## {section}\n\nreal\n\n# Appendix\n\nlater\n",
+        "hashes with no space before them are text, not a closing sequence":
+            f"# T\n\n## {section}###\n\nwrong\n\n## {section}\n\nreal\n\n## Next\n",
+        "a backtick run whose info string holds a backtick opens no fence":
+            f"# T\n\n```bad`info\n\n## {section}\n\nreal\n\n## Next\n",
+    }
+    for name, text in cases.items():
+        f = tmp / "render-case.md"
+        f.write_text(text, encoding="utf-8")
+        render.render(f)
+        out = f.read_text(encoding="utf-8")
+        at = out.find(block)
+        real = out.find("real")
+        after = min(i for i in (out.find("## Next"), out.find("# Appendix"), len(out))
+                    if i != -1)
+        truthy(name, at > real and at < after)
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1465,14 +2020,18 @@ def main() -> int:
         test_recipe_verbatim(tmp)
         test_recipe_generators(tmp)
         test_recipe_hardening(tmp)
+        test_recipe_integrity(tmp)
         test_strip(tmp)
         test_no_writes_while_reporting(tmp)
         test_malformed_input(tmp)
         test_strip_leaks(tmp)
         test_strip_writes(tmp)
+        test_strip_concurrent_change(tmp)
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
+        test_cli_bounds_and_render_sections(tmp)
         test_engine(tmp)
+        test_engine_integrity(tmp)
         test_precommit_hook(tmp)
         test_edges_round_four(tmp)
     if failures:

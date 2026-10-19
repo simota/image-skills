@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import pathlib
 import subprocess
 import sys
@@ -104,11 +105,22 @@ def _is_type(got, kind: str) -> bool:
     return isinstance(got, _TYPES[kind])
 
 
+def _same(a, b) -> bool:
+    """Equal as JSON values, at every depth: Python's True == 1 and
+    False == 0, JSON's do not."""
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
+    return (isinstance(a, bool), a) == (isinstance(b, bool), b)
+
+
 def conforms(got, schema: dict, where: str = "answer") -> list[str]:
     """What is wrong with `got` against the parts of `schema` this set uses:
-    `type`, `required` and `properties`. Not a full validator, and not a
-    lenient one either — `"false"` is not a boolean, and reading it as one
-    turned a pass into a refutation."""
+    `type`, `enum`, `const`, `required`, `properties`, `additionalProperties:
+    false`, `items` and positional `prefixItems`. Not a full validator — `anyOf` and friends are not
+    checked — and not a lenient one either: `"false"` is not a boolean, and
+    reading it as one turned a pass into a refutation."""
     wrong = []
     kinds = schema.get("type")
     if kinds is not None:
@@ -116,20 +128,50 @@ def conforms(got, schema: dict, where: str = "answer") -> list[str]:
         ok = any(_is_type(got, k) for k in kinds if k in _TYPES)
         if not ok:
             return [f"{where} is {type(got).__name__}, not {'/'.join(kinds)}"]
+    if isinstance(got, float) and not math.isfinite(got):
+        return [f"{where} is {got!r}, which JSON does not have"]
+    if "enum" in schema and isinstance(schema["enum"], list) \
+            and not any(_same(got, v) for v in schema["enum"]):
+        wrong.append(f"{where} is {got!r}, not one of {schema['enum']!r}")
+    if "const" in schema and not _same(got, schema["const"]):
+        wrong.append(f"{where} is {got!r}, not {schema['const']!r}")
     if isinstance(got, dict):
-        for key in schema.get("required") or []:
+        required = schema.get("required") or []
+        for key in required if isinstance(required, list) else []:
             if key not in got:
                 wrong.append(f"{where} has no {key}")
-        for key, sub in (schema.get("properties") or {}).items():
+        props = schema.get("properties") or {}
+        for key, sub in props.items():
             if key in got and isinstance(sub, dict):
                 wrong += conforms(got[key], sub, f"{where}.{key}")
+        if schema.get("additionalProperties") is False:
+            for key in got:
+                if key not in props:
+                    wrong.append(f"{where} has {key}, which the schema closed out")
+    if isinstance(got, list):
+        # Positional schemas (`prefixItems`, or the older list-form `items`)
+        # hold the first elements; the rest go to `items` when that is one
+        # schema, or to `additionalItems` beside list-form `items`.
+        lead = schema.get("prefixItems")
+        rest = schema.get("items")
+        if lead is None and isinstance(rest, list):
+            lead, rest = rest, schema.get("additionalItems")
+        lead = lead if isinstance(lead, list) else []
+        for n, item in enumerate(got):
+            sub = lead[n] if n < len(lead) else rest
+            if sub is False:
+                wrong.append(f"{where}[{n}] is past the {len(lead)} the schema allows")
+            elif isinstance(sub, dict):
+                wrong += conforms(item, sub, f"{where}[{n}]")
     return wrong
 
 
 def run(engine: str, prompt: str, schema: dict) -> dict:
     """Ask `engine` for one object matching `schema`. Raises rather than guessing."""
     got = _ask(engine, prompt, schema)
-    wrong = conforms(got, schema)
+    # Checked against what every engine was told: the closed schema, so a key
+    # the engine added is an error rather than a stowaway in the verdict.
+    wrong = conforms(got, strict(schema))
     if wrong:
         raise EngineError(f"{engine} answered outside the schema: {'; '.join(wrong)}")
     return got
@@ -155,7 +197,7 @@ def _ask(engine: str, prompt: str, schema: dict):
             return _parse(engine, body)
         if engine == "claude":
             argv = ["claude", "-p", "--output-format", "json",
-                    "--json-schema", json.dumps(schema)]
+                    "--json-schema", json.dumps(strict(schema))]
             r = _spawn(engine, argv, prompt)
             envelope = _parse(engine, r.stdout)
             if "structured_output" not in envelope:
@@ -176,19 +218,56 @@ def _ask(engine: str, prompt: str, schema: dict):
 
 def _spawn(engine: str, argv: list[str], stdin: str | None = None
            ) -> subprocess.CompletedProcess:
+    """Run one engine in its own process group, so that a timeout ends the
+    whole tree it started rather than only its first process."""
     try:
-        return subprocess.run(argv, input=stdin, capture_output=True, text=True,
-                              timeout=TIMEOUT,
-                              stdin=None if stdin is not None else subprocess.DEVNULL)
+        p = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin is not None
+                             else subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, start_new_session=True)
     except FileNotFoundError:
         raise EngineError(f"{engine} is not on PATH") from None
-    except subprocess.TimeoutExpired:
-        raise EngineError(f"{engine} did not answer within {TIMEOUT}s") from None
-    except OSError as e:                      # e.g. an argument list too long
+    except (OSError, ValueError) as e:       # an argument list too long, a NUL
         raise EngineError(f"{engine} could not be started: {e}") from None
+    try:
+        out, err = p.communicate(input=stdin, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        _kill_tree(p)
+        raise EngineError(f"{engine} did not answer within {TIMEOUT}s") from None
+    except (OSError, ValueError, UnicodeError) as e:   # a prompt it cannot be sent
+        _kill_tree(p)
+        raise EngineError(f"{engine} could not be sent the prompt: {e}") from None
+    except BaseException:
+        # Its own session is out of reach of the terminal's Ctrl-C, so an
+        # interrupt here has to end the tree before it is passed on.
+        _kill_tree(p)
+        raise
+    return subprocess.CompletedProcess(argv, p.returncode, out, err)
+
+
+def _kill_tree(p: subprocess.Popen) -> None:
+    import os
+    import signal
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except OSError:
+        p.kill()
+    for stream in (p.stdin, p.stdout, p.stderr):  # not communicate(): after a
+        try:                                      # failed one it cannot be reused
+            if stream:
+                stream.close()
+        except OSError:
+            pass
+    try:
+        p.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def _parse(engine: str, body: str) -> dict:
+    """The one object the engine answered with. A body that is not a single
+    object is searched line by line, and exactly one candidate must remain —
+    the only one, or the only one marked `type: result`. Taking the last object
+    let a log line printed after the answer replace it."""
     stripped = body.strip()
     try:
         got = json.loads(stripped)
@@ -196,14 +275,22 @@ def _parse(engine: str, body: str) -> dict:
             return got
     except ValueError:
         pass
-    for line in reversed(stripped.splitlines()):
+    found = []
+    for line in stripped.splitlines():
         try:
             got = json.loads(line)
         except ValueError:
             continue
         if isinstance(got, dict):
-            return got
-    raise EngineError(f"{engine} printed nothing that parses as an object:\n{body[:400]}")
+            found.append(got)
+    if len(found) > 1:
+        found = [o for o in found if o.get("type") == "result"]
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        raise EngineError(f"{engine} printed nothing that parses as an object:\n{body[:400]}")
+    raise EngineError(f"{engine} printed several objects and none is marked as the "
+                      f"answer:\n{body[:400]}")
 
 
 def _tail(r: subprocess.CompletedProcess) -> str:
@@ -258,6 +345,11 @@ def main(argv: list[str] | None = None) -> int:
     if not a.running:
         # Not even with a checker named: the exclusion is what makes it a check.
         ap.error("--running is required: state the engine running this harness")
+    known = ENGINES.get("runs_on") or []
+    if a.running not in known:
+        ap.error(f"--running {a.running!r} is not one of {known}")
+    if a.engine is not None and a.engine not in known:
+        ap.error(f"{a.engine!r} is not one of {known}")
     if not (a.prompt_file and a.schema):
         print("need --prompt-file and --schema", file=sys.stderr)
         return 2
@@ -271,6 +363,10 @@ def main(argv: list[str] | None = None) -> int:
             schema = json.loads(pathlib.Path(a.schema).read_text(encoding="utf-8"))
         except (OSError, ValueError) as e:
             print(f"cannot read the prompt or the schema: {e}", file=sys.stderr)
+            return 2
+        if not isinstance(schema, dict):
+            print(f"{a.schema}: a schema is an object, not a {type(schema).__name__}",
+                  file=sys.stderr)
             return 2
         got = run(engine, prompt, schema)
     except EngineError as e:

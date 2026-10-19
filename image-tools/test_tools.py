@@ -721,9 +721,9 @@ def test_no_writes_while_reporting(tmp: Path) -> None:
     seen = []
     real = strip._write_atomically
 
-    def spy(dest, data):
+    def spy(dest, data, **kw):
         seen.append(str(dest))
-        return real(dest, data)
+        return real(dest, data, **kw)
 
     strip._write_atomically = spy
     listing = sorted(tmp.iterdir())
@@ -1428,6 +1428,41 @@ def test_edges_round_four(tmp: Path) -> None:
     truthy("render names markers in the wrong order as such", "order" in said)
 
 
+def test_strip_concurrent_change(tmp: Path) -> None:
+    """--in-place writes back only over the bytes it stripped. Another process
+    changing the file in between keeps its change: the run refuses instead of
+    overwriting it with a stripped copy of the old content — on both the
+    atomic path and the write-through path."""
+    import os
+    d = tmp / "race"
+    d.mkdir()
+    junk = raw_chunk(b"tEXt", b"k\x00v")
+    for linked in (False, True):
+        f = d / f"race-{linked}.png"
+        f.write_bytes(png(16, 16, extra=junk))
+        if linked:
+            os.link(f, d / f"race-{linked}-other.png")    # the write-through path
+        newer = png(32, 32)                               # what the other writer saves
+        real = strip.strip
+
+        def strip_then_someone_saves(path, opt):
+            result = real(path, opt)
+            path.write_bytes(newer)
+            return result
+
+        strip.strip = strip_then_someone_saves
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                code = strip.main([str(f), "--in-place"])
+        finally:
+            strip.strip = real
+        path = "write-through" if linked else "atomic"
+        check(f"{path}: a file changed after stripping is refused", code, 1)
+        check(f"{path}: and the other writer's change is kept", f.read_bytes(), newer)
+        truthy(f"{path}: and the refusal says why", "changed" in err.getvalue())
+
+
 def exits(fn) -> int:
     try:
         return fn()
@@ -1470,6 +1505,7 @@ def main() -> int:
         test_malformed_input(tmp)
         test_strip_leaks(tmp)
         test_strip_writes(tmp)
+        test_strip_concurrent_change(tmp)
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_engine(tmp)

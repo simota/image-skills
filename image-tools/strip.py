@@ -253,11 +253,14 @@ HANDLERS = {"PNG": _strip_png, "JPEG": _strip_jpeg, "WebP": _strip_webp}
 # --- driver ------------------------------------------------------------------
 
 def strip(path: Path, opt) -> tuple[bytes, list[str], dict]:
-    before = imgfacts.probe(path)
+    # Read once: the facts, the strip and the in-place check below all have to
+    # be about the same bytes, and a second read is a second version.
+    raw = path.read_bytes()
+    before = imgfacts.probe_bytes(raw, str(path))
+    before["raw"] = raw                       # what an in-place write may replace
     fn = HANDLERS.get(before["format"])
     if fn is None:
         raise Refused(f"{before['format']} is not handled; nothing was changed")
-    raw = path.read_bytes()
     out, ledger = fn(raw, opt)
     # The report is a ledger and has to balance: what it names, byte for byte,
     # is what the file lost. Each handler counts what it actually dropped, and
@@ -285,7 +288,17 @@ def strip(path: Path, opt) -> tuple[bytes, list[str], dict]:
     return out, dropped, before
 
 
-def _write_atomically(dest: Path, data: bytes) -> None:
+class Changed(OSError):
+    """The file is no longer the bytes that were stripped."""
+
+
+def _unchanged(dest: Path, expect: bytes | None, current: bytes | None = None) -> None:
+    if expect is not None and (dest.read_bytes() if current is None else current) != expect:
+        raise Changed(f"{dest} changed after it was read; the newer version was "
+                      "kept and nothing was written")
+
+
+def _write_atomically(dest: Path, data: bytes, expect: bytes | None = None) -> None:
     """Replace `dest` whole or not at all. `--in-place` overwrites the only copy
     of an asset, and an interrupted plain write leaves half of one.
 
@@ -301,12 +314,19 @@ def _write_atomically(dest: Path, data: bytes) -> None:
     stripping only shrinks a file, so neither step needs new space on an
     ordinary filesystem — and the copy is removed once the file is whole again.
     If the restore fails too, the copy stays and the error names it: a
-    half-written only copy with no original anywhere is never the outcome."""
+    half-written only copy with no original anywhere is never the outcome.
+
+    With `expect` — an in-place strip — the file must still be the bytes that
+    were stripped: another writer's change is kept and this write refused,
+    rather than overwritten with a stripped copy of the version before it. The
+    check is made immediately before the file is touched; a writer landing in
+    the instant between that check and the write is not caught."""
     dest = dest.resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and (dest.stat().st_nlink > 1
                           or not os.access(dest.parent, os.W_OK)):
         original = dest.read_bytes()
+        _unchanged(dest, expect, original)
         keep, retain = None, False
         try:                                 # the copy's whole lifetime: removed
             try:                             # on every way out but one
@@ -366,6 +386,7 @@ def _write_atomically(dest: Path, data: bytes) -> None:
                 pass
         else:
             os.chmod(tmp, 0o666 & ~_umask())
+        _unchanged(dest, expect)
         os.replace(tmp, dest)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
@@ -422,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = a.out or (f if a.in_place else None)
         if dest:
             try:
-                _write_atomically(dest, out)
+                _write_atomically(dest, out, expect=before["raw"] if a.in_place else None)
             except OSError as e:
                 print(f"{f}: could not write {dest}: {e}", file=sys.stderr)
                 failed = True

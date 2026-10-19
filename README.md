@@ -151,8 +151,8 @@ with other hard links, or in a directory that refuses new files, is rewritten
 through its own inode so every name sees the result, with the original put
 back if that write fails part-way. In place, it writes only over the bytes it
 read: a file another process saved in the meantime is left as that process
-saved it, and the run says so. A run with neither
-`--out` nor `--in-place` writes nothing.
+saved it, and the run says so. A run with neither `--out` nor `--in-place`
+writes nothing.
 
 **One parser per format, shared.** `strip.py` reads JPEG through the same marker
 scanner `imgfacts.py` uses. Two parsers of one format is two chances to disagree

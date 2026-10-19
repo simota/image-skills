@@ -161,10 +161,12 @@ def main(argv: list[str] | None = None) -> int:
     # The exit code is what a caller reads without the report: 0 only when
     # every claim stood under every refuter there was; 3 when any claim was
     # refuted or contested; 1 when any claim was read by fewer refuters than
-    # the pool holds — unchecked, or checked by some and not others.
+    # the pool holds — unchecked, or checked by some and not others — and when
+    # there was no refuter at all, which leaves every claim unchecked.
     if any(r["verdict"] in ("REFUTED", "CONTESTED") for r in results):
         code = 3
-    elif any(r["independent_readings"] < len(pool) for r in results):
+    elif any(r["verdict"] == "UNCHECKED" or r["independent_readings"] < len(pool)
+             for r in results):
         code = 1
     else:
         code = 0

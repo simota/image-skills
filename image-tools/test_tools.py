@@ -23,6 +23,7 @@ import io
 import json
 import struct
 import sys
+import subprocess
 import tempfile
 import zlib
 from pathlib import Path
@@ -1518,6 +1519,18 @@ def test_engine_integrity(tmp: Path) -> None:
     check("items are enforced",
           bool(engine.conforms([1, "x"], {"type": "array", "items": {"type": "integer"}})), True)
     check("NaN is not a number", bool(engine.conforms(float("nan"), {"type": "number"})), True)
+    check("infinity is not a number", bool(engine.conforms(float("inf"), {"type": "number"})), True)
+    check("true is not the enum member 1", bool(engine.conforms(True, {"enum": [1]})), True)
+    check("false is not the const 0", bool(engine.conforms(False, {"const": 0})), True)
+    optional = {"type": "object", "properties": {"ok": {"type": "boolean"},
+                                                 "note": {"type": "string"}},
+                "required": ["ok"]}
+    with fake_engines(tmp, {"ok": True, "note": "n"}) as log:
+        engine.run("claude", "p", optional)
+        told = json.loads(log.read_text().splitlines()[-1])["argv"]
+        check("claude is told the closed schema its answer is checked against",
+              json.loads(told[told.index("--json-schema") + 1]),
+              engine.strict(optional))
     sfile = tmp / "list.json"
     sfile.write_text("[]", encoding="utf-8")
     (tmp / "p.txt").write_text("p", encoding="utf-8")
@@ -1536,17 +1549,31 @@ def test_engine_integrity(tmp: Path) -> None:
         engine.TIMEOUT = saved_timeout
         os.environ.pop("FAKE_SPAWN")
     if pidfile.exists():
-        pid = int(pidfile.read_text())
+        check("and the engine's whole process tree is gone, not just its parent",
+              alive(int(pidfile.read_text())), False)
+
+    # Ctrl-C reaches Python, not the engine's own session: the tree must still go.
+    # agy, because its prompt is an argument: the fake reads no stdin first.
+    pidfile.unlink(missing_ok=True)
+    os.environ["FAKE_SPAWN"] = str(pidfile)
+    real = subprocess.Popen.communicate
+
+    def interrupted(self, *args, **kw):
         import time
-        time.sleep(0.2)
-        try:                                  # a zombie awaiting its reaper is gone
-            state = Path(f"/proc/{pid}/stat").read_text().split(")")[-1].split()[0]
-            alive = state != "Z"
-            if alive:
-                os.kill(pid, 9)
-        except OSError:
-            alive = False
-        check("and the engine's whole process tree is gone, not just its parent", alive, False)
+        for _ in range(100):
+            if pidfile.exists() and pidfile.read_text():
+                break
+            time.sleep(0.05)
+        raise KeyboardInterrupt
+    subprocess.Popen.communicate = interrupted
+    try:
+        with fake_engines(tmp, good):
+            truthy("an interrupt is passed on",
+                   raises(lambda: engine.run("agy", "p", refute.SCHEMA), KeyboardInterrupt))
+    finally:
+        subprocess.Popen.communicate = real
+        os.environ.pop("FAKE_SPAWN")
+    check("and the engine's tree does not outlive it", alive(int(pidfile.read_text())), False)
 
     claims = tmp / "verdict.json"
     claims.write_text(json.dumps([{"id": "c1", "claim": "the file is 1536x1024"}]))
@@ -1560,6 +1587,29 @@ def test_engine_integrity(tmp: Path) -> None:
                   refute.main(["--running", "claude", str(claims)]), 1)
     finally:
         os.environ.pop("FAKE_ONLY")
+    real_pool = refute.refuters
+    refute.refuters = lambda running: []
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            check("no refuter at all leaves every claim unchecked, and exits 1",
+                  refute.main(["--running", "claude", str(claims)]), 1)
+    finally:
+        refute.refuters = real_pool
+
+
+def alive(pid: int) -> bool:
+    """Whether `pid` still runs — a zombie awaiting its reaper does not; one
+    found running is killed so that a failed check leaves nothing behind."""
+    import os
+    import time
+    time.sleep(0.2)
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().split(")")[-1].split()[0]
+    except OSError:
+        return False
+    if state != "Z":
+        os.kill(pid, 9)
+    return state != "Z"
 
 
 def test_recipe_integrity(tmp: Path) -> None:

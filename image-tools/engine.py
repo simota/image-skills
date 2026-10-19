@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import pathlib
 import subprocess
 import sys
@@ -104,6 +105,11 @@ def _is_type(got, kind: str) -> bool:
     return isinstance(got, _TYPES[kind])
 
 
+def _same(a, b) -> bool:
+    """Equal as JSON values: Python's True == 1 and False == 0, JSON's do not."""
+    return (isinstance(a, bool), a) == (isinstance(b, bool), b)
+
+
 def conforms(got, schema: dict, where: str = "answer") -> list[str]:
     """What is wrong with `got` against the parts of `schema` this set uses:
     `type`, `enum`, `const`, `required`, `properties`, `additionalProperties:
@@ -117,11 +123,12 @@ def conforms(got, schema: dict, where: str = "answer") -> list[str]:
         ok = any(_is_type(got, k) for k in kinds if k in _TYPES)
         if not ok:
             return [f"{where} is {type(got).__name__}, not {'/'.join(kinds)}"]
-    if isinstance(got, float) and got != got:
-        return [f"{where} is NaN, which JSON does not have"]
-    if "enum" in schema and got not in schema["enum"]:
+    if isinstance(got, float) and not math.isfinite(got):
+        return [f"{where} is {got!r}, which JSON does not have"]
+    if "enum" in schema and isinstance(schema["enum"], list) \
+            and not any(_same(got, v) for v in schema["enum"]):
         wrong.append(f"{where} is {got!r}, not one of {schema['enum']!r}")
-    if "const" in schema and got != schema["const"]:
+    if "const" in schema and not _same(got, schema["const"]):
         wrong.append(f"{where} is {got!r}, not {schema['const']!r}")
     if isinstance(got, dict):
         required = schema.get("required") or []
@@ -145,7 +152,7 @@ def conforms(got, schema: dict, where: str = "answer") -> list[str]:
 def run(engine: str, prompt: str, schema: dict) -> dict:
     """Ask `engine` for one object matching `schema`. Raises rather than guessing."""
     got = _ask(engine, prompt, schema)
-    # Checked against what the engine was told: the closed schema, so a key
+    # Checked against what every engine was told: the closed schema, so a key
     # the engine added is an error rather than a stowaway in the verdict.
     wrong = conforms(got, strict(schema))
     if wrong:
@@ -173,7 +180,7 @@ def _ask(engine: str, prompt: str, schema: dict):
             return _parse(engine, body)
         if engine == "claude":
             argv = ["claude", "-p", "--output-format", "json",
-                    "--json-schema", json.dumps(schema)]
+                    "--json-schema", json.dumps(strict(schema))]
             r = _spawn(engine, argv, prompt)
             envelope = _parse(engine, r.stdout)
             if "structured_output" not in envelope:
@@ -212,6 +219,11 @@ def _spawn(engine: str, argv: list[str], stdin: str | None = None
     except (OSError, ValueError, UnicodeError) as e:   # a prompt it cannot be sent
         _kill_tree(p)
         raise EngineError(f"{engine} could not be sent the prompt: {e}") from None
+    except BaseException:
+        # Its own session is out of reach of the terminal's Ctrl-C, so an
+        # interrupt here has to end the tree before it is passed on.
+        _kill_tree(p)
+        raise
     return subprocess.CompletedProcess(argv, p.returncode, out, err)
 
 

@@ -1759,14 +1759,14 @@ def test_recipe_integrity(tmp: Path) -> None:
 
     # Two captures racing to one name: one wins, the other is refused, and
     # the image and recipe that land are from the same run.
-    real_probe, codes = imgfacts.probe, []
+    real_probe, codes = imgfacts.probe_bytes, []
 
-    def slow(path):
+    def slow(*args):
         import time
         time.sleep(0.3)
-        return real_probe(path)
+        return real_probe(*args)
 
-    imgfacts.probe = slow
+    imgfacts.probe_bytes = slow
     try:
         racers = [threading.Thread(target=lambda: codes.append(cap(d / "race.png")))
                   for _ in range(2)]
@@ -1775,8 +1775,26 @@ def test_recipe_integrity(tmp: Path) -> None:
         for r in racers:
             r.join()
     finally:
-        imgfacts.probe = real_probe
+        imgfacts.probe_bytes = real_probe
     check("of two captures to one name, exactly one succeeds", sorted(codes), [0, 2])
+
+    # The source rewritten after its check: what lands is what was checked.
+    real_complete = imgfacts.complete
+    checked = src.read_bytes()
+
+    def then_rewritten(raw):
+        src.write_bytes(checked[:-12])       # cut short, as a writer mid-save
+        return real_complete(raw)
+
+    imgfacts.complete = then_rewritten
+    try:
+        check("a capture whose source changes after the check still succeeds",
+              cap(d / "snap.png"), 0)
+    finally:
+        imgfacts.complete = real_complete
+        src.write_bytes(checked)
+    check("and places the bytes it checked, not the ones written since",
+          (d / "snap.png").read_bytes(), checked)
 
     good = d / "good.png"
     check("a capture still works", cap(good), 0)

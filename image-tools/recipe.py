@@ -192,8 +192,12 @@ def capture(a: argparse.Namespace) -> int:
     try:
         prompt = (a.prompt_file.read_bytes().decode("utf-8") if a.prompt_file
                   else a.prompt)
-        facts = imgfacts.probe(src)
-        whole = imgfacts.complete(src.read_bytes())
+        # One read, then that snapshot is what is probed, checked and placed:
+        # a generator still rewriting the file cannot swap in other bytes
+        # between the check and the copy.
+        image = src.read_bytes()
+        facts = imgfacts.probe_bytes(image, str(src))
+        whole = imgfacts.complete(image)
     except (OSError, UnicodeDecodeError, imgfacts.Unreadable) as e:
         print(f"{e}; nothing was written", file=sys.stderr)
         return 2
@@ -231,7 +235,7 @@ def capture(a: argparse.Namespace) -> int:
         "note": NO_SEED,
     }
     try:
-        _place(src, dest, yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
+        _place(src, image, dest, yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
                                          default_flow_style=False), a.replace)
     except Stranded as e:
         print(e, file=sys.stderr)
@@ -256,7 +260,7 @@ class Stranded(OSError):
     under the names this carries, not deleted with the temporaries."""
 
 
-def _place(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
+def _place(src: Path, image: bytes, dest: Path, recipe_text: str, replace: bool) -> None:
     """Put the image and its recipe in place together, or neither.
 
     Without `replace`, both names are reserved first with O_EXCL — which also
@@ -272,12 +276,13 @@ def _place(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
     lock = os.open(dest.parent, os.O_RDONLY)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)     # released with the descriptor,
-        _place_locked(src, dest, recipe_text, replace)   # even if killed
+        _place_locked(src, image, dest, recipe_text, replace)   # even if killed
     finally:
         os.close(lock)
 
 
-def _place_locked(src: Path, dest: Path, recipe_text: str, replace: bool) -> None:
+def _place_locked(src: Path, image: bytes, dest: Path, recipe_text: str,
+                  replace: bool) -> None:
     side = sidecar_of(dest)
     made: list[Path] = []                    # names this capture now owns
     temps: list[str] = []
@@ -295,9 +300,9 @@ def _place_locked(src: Path, dest: Path, recipe_text: str, replace: bool) -> Non
                 os.close(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666))
                 made.append(p)
         fd, tmp_img = tempfile.mkstemp(dir=dest.parent, prefix=".capture.")
-        os.close(fd)
         temps.append(tmp_img)
-        shutil.copyfile(src, tmp_img)
+        with os.fdopen(fd, "wb") as f:
+            f.write(image)                   # the bytes that were checked
         shutil.copystat(src, tmp_img)
         fd, tmp_side = tempfile.mkstemp(dir=dest.parent, prefix=".capture.")
         temps.append(tmp_side)

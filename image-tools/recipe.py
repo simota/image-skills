@@ -427,6 +427,11 @@ def check_one(image: Path) -> list[str]:
         # a recipe that lost what the input was for, not one that never said.
         problems.append(f"{side}: inputs must be a list of entries with a path "
                         f"and a role, not {doc['inputs']!r}")
+    # Both halves: a recipe holding only what is on disk lost what was asked.
+    if isinstance(doc.get("size"), dict):
+        asked = doc["size"].get("asked")
+        if not (isinstance(asked, str) and asked.strip()):
+            problems.append(f"{side}: size.asked must be text, not {asked!r}")
     if isinstance(doc.get("output"), dict):
         for k in ("placed", "generated"):
             v = doc["output"].get(k)
@@ -449,10 +454,6 @@ def check_one(image: Path) -> list[str]:
     except (imgfacts.Unreadable, OSError) as e:
         return problems + [f"{image}: {e}"]
     size = doc["size"] if isinstance(doc.get("size"), dict) else {}
-    # Both halves: a recipe holding only what is on disk lost what was asked.
-    if isinstance(doc.get("size"), dict) and not (
-            isinstance(size.get("asked"), str) and size["asked"].strip()):
-        problems.append(f"{side}: size.asked must be text, not {size.get('asked')!r}")
     on_disk = size.get("on_disk")
     if on_disk != facts["size"]:
         problems.append(f"{side}: size.on_disk is {on_disk!r}, the file is "

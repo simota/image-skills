@@ -171,7 +171,7 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
     # skips are reported rather than lost quietly, and a file that ends before
     # EOI is refused as PNG's missing IEND is: half a picture is not stripped.
     out, dropped, tail, pos = bytearray(b"\xff\xd8"), [], None, 2
-    scanned = False
+    scanned = gain_named = secondary = False
     for marker, start, end, body in imgfacts.jpeg_segments(raw, through_scans=True):
         if end > len(raw):
             raise Refused("JPEG is truncated inside a segment; nothing was changed")
@@ -193,11 +193,10 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
             continue
         if marker == 0xE1 and body.startswith(EXIF_SIG):
             _refuse_rotation(body, opt)
-        if marker in (0xE1, 0xE2) and not getattr(opt, "drop_gain_map", False) \
-                and any(sign in body for sign in GAIN_MAP_SIGNS):
-            raise Refused("this JPEG carries an HDR gain map, which stripping "
-                          "removes: an HDR display would show the SDR base alone. "
-                          "Pass --drop-gain-map if that is the decision")
+        if marker in (0xE1, 0xE2) and any(sign in body for sign in GAIN_MAP_SIGNS):
+            gain_named = True
+        if marker == 0xE2 and body.startswith(b"MPF\x00"):
+            secondary = True
         if marker == 0xFE:                     # COM is a comment; it goes
             keep = False
         elif not 0xE0 <= marker <= 0xEF:       # everything structural stays
@@ -225,6 +224,13 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
             dropped.append((f"{label} {hint!r}", end - start))
     if tail is None:
         raise Refused("JPEG has no EOI, so it is truncated; nothing was changed")
+    # Named is not carried: an editor that copied the XMP across and dropped
+    # the second image left nothing to lose. The map is there when an image is.
+    if gain_named and (secondary or tail < len(raw)) \
+            and not getattr(opt, "drop_gain_map", False):
+        raise Refused("this JPEG carries an HDR gain map, which stripping "
+                      "removes: an HDR display would show the SDR base alone. "
+                      "Pass --drop-gain-map if that is the decision")
     if tail < len(raw):
         # Not this image: an appended second picture (a motion photo, an MPF
         # preview) carries its own Exif and location, and ships them if kept.

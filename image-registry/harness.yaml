@@ -227,8 +227,9 @@ external_paths: [".agents/", "CLAUDE.md", "AGENTS.md", "GEMINI.md", "settings.js
 # playbook that is budgeted precisely because it is not supposed to rot.
 # Matched case-blind: "Imagen 4" rots exactly as fast as "imagen-4".
 rot_patterns:
-  - '\b(19|20)\d{2}[-/]\d{2}\b'
-  - '\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? (19|20)\d{2}\b'
+  # a month, not any 20xx pixel size divided by something: 2048/16 is arithmetic
+  - '\b(19|20)\d{2}[-/](0[1-9]|1[0-2])\b'
+  - '\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.? (19|20)\d{2}\b'
   - '\bv\d+\.\d+(\.\d+)?\b'
   - '\b(gpt-image|gpt|dall-e|imagen|gemini|sdxl|flux)[- ]?\d'
 

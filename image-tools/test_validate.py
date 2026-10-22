@@ -652,6 +652,13 @@ def _(r): _drop_line(r / f"{S}_image/ROUTING.md", "| `image-deliver` |")
 def _(r): _drop_line(r / "README.md", "| [`image-prompt`]")
 
 
+@case("V8-list-items", says="links to missing gone.md")
+def _(r):
+    """A lone backtick in one list item does not pair with one in the next."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n- Press the ` key to toggle.\n- See [guide](gone.md) and use `x` here.\n\n## ")
+
+
 @case("V25-case")
 def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# Imagen 4 reads text worse — ")
 
@@ -794,6 +801,19 @@ def _(r):
     sub(r / f"{S}image-prompt/playbooks/structure.md", "\n## ",
         "\nWrite alt text as `![alt](hero.png)`; see [this](exclusions.md \"Exclusions\") "
         "and [that](<exclusions.md>).\n\n```md\n[an example](not-here.md)\n```\n\n## ")
+
+
+@quiet("pixel arithmetic and words that open like a month are not dates")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\nDecrease 2048 to 1024 for a thumbnail; a 2048/16 grid gives 128 px cells. "
+        "Mark 1920 wide, and a marker 2000 px.\n\n## ")
+
+
+@quiet("a code span runs across the lines of one block quote")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\n> Quote `[x](not-a-link.md)\n> still code` here.\n\n## ")
 
 
 @quiet("a link that climbs within the skill resolves")

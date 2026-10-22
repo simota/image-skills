@@ -171,8 +171,10 @@ def _split_input(spec: str) -> tuple[str, str]:
 def recorded(path) -> str:
     """A path as a recipe records it: as given, unless it climbs out of the
     directory capture ran in, which no later reader shares — then absolute."""
-    norm = os.path.normpath(path)
-    return os.path.abspath(path) if Path(norm).parts[:1] == ("..",) else norm
+    # Normalised only to ask the question: `link/../x` names what `link`
+    # points beside, so the path as given is what is kept.
+    climbs = Path(os.path.normpath(path)).parts[:1] == ("..",)
+    return os.path.abspath(path) if climbs else str(path)
 
 
 def capture(a: argparse.Namespace) -> int:

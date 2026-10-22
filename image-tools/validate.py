@@ -93,6 +93,10 @@ def _live_marker_offsets(text: str) -> list[int]:
 
 
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# Lines that open a block of their own: a code span never runs across one, so
+# a lone backtick in one list item cannot pair with one in the next.
+_LINK_BLOCK = re.compile(r"^ {0,3}(#{1,6}(\s|$)|[-*+]\s|\d+[.)]\s|\|)")
+_QUOTED = re.compile(r"^ {0,3}>")
 
 
 def prose_links(text: str) -> list[str]:
@@ -119,7 +123,12 @@ def prose_links(text: str) -> list[str]:
             flush()
             fence = m.group(1)
         elif line.strip():
+            if _LINK_BLOCK.match(line) or (
+                    para and bool(_QUOTED.match(line)) != bool(_QUOTED.match(para[-1]))):
+                flush()
             para.append(line)
+            if re.match(r"^ {0,3}#{1,6}(\s|$)", line):
+                flush()                            # a heading is one line long
         else:
             flush()
     flush()

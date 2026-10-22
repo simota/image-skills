@@ -1083,9 +1083,13 @@ def test_make_unlink(tmp: Path) -> None:
     (repo / "skills" / "image-refine").rename(repo / "skills" / "image-retouch")
     truthy("status names the link a renamed skill left behind",
            "retired  image-refine" in make("status"))
+    (host / "image-generate-pinned").symlink_to(repo / "skills" / "image-generate")
+    truthy("a second name for a live skill is not called retired",
+           "image-generate-pinned" not in make("status"))
     make("unlink")
-    check("unlink removes it with the rest, and leaves another checkout's link",
-          sorted(p.name for p in host.iterdir()), ["image-foreign"])
+    check("unlink removes the retired link with the rest, and leaves another "
+          "checkout's link and a live alias",
+          sorted(p.name for p in host.iterdir()), ["image-foreign", "image-generate-pinned"])
 
 
 def test_precommit_hook(tmp: Path) -> None:
@@ -1838,6 +1842,13 @@ def test_strip_round_six(tmp: Path) -> None:
         out, dropped, _ = strip.strip(f, Opt(drop_gain_map=True))
         truthy("--drop-gain-map lets it go, and says what went",
                b"gain map" not in out and any("after EOI" in d for d in dropped))
+        f.write_bytes(jpeg_with(16, 16, [seg]))
+        truthy(f"{what} with no second image is a name, not a map, and is stripped",
+               b"21496" not in strip.strip(f, Opt())[0]
+               and b"hdr-gain-map" not in strip.strip(f, Opt())[0])
+    f.write_bytes(jpeg_with(16, 16, [(0xE2, b"urn:iso:std:iso:ts:21496:-1\x00\x00"),
+                                     (0xE2, b"MPF\x00II*\x00")]))
+    truthy("an MPF index beside the name is a map too", refuses(f, Opt(), "gain map"))
 
     w = tmp / "r6.webp"
     w.write_bytes(webp_with(16, 16, 0x08, [(b"VP8L", b"\x2f" + bytes(4)),

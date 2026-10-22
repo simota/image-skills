@@ -85,9 +85,11 @@ SKILL_NAMES := $(notdir $(SKILL_DIRS))
 # A skill renamed or retired here leaves its link behind in every host, pointing
 # into this checkout at a directory that is gone. Looping over today's skills
 # alone never sees it, so unlink and status also look for links into this repo's
-# skills/ under a name this repo no longer has.
+# skills/ under a name this repo no longer has, at a directory that is gone. A
+# second name for a live skill (an alias someone made) is theirs, not stale.
 RETIRED = for target in "$$dir"/image-*; do \
-		[ -L "$$target" ] || continue; name=$$(basename "$$target"); \
+		[ -L "$$target" ] && [ ! -e "$$target" ] || continue; \
+		name=$$(basename "$$target"); \
 		case " $(SKILL_NAMES) " in *" $$name "*) continue;; esac; \
 		case "$$(readlink "$$target")" in "$(REPO)/skills/"*) ;; *) continue;; esac; \
 		$(1); \

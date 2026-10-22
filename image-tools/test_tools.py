@@ -1060,6 +1060,34 @@ def test_engine(tmp: Path) -> None:
           f"# x\n\n<!-- deliver:{key} -->\nold\n")
 
 
+def test_make_unlink(tmp: Path) -> None:
+    """A skill renamed here leaves its link in every host; unlink removes it,
+    status names it, and a link into some other checkout is left alone."""
+    import shutil
+    if shutil.which("make") is None:
+        failures.append("  make is not on PATH; the link targets were not exercised")
+        return
+    repo = tmp / "makerepo"
+    shutil.copytree(Path(__file__).resolve().parent.parent, repo, symlinks=True,
+                    ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    host = tmp / "host" / "skills"
+    host.parent.mkdir()
+    dirs = [f"CLAUDE_DIR={host}", f"CODEX_DIR={tmp / 'none1' / 'skills'}",
+            f"AGY_DIR={tmp / 'none2' / 'skills'}"]
+
+    def make(target: str) -> str:
+        return subprocess.run(["make", "-s", "-C", str(repo), target, *dirs],
+                              capture_output=True, text=True).stdout
+    make("link")
+    (host / "image-foreign").symlink_to("/elsewhere/skills/image-foreign")
+    (repo / "skills" / "image-refine").rename(repo / "skills" / "image-retouch")
+    truthy("status names the link a renamed skill left behind",
+           "retired  image-refine" in make("status"))
+    make("unlink")
+    check("unlink removes it with the rest, and leaves another checkout's link",
+          sorted(p.name for p in host.iterdir()), ["image-foreign"])
+
+
 def test_precommit_hook(tmp: Path) -> None:
     """The hook judges the commit, which is the index — not the working tree.
 
@@ -1107,6 +1135,24 @@ def test_precommit_hook(tmp: Path) -> None:
     git("sparse-checkout", "set", "--no-cone", "/*", "!/docs/")
     check("a sparse checkout does not fail the commit over files it left out",
           hook_passes(), True)
+    git("sparse-checkout", "disable")
+    # Intent-to-add is in the index and not in the commit; exported from the
+    # index it became an empty, unlabelled playbook nothing links to.
+    draft = repo / "skills" / "image-prompt" / "playbooks" / "draft.md"
+    draft.write_text("half a thought\n", encoding="utf-8")
+    git("add", "-N", str(draft))
+    check("an intent-to-add file outside the commit does not fail it", hook_passes(), True)
+    git("rm", "-q", "--cached", str(draft))
+    draft.unlink()
+    # A hooks directory shared by every repository runs this in all of them.
+    other = tmp / "otherrepo"
+    other.mkdir()
+    subprocess.run(["git", "init", "-q", str(other)], env=env, capture_output=True)
+    (other / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(other), "add", "a.txt"], env=env, capture_output=True)
+    r = subprocess.run(["sh", str(hook)], cwd=other, env=env, capture_output=True, text=True)
+    check("in a repository that is not this set the hook stands aside",
+          (r.returncode, r.stderr), (0, ""))
 
 
 def test_strip_writes(tmp: Path) -> None:
@@ -2456,6 +2502,7 @@ def main() -> int:
         test_engine_integrity(tmp)
         test_engine_failures(tmp)
         test_precommit_hook(tmp)
+        test_make_unlink(tmp)
         test_edges_round_four(tmp)
     if failures:
         print(f"{len(failures)} failure(s):")

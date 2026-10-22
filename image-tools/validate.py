@@ -9,6 +9,7 @@ belongs in a review, not in this file.
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 import unicodedata
@@ -62,8 +63,8 @@ TICK_PATH_RE = re.compile(r"`([^`\s]*(?:/[^`\s]*|\.(?:md|yaml|py)))`")
 MARKER_RE = re.compile(r"#" + r"TODO\(agent\):")
 
 
-def _live_marker_offsets(text: str) -> list[int]:
-    """Where markers sit outside every code span, with spans found the
+def _prose_ranges(text: str) -> list[tuple[int, int]]:
+    """The stretches of `text` outside every code span, with spans found the
     CommonMark way: a run of n backticks opens a span that only a run of
     exactly n closes, and a run nothing closes is literal text. A pattern for
     "inside backticks" called the prose between two spans code; splitting on
@@ -83,7 +84,53 @@ def _live_marker_offsets(text: str) -> list[int]:
         i = runs[close][1]
         k = close + 1
     prose.append((i, len(text)))
-    return [a + m.start() for a, b in prose for m in MARKER_RE.finditer(text[a:b])]
+    return prose
+
+
+def _live_marker_offsets(text: str) -> list[int]:
+    return [a + m.start() for a, b in _prose_ranges(text)
+            for m in MARKER_RE.finditer(text[a:b])]
+
+
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def prose_links(text: str) -> list[str]:
+    """Link targets a reader can follow: outside fences and code spans, where
+    `![alt](hero.png)` is an example of the syntax rather than a link, with an
+    optional title and `<...>` brackets taken off."""
+    found, fence, para = [], None, []
+
+    def flush():
+        # A link counts when its `[` is prose; its text may hold a code span.
+        joined = "\n".join(para)
+        prose = _prose_ranges(joined)
+        found.extend(m.group(1) for m in LINK_RE.finditer(joined)
+                     if any(a <= m.start() < b for a, b in prose))
+        para.clear()
+    for line in text.splitlines():
+        m = _FENCE.match(line)
+        if fence:
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
+                    and not line[m.end():].strip():
+                fence = None
+            continue
+        if m and not (m.group(1)[0] == "`" and "`" in line[m.end():]):
+            flush()
+            fence = m.group(1)
+        elif line.strip():
+            para.append(line)
+        else:
+            flush()
+    flush()
+    return [link_target(t) for t in found]
+
+
+def link_target(raw: str) -> str:
+    raw = raw.strip()
+    if raw.startswith("<") and ">" in raw:
+        return raw[1:raw.index(">")]
+    return raw.split()[0] if raw.split() else raw
 
 
 def read(p: Path) -> str:
@@ -233,7 +280,7 @@ def v8_links():
     for f in ROOT.rglob("*.md"):
         if ".git" in f.parts:
             continue
-        for target in LINK_RE.findall(read(f)):
+        for target in prose_links(read(f)):
             if target.startswith(("http", "#", "mailto:")):
                 continue
             if not (f.parent / target.split("#")[0]).exists():
@@ -263,6 +310,10 @@ def v10_fixtures():
         fail("V10", "fixtures.yaml holds no list of fixtures; this check would be vacuous")
         return
     for entry in FIX:
+        if not (isinstance(entry, dict) and isinstance(entry.get("ask"), str)
+                and isinstance(entry.get("expect"), str)):
+            fail("V10", f"fixture {entry!r} needs an `ask` and an `expect`")
+            continue
         ask, expect = _norm(entry["ask"]), entry["expect"]
         # Whole words only: a signal inside a longer word is not that signal,
         # and matching it there let a fixture pass that nothing really matched.
@@ -281,6 +332,13 @@ def v11_count():
     if len(SKILLS) > LIM["skills_max"]:
         fail("V11", f"{len(SKILLS)} skills (max {LIM['skills_max']}); "
                     "past the cap an addition must retire one")
+    packs = (H.get("listing") or {}).get("packs_needed_above")
+    if not isinstance(packs, int):
+        fail("V11", "harness.yaml listing.packs_needed_above is not a number; "
+                    "nothing says when the listing needs packs")
+    elif len(SKILLS) > packs:
+        fail("V11", f"{len(SKILLS)} skills is past listing.packs_needed_above "
+                    f"({packs}); split the set into named subsets")
 
 
 def v12_prefix():
@@ -312,8 +370,17 @@ def v14_patterns():
             fail("V14", f"report-only route {name} is missing stops_at")
 
 
+WRITING_TOOLS = {"Write", "Edit", "NotebookEdit"}
+
+
 def v15_permission_class():
     classes = H["permission_classes"]
+    for name, cls in classes.items():
+        tools = {t.strip() for t in str(cls.get("tools", "")).split(",")}
+        writes = cls.get("writes")
+        if writes is not (bool(tools & WRITING_TOOLS)):
+            fail("V15", f"class {name} says writes: {writes!r} and grants "
+                        f"{sorted(tools & WRITING_TOOLS) or 'no writing tool'}")
     for d in SKILL_DIRS:
         declared = CAP.get(d.name, {}).get("class")
         if declared not in classes:
@@ -389,12 +456,13 @@ def v19_paths_resolve():
         readable = [d / "SKILL.md"] + sorted((d / "playbooks").rglob("*.md")) \
             + sorted((d / "reference").rglob("*.md"))
         for f in readable:
-            _check_paths(f, d, f"{d.name}/{f.relative_to(d)}")
+            _check_paths(f, d, f"{d.name}/{f.relative_to(d)}",
+                         str(f.parent.relative_to(d)))
     # Every skill reads them, and skills link different tools: a path that
     # resolves from one skill's directory can be missing from another's.
     for f in shared:
         for d in SKILL_DIRS:
-            _check_paths(f, d, f"{SHARED}/{f.name} (as read by {d.name})")
+            _check_paths(f, d, f"{SHARED}/{f.name} (as read by {d.name})", SHARED)
 
 
 # A backticked path is a reference to this set only if it names a file or sits
@@ -412,7 +480,19 @@ def _is_own_reference(p: str) -> bool:
     return p.startswith((f"{SHARED}/", "registry/", "playbooks/", "reference/"))
 
 
-def _check_paths(f: Path, base: Path, label: str) -> None:
+def _check_paths(f: Path, base: Path, label: str, at: str = "") -> None:
+    """`at` is where `f` sits under `base` as the skill sees it — a link is
+    relative to its page, and only one that climbs out of the skill fails."""
+    for t in prose_links(read(f)):
+        if t.startswith(("http", "#", "mailto:", "/", "~")) or not t.split("#")[0]:
+            continue
+        lexical = os.path.normpath(os.path.join(at, t.split("#")[0]))
+        if lexical == ".." or lexical.startswith("../"):
+            fail("V19", f"{label} links to {t!r}; paths are normalised lexically, "
+                        "so `..` does not traverse the install symlink")
+        elif not (base / lexical).exists():
+            fail("V19", f"{label} links to {t!r}, which does not resolve from a "
+                        "skill directory")
     for p in TICK_PATH_RE.findall(read(f)):
         if p.startswith(("http", "~", "/")) or " " in p or not _is_own_reference(p):
             continue
@@ -515,6 +595,11 @@ def _paragraphs(lines: list[str]):
 
 def v23_labels():
     import fnmatch
+    allowed = H.get("document_labels") or []
+    for pat, label in H["label_by_path"].items():
+        if label not in allowed:
+            fail("V23", f"label_by_path gives {pat} the label {label!r}, which is "
+                        f"not one of document_labels {allowed}")
     for f in sorted(ROOT.rglob("*.md")):
         if ".git" in f.parts:
             continue
@@ -539,10 +624,13 @@ def v24_rendered_tables():
     routing = read(SKILLS_ROOT / ROUTING_FILE)
     readme = read(ROOT / "README.md")
     for name in SKILLS:
-        if f"`{name}`" not in routing:
-            fail("V24", f"{ROUTING_FILE} does not list {name}")
-        if name not in readme:
-            fail("V24", f"README.md does not list {name}")
+        # A row, not a mention: the name in prose elsewhere kept a deleted row
+        # from being noticed.
+        row = re.compile(rf"^\|\s*\[?`{re.escape(name)}`", re.M)
+        if not row.search(routing):
+            fail("V24", f"{ROUTING_FILE} has no table row for {name}")
+        if not row.search(readme):
+            fail("V24", f"README.md has no table row for {name}")
     for doc, text in ((SKILLS_ROOT / ROUTING_FILE, routing), (ROOT / "README.md", readme)):
         for found in set(re.findall(rf"`({re.escape(PREFIX)}[a-z0-9]+(?:-[a-z0-9]+)*)`", text)):
             if found not in SKILLS:
@@ -550,7 +638,8 @@ def v24_rendered_tables():
 
 
 def v25_playbook_rot():
-    pats = [re.compile(p) for p in H["rot_patterns"]]
+    # Case-blind: "Imagen 4" rots exactly as fast as "imagen-4".
+    pats = [re.compile(p, re.I) for p in H["rot_patterns"]]
     for d in SKILL_DIRS:
         for pb in sorted((d / "playbooks").rglob("*.md")) if (d / "playbooks").exists() else []:
             for i, line in enumerate(read(pb).splitlines(), 1):
@@ -563,6 +652,9 @@ def v25_playbook_rot():
 def v26_boundaries_real():
     for name, c in CAP.items():
         for entry in c.get("not") or []:
+            if not isinstance(entry, dict):
+                fail("V26", f"{name} `not:` entry {entry!r} is not a mapping with `go`")
+                continue
             go = entry.get("go")
             if go not in SKILLS:
                 fail("V26", f"{name} `not:` sends work to {go!r}, which is not a skill "
@@ -761,10 +853,12 @@ def v34_tools_reachable():
             if should and not link.is_symlink():
                 fail("V34", f"{d.name} may run {SET}-tools/{tool} but cannot reach "
                             f"it; link it as {tool}")
-            if not should and link.is_symlink():
+            if not should and (link.is_symlink() or link.exists()):
+                # A copy reaches the tool as surely as a link does.
                 why = ("its class grants no Bash" if d.name in wanted
                        else f"linked_tools[{tool}] does not name it")
-                fail("V34", f"{d.name} links {tool} and {why}")
+                fail("V34", f"{d.name} {'links' if link.is_symlink() else 'holds a copy of'} "
+                            f"{tool} and {why}")
             if link.is_symlink() and link.resolve() != source.resolve():
                 fail("V34", f"{d.name}/{tool} points at {link.resolve()}, not "
                             "the set's own")

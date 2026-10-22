@@ -254,7 +254,9 @@ make hooks      # run the rules on every commit, against what is staged
 The hook checks the index, not the working tree: the commit is what is staged,
 so an unrelated unstaged edit cannot fail it and an unstaged fix cannot pass it.
 It will not replace a different pre-commit hook that is already installed
-unless told to with `FORCE=1`.
+unless told to with `FORCE=1`, and in a shared hooks directory it stands aside
+in any repository that is not this set. An intent-to-add file (`git add -N`)
+is not in the commit, so it is not checked.
 
 Adding a rule means adding a deliberate violation to
 `image-tools/test_validate.py`, and adding a figure check means adding one to

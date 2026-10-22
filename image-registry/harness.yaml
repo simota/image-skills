@@ -225,10 +225,12 @@ external_paths: [".agents/", "CLAUDE.md", "AGENTS.md", "GEMINI.md", "settings.js
 # is checked for freshness instead. A model identifier is the fastest-rotting
 # string in this domain — it belongs beside a `Verified:` line, never in a
 # playbook that is budgeted precisely because it is not supposed to rot.
+# Matched case-blind: "Imagen 4" rots exactly as fast as "imagen-4".
 rot_patterns:
-  - '\b(19|20)\d{2}-\d{2}\b'
+  - '\b(19|20)\d{2}[-/]\d{2}\b'
+  - '\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? (19|20)\d{2}\b'
   - '\bv\d+\.\d+(\.\d+)?\b'
-  - '\b(gpt-image|dall-e|imagen|gemini|sdxl|flux)[- ]?\d'
+  - '\b(gpt-image|gpt|dall-e|imagen|gemini|sdxl|flux)[- ]?\d'
 
 # reference/ carries no line budget. It carries these headers instead, so a
 # reader can tell what a file claims and when anyone last checked it.

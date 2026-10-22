@@ -29,9 +29,10 @@ recipe.py check --dir generated/       # only a directory of retained generated 
 ```
 
 `--generator` picks whose output directory is searched and whose invocation goes
-into `engine`. A `--from` file inside a generator's output directory is
+into `engine`. A `--from` file the generator's output glob matches is
 attributed to that generator, and a `--generator` naming another one is
-refused; one anywhere else is refused until `--generator` names it. With neither flag, every declared generator's directory is searched
+refused; one anywhere else — elsewhere under that generator's home included —
+is refused until `--generator` names it. With neither flag, every declared generator's directory is searched
 and the newest file across all of them wins. That fallback is not proof of which
 run made the file: prefer the actual returned path and invocation, particularly
 after failure or concurrent work. Unknown-origin photographs do not need a
@@ -40,8 +41,12 @@ generation recipe and should not be sent to this directory-wide checker.
 It refuses to overwrite an existing file or recipe: that is a sibling-version
 decision for a person (`naming` in the delivering skill), not something a tool
 does quietly. It also refuses a destination whose extension names another
-format — a JPEG placed as `.png` is a conversion nobody performed — and reads
-the prompt before copying anything, so a failure leaves no recipe-less file.
+format — a JPEG placed as `.png` is a conversion nobody performed — and
+`check` reports the same mismatch on a file renamed or converted afterwards. An
+`--input` that does not exist is refused rather than recorded, and a path that
+climbs out of the directory capture ran in (`../`) is recorded absolute, so the
+recipe still names it from the project root. Capture reads the prompt before
+copying anything, so a failure leaves no recipe-less file.
 
 ## The three forms
 

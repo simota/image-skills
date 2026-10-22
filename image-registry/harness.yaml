@@ -108,7 +108,9 @@ refutation:
 # Neither generator is reimplemented here and neither image API is called
 # directly. `control:` is what separates them and it is the thing a prompt has to
 # know: `canvas` takes pixel dimensions, `aspect` takes a ratio from a fixed list
-# and nothing else. `default` is what `recipe.py` assumes when a run does not say.
+# and nothing else. `default` is the generator the tests capture under; no run
+# assumes it — `recipe.py` reads the generator off the file's directory or the
+# flag, because recording a default would put a command nobody ran in `engine`.
 #
 # These are a snapshot of one installed copy of each on one machine (see each
 # reference page's `Verified:` line). Nothing re-reads the backing tools.

@@ -1510,6 +1510,80 @@ def test_edges_round_four(tmp: Path) -> None:
     truthy("render names markers in the wrong order as such", "order" in said)
 
 
+def test_recipe_round_six(tmp: Path) -> None:
+    """A recipe that names its files from where a later reader stands, and a
+    generator credited for what it left rather than for where it lives."""
+    import os
+    d = tmp / "r6"
+    home = d / "codex-home"
+    out = home / "generated_images" / "s1"
+    out.mkdir(parents=True)
+    (out / "exec-1.png").write_bytes(png(32, 32))
+    (home / "ref.png").write_bytes(png(8, 8))
+    (d / "docs" / "sub").mkdir(parents=True)
+    (d / "ref.png").write_bytes(png(8, 8))
+    old, here = os.environ.get("CODEX_HOME"), os.getcwd()
+    os.environ["CODEX_HOME"] = str(home)
+    try:
+        check("a file under a generator's home that its output glob does not "
+              "match is not credited to it", recipe.main(
+                  ["capture", "--from", str(home / "ref.png"), "--to", str(d / "ref-out.png"),
+                   "--prompt", PROMPT]), 2)
+        truthy("and nothing is placed", not (d / "ref-out.png").exists())
+        os.chdir(d / "docs" / "sub")
+        try:
+            check("a capture run from a subdirectory", recipe.main(
+                ["capture", "--from", str(out / "exec-1.png"), "--to", "../../assets/n.png",
+                 "--prompt", PROMPT, "--input", "../../ref.png:style"]), 0)
+            check("an input that does not exist is refused, not recorded", recipe.main(
+                ["capture", "--from", str(out / "exec-1.png"), "--to", "../../assets/m.png",
+                 "--prompt", PROMPT, "--input", "../../nope/missing.png:edit target"]), 2)
+            truthy("and nothing is placed", not (d / "assets" / "m.png").exists())
+        finally:
+            os.chdir(here)
+        doc = yaml.safe_load(recipe.sidecar_of(d / "assets" / "n.png").read_text(encoding="utf-8"))
+        check("a path that climbed out of where capture ran is recorded absolute",
+              (doc["output"]["placed"], doc["inputs"][0]["path"]),
+              (str(d / "assets" / "n.png"), str(d / "ref.png")))
+        os.chdir(d)
+        try:
+            check("so that check passes it from the project root",
+                  recipe.check_one(Path("assets/n.png")), [])
+        finally:
+            os.chdir(here)
+        side = recipe.sidecar_of(d / "assets" / "n.png")
+        side.write_text(side.read_text(encoding="utf-8").replace(
+            str(d / "assets" / "n.png"), "../../assets/n.png"), encoding="utf-8")
+        os.chdir(d)
+        try:
+            check("and a recipe an older capture wrote with ../ passes from there too",
+                  recipe.check_one(Path("assets/n.png")), [])
+        finally:
+            os.chdir(here)
+
+        (d / "conv").mkdir()
+        jpg = d / "conv" / "a.png"
+        jpg.write_bytes(jpeg_with(32, 32, []))
+        recipe.sidecar_of(jpg).write_text(
+            recipe.sidecar_of(d / "assets" / "n.png").read_text(encoding="utf-8")
+            .replace("../../assets/n.png", str(jpg)), encoding="utf-8")
+        truthy("check reports a JPEG living under a .png name",
+               any("is JPEG, and its name says PNG" in x for x in recipe.check_one(jpg)))
+    finally:
+        os.chdir(here)
+        if old is None:
+            os.environ.pop("CODEX_HOME")
+        else:
+            os.environ["CODEX_HOME"] = old
+
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        check("check --dir on a file exits 2", recipe.main(
+            ["check", "--dir", str(d / "ref.png")]), 2)
+    truthy("and says it is not a directory, not that there is nothing to check",
+           "not a directory" in err.getvalue())
+
+
 def test_recipe_round_five(tmp: Path) -> None:
     """A flag contradicting the directory, recipes capture wrote and check
     refused, an input path cut at its own colon, and one odd entry ending a
@@ -1536,12 +1610,11 @@ def test_recipe_round_five(tmp: Path) -> None:
         old_default = recipe.GENERATORS[aspect_gen]["home_default"]
         recipe.GENERATORS[aspect_gen]["home_default"] = str(d / "nested-home")
         try:
-            got = recipe.generators_holding(d / "nested-home" / "a.jpg")
-            check("the deepest home holding a file comes first",
-                  got, [aspect_gen, recipe.DEFAULT_GENERATOR])
             made = d / "nested-home" / "brain" / "x" / "a.jpg"
             made.parent.mkdir(parents=True)
             made.write_bytes(jpeg_with(16, 16, []))
+            check("a broader home holding a file its output glob does not match "
+                  "is not who made it", recipe.generators_holding(made), [aspect_gen])
             check("--generator naming only the broader home's generator is refused",
                   recipe.main(["capture", "--from", str(made), "--generator",
                                recipe.DEFAULT_GENERATOR, "--to", str(d / "broad.jpg"),
@@ -2375,6 +2448,7 @@ def main() -> int:
         test_strip_round_six(tmp)
         test_strip_round_five(tmp)
         test_recipe_round_five(tmp)
+        test_recipe_round_six(tmp)
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_cli_bounds_and_render_sections(tmp)

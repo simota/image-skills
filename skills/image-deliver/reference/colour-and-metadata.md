@@ -52,7 +52,7 @@ using an appropriate processor rather than forcing this helper to fit.
 |---|---|
 | The colour profile, and a PNG's `cICP`, `mDCV` and `cLLI` colour chunks | Camera and lens fields |
 | JPEG `APP0` only when it is JFIF, `APP14` only when it is Adobe | GPS and location |
-| Any provenance or content-credential block the project has decided to carry | Software and timestamps |
+| Any provenance or content-credential block the project has decided to carry: PNG `caBX`, JPEG `APP11` only when it is JUMBF, WebP `C2PA` | Software and timestamps |
 | Alpha channel | Thumbnails (in a JFIF header or a JFXX block), previews, comments |
 | — | All of Exif, orientation included; a non-upright orientation is refused first |
 | — | Anything after the JPEG EOI, the PNG IEND or the WebP RIFF end; stray bytes between JPEG segments. Every one is reported |

@@ -148,11 +148,19 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
     # skips are reported rather than lost quietly, and a file that ends before
     # EOI is refused as PNG's missing IEND is: half a picture is not stripped.
     out, dropped, tail, pos = bytearray(b"\xff\xd8"), [], None, 2
+    scanned = False
     for marker, start, end, body in imgfacts.jpeg_segments(raw, through_scans=True):
         if end > len(raw):
             raise Refused("JPEG is truncated inside a segment; nothing was changed")
         if start > pos:
+            if scanned:
+                # Once a scan has begun, bytes the walk could not place are
+                # most likely pixels it misread; dropping them would edit the
+                # picture, which this never does.
+                raise Refused(f"{start - pos} bytes after a scan began could not be "
+                              "placed in any segment; nothing was changed")
             dropped.append(("stray bytes between segments", start - pos))
+        scanned = scanned or marker == 0xDA
         pos = end
         whole = raw[start:end]
         if body is None:                       # entropy data, or a standalone marker

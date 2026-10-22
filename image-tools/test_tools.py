@@ -1575,6 +1575,9 @@ def test_strip_round_five(tmp: Path) -> None:
     out, dropped, _ = strip.strip(f, Opt())
     truthy("fill bytes before a restart do not end the scan", entropy in out)
     check("and nothing in it is reported as stray", dropped, [])
+    f.write_bytes(head + b"AB\xff\x4a\x00\x03\x00CDEFG" + b"\xff\xd9")
+    truthy("bytes a scan's walk could not place are refused, not dropped as stray",
+           refuses(f, Opt(), "after a scan began"))
 
     jfif = b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00"
     f.write_bytes(jpeg_with(16, 16, [(0xE0, jfif + b"PROMPTTEXT")]))

@@ -39,6 +39,11 @@ CASES: list[tuple[str, str, str, str, str]] = [
      "| `3840x2160` | 16:9 | 8.29 MP", "| `3840x2160` | 16:9 | 8.31 MP"),
     ("check_sizes", "wrong", SIZES,
      "| `1000x1000` | multiple of 16 |", "| `1024x1024` | multiple of 16 |"),
+    # a row without its closing pipe is still a row; the table used to end
+    # there, taking this row and every one after it out of the check
+    ("check_sizes", "wrong", SIZES,
+     "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish |",
+     "| `2048x2048` | 1:1 | 4.20 MP | square, print-ish"),
     ("check_sizes", "vacuous", SIZES,
      "1. Maximum edge is 3840px or less", "1. Keep the long edge sensible"),
     ("check_sizes", "vacuous", SIZES,
@@ -57,6 +62,10 @@ CASES: list[tuple[str, str, str, str, str]] = [
      "| `@2x` | 768x512 | 2.0 | 1536x1024 |", "| `@2x` | 768x512 | 1.5 | 1152x768 |"),
     ("check_density", "vacuous", RUNGS,
      "Source must be at least: 2304x1536", "The source should be big enough."),
+    # a second floor that disagrees with the first; only the first was read
+    ("check_density", "wrong", RUNGS,
+     "Source must be at least: 2304x1536",
+     "Source must be at least: 2304x1536\n\nSource must be at least: 768x512"),
     ("check_density", "vacuous", RUNGS,
      "| `@1x` | 768x512 | 1.0 | 768x512 |", "| `@1x` | the CSS box | none | the same again |"),
     ("check_canvas", "wrong", REG, "    max_edge: 3840", "    max_edge: 4096"),

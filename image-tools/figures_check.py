@@ -93,7 +93,9 @@ def table_rows(text: str, head: re.Pattern) -> list[tuple[int, str]]:
             s = lines[i].strip()
             if SEP.match(s):
                 continue
-            if not (s.startswith("|") and s.endswith("|")):
+            # A row without its closing pipe is still a row (GFM); ending the
+            # table there dropped it, and every row after it, from the check.
+            if not s.startswith("|"):
                 break
             out.append((i + 1, s))
     return out
@@ -237,11 +239,11 @@ def check_density() -> int:
         if ew * eh > widest[0] * widest[1]:
             widest = (ew, eh)
 
-    m = FLOOR.search(text)
-    if not m:
+    floors = list(FLOOR.finditer(text))
+    if not floors:
         fail("export-targets.md", "no `Source must be at least: WxH` line; the "
                                   "floor the rungs imply is not stated")
-    else:
+    for m in floors:                          # every statement, as for the canvas
         stated = (int(m.group(1)), int(m.group(2)))
         if stated != widest:
             fail("export-targets.md",

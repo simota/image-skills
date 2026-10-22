@@ -638,7 +638,9 @@ def test_strip(tmp: Path) -> None:
         (0xE1, b"Exif\x00\x00" + exif(None)),
         (0xE1, b"http://ns.adobe.com/xap/1.0/\x00<x/>"),
         (0xE2, b"ICC_PROFILE\x00\x01\x01" + b"\x00" * 8),
-        (0xEB, b"JP\x00\x00" + b"c2pa" + b"\x00" * 8),
+        # JPEG XT framing (CI, En, Z), then the JUMBF superbox header
+        (0xEB, b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 24) + b"jumb"
+         + b"c2pa" + b"\x00" * 12),
         (0xEE, b"Adobe\x00\x64\x00\x00\x00\x00\x00"),
         (0xFE, b"a comment"),
     ]))
@@ -1619,10 +1621,12 @@ def test_strip_round_five(tmp: Path) -> None:
            b"PROMPTTEXT" not in out and jfif in out)
     truthy("and reported", any("after the JFIF header" in d for d in dropped))
 
-    jumbf = b"JP\x00\x01\x00\x00\x00\x01" + b"c2pa-box"
-    f.write_bytes(jpeg_with(16, 16, [(0xEB, b"XMP\x00SECRET"), (0xEB, jumbf)]))
+    jumbf = b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 16) + b"jumb" + b"c2pa-box"
+    xt = b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 16) + b"priv" + b"SECRET2"
+    f.write_bytes(jpeg_with(16, 16, [(0xEB, b"XMP\x00SECRET"), (0xEB, xt), (0xEB, jumbf)]))
     out, dropped, _ = strip.strip(f, Opt())
     truthy("an APP11 that is not JUMBF is removed", b"SECRET" not in out)
+    truthy("nor is a JPEG XT box that only opens like one", b"SECRET2" not in out)
     truthy("a JUMBF APP11 is a credential and stays", jumbf in out)
     out, _, _ = strip.strip(f, Opt(drop_credentials=True))
     truthy("unless credentials are dropped", jumbf not in out)

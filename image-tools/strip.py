@@ -59,9 +59,15 @@ PNG_RENDER = {"tRNS", "bKGD", "pHYs"}
 PNG_CREDENTIALS = {"caBX"}                    # C2PA content credentials
 
 JPEG_CREDENTIALS = {0xEB}                     # APP11, JUMBF
-# Kept only when it is JUMBF: the box's common identifier opens the segment.
-# Any other APP11 is a block nobody here has named, and those go.
+# Kept only when it is JUMBF: after the common identifier, the En and Z
+# fields, every segment repeats the box header, whose type is `jumb`. Any
+# other APP11 — another JPEG XT box, or private data that happens to open
+# with "JP" — is a block nobody here has named, and those go.
 JUMBF_CI = b"JP"
+
+
+def _is_jumbf(body: bytes) -> bool:
+    return body.startswith(JUMBF_CI) and body[12:16] == b"jumb"
 # Kept by marker *and* signature: APP0 also carries JFXX thumbnails, and an
 # embedded thumbnail is on the list of what goes.
 JPEG_KEEP_APP = {0xE0: b"JFIF\x00",          # density
@@ -180,7 +186,7 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
         elif marker == 0xE2 and body.startswith(b"ICC_PROFILE\x00"):
             keep = not opt.drop_profile
         elif marker in JPEG_CREDENTIALS:
-            keep = body.startswith(JUMBF_CI) and not opt.drop_credentials
+            keep = _is_jumbf(body) and not opt.drop_credentials
         else:
             keep = body.startswith(JPEG_KEEP_APP.get(marker, b"\x00unmatched"))
         if keep and marker == 0xE0 and len(body) > JFIF_HEAD:

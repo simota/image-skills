@@ -580,6 +580,17 @@ def _(r): (r / f"{S}image-generate/tools").symlink_to("../../image-tools")
 def _(r): (r / f"{S}image-review/playbooks/root").symlink_to("../../..")
 
 
+@case("V30-skill-relative-link", says="orphan.md is reachable from nothing")
+def _(r):
+    # A Markdown link resolves from its own page; read from the skill root it
+    # made a page the link does not reach look linked.
+    (r / f"{S}image-prompt/reference/orphan.md").write_text(
+        "<!-- image:deferred -->\n", encoding="utf-8")
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee [o](reference/orphan.md).\n",
+                 encoding="utf-8")
+
+
 @case("V4-nested-copy", says="playbooks/old/structure.md")
 def _(r):
     (r / f"{S}image-prompt/playbooks/old").mkdir()

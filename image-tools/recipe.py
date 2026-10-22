@@ -157,7 +157,11 @@ def capture(a: argparse.Namespace) -> int:
         return 2
     if a.source:
         held = generators_holding(a.source)
-        if a.generator and held and a.generator not in held:
+        # Only the deepest home is evidence: a broader one holding it too is
+        # the nesting, not a second place the file could have come from.
+        deepest = [n for n in held
+                   if len(home_of(n).resolve().parts) == len(home_of(held[0]).resolve().parts)]
+        if a.generator and held and a.generator not in deepest:
             # The directory is evidence and the flag is a claim; recording the
             # claim would put the wrong invocation in `engine`.
             print(f"{a.source} is in {held[0]}'s output directory, not "

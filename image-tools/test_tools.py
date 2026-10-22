@@ -1514,6 +1514,10 @@ def test_recipe_round_five(tmp: Path) -> None:
             made = d / "nested-home" / "brain" / "x" / "a.jpg"
             made.parent.mkdir(parents=True)
             made.write_bytes(jpeg_with(16, 16, []))
+            check("--generator naming only the broader home's generator is refused",
+                  recipe.main(["capture", "--from", str(made), "--generator",
+                               recipe.DEFAULT_GENERATOR, "--to", str(d / "broad.jpg"),
+                               "--prompt", PROMPT]), 2)
             check("--generator naming the deeper home's generator is accepted",
                   recipe.main(["capture", "--from", str(made), "--generator", aspect_gen,
                                "--to", str(d / "nested.jpg"), "--prompt", PROMPT]), 0)

@@ -644,7 +644,7 @@ def v30_reference_orphans():
         linked = _targets(LINK_RE.findall(body), d)
         for pb in sorted((d / "playbooks").rglob("*.md")) if (d / "playbooks").exists() else []:
             # A link is relative to its page; a backticked path to the skill.
-            linked |= _targets(LINK_RE.findall(read(pb)), pb.parent, d)
+            linked |= _targets(LINK_RE.findall(read(pb)), pb.parent)
             linked |= _targets(TICK_PATH_RE.findall(read(pb)), d)
         for f in sorted(ref_dir.rglob("*.md")):
             if f.resolve() not in linked:

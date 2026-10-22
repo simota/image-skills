@@ -162,6 +162,7 @@ class Opt:
         self.drop_profile = kw.get("drop_profile", False)
         self.drop_credentials = kw.get("drop_credentials", False)
         self.orientation_is_applied = kw.get("orientation_is_applied", False)
+        self.drop_gain_map = kw.get("drop_gain_map", False)
 
 
 # --- imgfacts ----------------------------------------------------------------
@@ -597,6 +598,10 @@ def test_strip(tmp: Path) -> None:
     # content credentials are a project decision, so they survive by default
     f.write_bytes(png(16, 16, extra=raw_chunk(b"caBX", b"\x00" * 16)))
     truthy("caBX stays by default", "caBX" in tags_of(strip.strip(f, Opt())[0]))
+    f.write_bytes(png(16, 16, extra=raw_chunk(b"caBX", b"\x00" * 16)
+                      + raw_chunk(b"tEXt", b"prompt\x00a red circle")))
+    truthy("caBX beside a text chunk is refused, not shipped broken",
+           refuses(f, Opt(), "content credential"))
     truthy("caBX goes when asked",
            "caBX" not in tags_of(strip.strip(f, Opt(drop_credentials=True))[0]))
 
@@ -638,9 +643,6 @@ def test_strip(tmp: Path) -> None:
         (0xE1, b"Exif\x00\x00" + exif(None)),
         (0xE1, b"http://ns.adobe.com/xap/1.0/\x00<x/>"),
         (0xE2, b"ICC_PROFILE\x00\x01\x01" + b"\x00" * 8),
-        # JPEG XT framing (CI, En, Z), then the JUMBF superbox header
-        (0xEB, b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 24) + b"jumb"
-         + b"c2pa" + b"\x00" * 12),
         (0xEE, b"Adobe\x00\x64\x00\x00\x00\x00\x00"),
         (0xFE, b"a comment"),
     ]))
@@ -651,10 +653,24 @@ def test_strip(tmp: Path) -> None:
     truthy("jpeg ICC stays", b"ICC_PROFILE\x00" in out)
     truthy("jpeg JFIF stays", b"JFIF\x00" in out)
     truthy("jpeg Adobe transform stays", b"Adobe\x00" in out)
-    truthy("jpeg credentials stay by default", b"c2pa" in out)
-    truthy("jpeg credentials go when asked",
-           b"c2pa" not in strip.strip(j, Opt(drop_credentials=True))[0])
     truthy("the entropy-coded data is copied verbatim", out.endswith(b"ENTROPY\xff\xd9"))
+
+    # A credential's signature hashes every byte outside its manifest: kept
+    # beside any other removal, it ships reading as tampered.
+    # JPEG XT framing (CI, En, Z), then the JUMBF superbox header
+    jumbf = (0xEB, b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 24) + b"jumb"
+             + b"c2pa" + b"\x00" * 12)
+    signed = tmp / "signed.jpg"
+    signed.write_bytes(jpeg_with(64, 32, [jumbf]))
+    out, dropped, _ = strip.strip(signed, Opt())
+    check("a credential with nothing else to strip stays, and the file is unchanged",
+          (out, dropped), (signed.read_bytes(), []))
+    signed.write_bytes(jpeg_with(64, 32, [jumbf, (0xFE, b"a comment")]))
+    truthy("a credential beside anything to strip is refused, not broken",
+           refuses(signed, Opt(), "content credential"))
+    out, _, _ = strip.strip(signed, Opt(drop_credentials=True))
+    truthy("unless credentials are dropped, which takes both",
+           b"c2pa" not in out and b"a comment" not in out)
 
     # the standard allows 0xFF fill before a marker, and standalone markers carry
     # no length. Reading two bytes of "length" off one walks the parser into the
@@ -1643,13 +1659,17 @@ def test_strip_round_five(tmp: Path) -> None:
 
     jumbf = b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 16) + b"jumb" + b"c2pa-box"
     xt = b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 16) + b"priv" + b"SECRET2"
-    f.write_bytes(jpeg_with(16, 16, [(0xEB, b"XMP\x00SECRET"), (0xEB, xt), (0xEB, jumbf)]))
+    f.write_bytes(jpeg_with(16, 16, [(0xEB, b"XMP\x00SECRET"), (0xEB, xt)]))
     out, dropped, _ = strip.strip(f, Opt())
     truthy("an APP11 that is not JUMBF is removed", b"SECRET" not in out)
     truthy("nor is a JPEG XT box that only opens like one", b"SECRET2" not in out)
-    truthy("a JUMBF APP11 is a credential and stays", jumbf in out)
+    f.write_bytes(jpeg_with(16, 16, [(0xEB, jumbf)]))
+    truthy("a JUMBF APP11 is a credential and stays", jumbf in strip.strip(f, Opt())[0])
+    f.write_bytes(jpeg_with(16, 16, [(0xEB, b"XMP\x00SECRET"), (0xEB, xt), (0xEB, jumbf)]))
+    truthy("and is refused beside those, since removing them breaks it",
+           refuses(f, Opt(), "content credential"))
     out, _, _ = strip.strip(f, Opt(drop_credentials=True))
-    truthy("unless credentials are dropped", jumbf not in out)
+    truthy("unless credentials are dropped", jumbf not in out and b"SECRET" not in out)
 
     f = tmp / "c2pa.webp"
     f.write_bytes(webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4)),
@@ -1669,6 +1689,57 @@ def test_strip_round_five(tmp: Path) -> None:
     f.write_bytes(raw)
     check("and strip says so rather than reading the next chunk",
           strip.main([str(f)]), 1)
+
+
+def test_strip_round_six(tmp: Path) -> None:
+    """What a strip changes about the picture, or about what it can prove."""
+    f = tmp / "r6.jpg"
+
+    def long_orientation(o: int) -> bytes:
+        return (b"II\x2a\x00" + struct.pack("<I", 8) + struct.pack("<H", 1)
+                + struct.pack("<HHII", 0x0112, 4, 1, o) + struct.pack("<I", 0))
+
+    f.write_bytes(jpeg_with(16, 16, [(0xE1, b"Exif\x00\x00" + long_orientation(6))]))
+    truthy("an orientation stored as LONG is refused like a SHORT one",
+           refuses(f, Opt(), "orientation is 6"))
+    p = tmp / "r6.png"
+    p.write_bytes(png(16, 16, extra=raw_chunk(b"eXIf", long_orientation(8))))
+    truthy("in a PNG eXIf too", refuses(p, Opt(), "orientation is 8"))
+    for o in (0, 9):
+        f.write_bytes(jpeg_with(16, 16, [(0xE1, b"Exif\x00\x00" + exif(o))]))
+        truthy(f"orientation {o} is no rotation, so it is stripped, not refused",
+               b"Exif" not in strip.strip(f, Opt())[0])
+
+    for what, seg in (("an ISO 21496-1 APP2", (0xE2, b"urn:iso:std:iso:ts:21496:-1\x00\x00")),
+                      ("hdrgm XMP", (0xE1, b"http://ns.adobe.com/xap/1.0/\x00<x xmlns:hdrgm="
+                                     b"'http://ns.adobe.com/hdr-gain-map/1.0/'/>"))):
+        f.write_bytes(jpeg_with(16, 16, [seg]) + b"\xff\xd8gain map\xff\xd9")
+        truthy(f"a JPEG with {what} naming a gain map is refused",
+               refuses(f, Opt(), "gain map"))
+        out, dropped, _ = strip.strip(f, Opt(drop_gain_map=True))
+        truthy("--drop-gain-map lets it go, and says what went",
+               b"gain map" not in out and any("after EOI" in d for d in dropped))
+
+    w = tmp / "r6.webp"
+    w.write_bytes(webp_with(16, 16, 0x08, [(b"VP8L", b"\x2f" + bytes(4)),
+                                           (b"EXIF", exif(None)), (b"C2PA", b"manifest")]))
+    truthy("a WebP credential beside Exif is refused, not shipped broken",
+           refuses(w, Opt(), "content credential"))
+
+    frame = bytes(16) + b"VP8L" + struct.pack("<I", 5) + b"\x2f" + bytes(4) + b"\x00"
+    secret = b"XMP " + struct.pack("<I", 15) + b"prompt=secret!!" + b"\x00"
+    anim = [(b"ANIM", bytes(6)), (b"ANMF", frame + secret), (b"ANMF", frame)]
+    w.write_bytes(webp_with(16, 16, 0x02, anim))
+    out, dropped, _ = strip.strip(w, Opt())
+    truthy("a chunk hidden inside an animation frame is removed", b"secret" not in out)
+    truthy("and named", any("XMP in an ANMF frame" in d for d in dropped))
+    truthy("the frame's image data is copied verbatim", out.count(frame) == 2)
+    w.write_bytes(webp_with(16, 16, 0x02, [(b"ANIM", bytes(6)), (b"ANMF", frame)]))
+    out, dropped, _ = strip.strip(w, Opt())
+    check("an animation with nothing hidden in it is unchanged", (out, dropped),
+          (w.read_bytes(), []))
+    w.write_bytes(webp_with(16, 16, 0x02, [(b"ANMF", frame[:20] + b"\xff\xff\x00\x00")]))
+    truthy("a frame whose chunk runs past it is refused", refuses(w, Opt(), "ANMF"))
 
 
 def test_strip_concurrent_change(tmp: Path) -> None:
@@ -2301,6 +2372,7 @@ def main() -> int:
         test_strip_leaks(tmp)
         test_strip_writes(tmp)
         test_strip_concurrent_change(tmp)
+        test_strip_round_six(tmp)
         test_strip_round_five(tmp)
         test_recipe_round_five(tmp)
         test_strip_accounts_for_every_byte(tmp)

@@ -53,21 +53,33 @@ using an appropriate processor rather than forcing this helper to fit.
 | The colour profile, and a PNG's `cICP`, `mDCV` and `cLLI` colour chunks | Camera and lens fields |
 | JPEG `APP0` only when it is JFIF, `APP14` only when it is Adobe | GPS and location |
 | Any provenance or content-credential block the project has decided to carry: PNG `caBX`, JPEG `APP11` only when it is JUMBF, WebP `C2PA` | Software and timestamps |
-| Alpha channel | Thumbnails (in a JFIF header or a JFXX block), previews, comments |
+| Alpha channel | Thumbnails (in a JFIF header or a JFXX block), previews, comments, and any chunk inside a WebP animation frame other than its image data |
 | — | All of Exif, orientation included; a non-upright orientation is refused first |
 | — | Anything after the JPEG EOI, the PNG IEND or the WebP RIFF end; stray bytes between JPEG segments. Every one is reported |
 
 **Orientation is the one that bites.** Stripping an orientation flag without
 first applying it rotates the picture ninety degrees somewhere downstream, on
 some viewers and not others. `strip.py` refuses rather than guessing: an Exif
-orientation that is not upright stops the run, because applying the rotation
-would mean decoding the image, which is not this stage's job. Rotate the pixels
-first, then pass `--orientation-is-applied`.
+orientation that turns the picture (2 to 8, stored as SHORT or LONG) stops the
+run, because applying the rotation would mean decoding the image, which is not
+this stage's job. Rotate the pixels first, then pass `--orientation-is-applied`.
 
 **Provenance blocks are a project decision, not this stage's.** If the project
 has decided to carry a content credential or a generated-image marker, stripping
 it is undoing a policy. Ask. `strip.py` keeps them unless told otherwise, and
 `--drop-credentials` is how a person says so.
+
+**A kept credential and a strip do not go together.** A C2PA signature hashes
+every byte of the file outside its own manifest, so removing anything else
+leaves a credential every validator reports as tampered. `strip.py` refuses
+that combination rather than shipping it: strip before signing, or pass
+`--drop-credentials` and sign the stripped file again.
+
+**An HDR gain map is how the picture is shown, not what travels with it.** A
+JPEG that names one (`hdrgm` XMP, or an ISO 21496-1 `APP2`) keeps the map as a
+second image after its end, which stripping removes; an HDR display then shows
+the SDR base alone. `strip.py` refuses such a file unless `--drop-gain-map`
+says that is the decision.
 
 **Generation parameters are the reason to strip by default.** Several generators
 write the prompt, the model and the settings into PNG text chunks or XMP; an

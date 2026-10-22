@@ -130,7 +130,8 @@ dimensions later. [`strip.py`](image-tools/strip.py) removes what
 should not ship — Exif, XMP, generation parameters, comments, timestamps,
 embedded thumbnails, and anything appended after the image ends — while
 keeping the colour profile, the alpha channel and any content credential the
-project decided to carry. [`refute.py`](image-tools/refute.py) puts a claim to
+project decided to carry — and refusing to keep a credential beside any other
+removal, which would leave its signature reading as tampered. [`refute.py`](image-tools/refute.py) puts a claim to
 the engines that did not make it and asks them to break it; an answer outside
 its schema, from an engine that exited non-zero or reported an error, or in
 text that is not UTF-8, is no answer, a claim refuted or contested exits 3, one that not

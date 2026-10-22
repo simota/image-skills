@@ -143,11 +143,15 @@ def sidecar_of(image: Path) -> Path:
 
 def _split_input(spec: str) -> tuple[str, str]:
     """PATH:ROLE, where either half may hold a colon. The split whose path
-    exists wins; with none existing, the first colon, as the flag reads."""
+    exists wins; with none existing, the first colon, as the flag reads. Two
+    splits that both name a file are a question, so ValueError says which."""
     cuts = [i for i, c in enumerate(spec) if c == ":"]
-    for i in [len(spec)] + cuts:
-        if spec[:i] and Path(spec[:i]).expanduser().exists():
-            return spec[:i], spec[i + 1:]
+    found = [i for i in cuts + [len(spec)]
+             if spec[:i] and Path(spec[:i]).expanduser().exists()]
+    if len(found) > 1:
+        raise ValueError(" and ".join(repr(spec[:i]) for i in found))
+    if found:
+        return spec[:found[0]], spec[found[0] + 1:]
     return (spec[:cuts[0]], spec[cuts[0] + 1:]) if cuts else (spec, "")
 
 
@@ -190,7 +194,12 @@ def capture(a: argparse.Namespace) -> int:
             return 2
     inputs = []
     for spec in a.input or []:
-        path, role = _split_input(spec)
+        try:
+            path, role = _split_input(spec)
+        except ValueError as e:
+            print(f"--input {spec!r} could name either of {e}; rename one, "
+                  "or pass a path that names only one", file=sys.stderr)
+            return 2
         if not path.strip():
             print(f"--input {spec!r} names no path", file=sys.stderr)
             return 2

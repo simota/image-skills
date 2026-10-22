@@ -1565,6 +1565,16 @@ def test_recipe_round_five(tmp: Path) -> None:
     check("the split is where the path that exists ends, on either side of a colon",
           doc["inputs"], [{"path": "refs/shot 12:30.png", "role": "edit target"},
                           {"path": "ref.png", "role": "mask: inpaint the sky"}])
+    (d / "refs" / "shot 12").write_bytes(png(8, 8))      # now both splits name a file
+    os.chdir(d)
+    try:
+        check("an input two splits could both name is refused, not guessed",
+              recipe.main(["capture", "--from", "src.png", "--to", str(d / "ambig.png"),
+                           "--prompt", PROMPT, "--generator", recipe.DEFAULT_GENERATOR,
+                           "--input", "refs/shot 12:30.png:edit target"]), 2)
+    finally:
+        os.chdir(here)
+    truthy("and nothing is placed", not (d / "ambig.png").exists())
     check("output.generated is absolute, so it names the file from anywhere",
           doc["output"]["generated"], str(d / "src.png"))
     check("and the recipe capture wrote passes check",

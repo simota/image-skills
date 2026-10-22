@@ -110,13 +110,18 @@ def newest_generated(name: str | None = None) -> tuple[str, Path] | None:
     return n, p
 
 
+def generators_holding(path: Path) -> list[str]:
+    """Every generator whose home holds this file, the deepest home first: one
+    home can sit inside another (a CODEX_HOME set to the user's home)."""
+    where = path.resolve()
+    held = [n for n in GENERATORS if where.is_relative_to(home_of(n).resolve())]
+    return sorted(held, key=lambda n: -len(home_of(n).resolve().parts))
+
+
 def generator_holding(path: Path) -> str | None:
     """The generator whose output directory this file sits in, if any."""
-    where = path.resolve()
-    for n in GENERATORS:
-        if where.is_relative_to(home_of(n).resolve()):
-            return n
-    return None
+    held = generators_holding(path)
+    return held[0] if held else None
 
 
 # What a placed file's extension promises. A JPEG written to `hero.png` is a
@@ -136,19 +141,29 @@ def sidecar_of(image: Path) -> Path:
 
 # --- capture -----------------------------------------------------------------
 
+def _split_input(spec: str) -> tuple[str, str]:
+    """PATH:ROLE, where either half may hold a colon. The split whose path
+    exists wins; with none existing, the first colon, as the flag reads."""
+    cuts = [i for i, c in enumerate(spec) if c == ":"]
+    for i in [len(spec)] + cuts:
+        if spec[:i] and Path(spec[:i]).expanduser().exists():
+            return spec[:i], spec[i + 1:]
+    return (spec[:cuts[0]], spec[cuts[0] + 1:]) if cuts else (spec, "")
+
+
 def capture(a: argparse.Namespace) -> int:
     if a.generator and a.generator not in GENERATORS:
         print(f"{a.generator} is not one of {sorted(GENERATORS)}", file=sys.stderr)
         return 2
     if a.source:
-        held = generator_holding(a.source)
-        if a.generator and held and held != a.generator:
+        held = generators_holding(a.source)
+        if a.generator and held and a.generator not in held:
             # The directory is evidence and the flag is a claim; recording the
             # claim would put the wrong invocation in `engine`.
-            print(f"{a.source} is in {held}'s output directory, not "
+            print(f"{a.source} is in {held[0]}'s output directory, not "
                   f"{a.generator}'s; nothing was written", file=sys.stderr)
             return 2
-        src, produced_by = a.source, a.generator or held
+        src, produced_by = a.source, a.generator or (held[0] if held else None)
         if produced_by is None:
             print(f"{src} is not under any generator's output directory; name "
                   f"the one that made it with --generator {sorted(GENERATORS)}",
@@ -171,11 +186,7 @@ def capture(a: argparse.Namespace) -> int:
             return 2
     inputs = []
     for spec in a.input or []:
-        # The role is after the last colon: a file name can hold one, and a
-        # split at the first cut the path short and passed it off as the role.
-        path, sep, role = spec.rpartition(":")
-        if not sep:
-            path, role = spec, ""
+        path, role = _split_input(spec)
         if not path.strip():
             print(f"--input {spec!r} names no path", file=sys.stderr)
             return 2

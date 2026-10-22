@@ -576,6 +576,17 @@ def _(r):
 def _(r): (r / f"{S}image-generate/tools").symlink_to("../../image-tools")
 
 
+@case("V34-ancestor", says="reaches image-tools/")
+def _(r): (r / f"{S}image-review/playbooks/root").symlink_to("../../..")
+
+
+@case("V4-nested-copy", says="playbooks/old/structure.md")
+def _(r):
+    (r / f"{S}image-prompt/playbooks/old").mkdir()
+    shutil.copy(r / f"{S}image-prompt/playbooks/structure.md",
+                r / f"{S}image-prompt/playbooks/old/structure.md")
+
+
 # The other half: edits a rule must stay quiet about. A rule that fires on
 # ordinary writing gets switched off, which is a slower way to have no rule.
 QUIET: dict[str, callable] = {}

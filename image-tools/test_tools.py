@@ -1501,6 +1501,30 @@ def test_recipe_round_five(tmp: Path) -> None:
                            "--generator", aspect_gen, "--to", str(d / "x.png"),
                            "--prompt", PROMPT]), 2)
         truthy("and nothing is placed", not (d / "x.png").exists())
+        # One home inside another: the file is the deeper one's, and naming
+        # that generator is not a contradiction.
+        os.environ["CODEX_HOME"] = str(d)
+        inner = recipe.home_of(aspect_gen)
+        old_default = recipe.GENERATORS[aspect_gen]["home_default"]
+        recipe.GENERATORS[aspect_gen]["home_default"] = str(d / "nested-home")
+        try:
+            got = recipe.generators_holding(d / "nested-home" / "a.jpg")
+            check("the deepest home holding a file comes first",
+                  got, [aspect_gen, recipe.DEFAULT_GENERATOR])
+            made = d / "nested-home" / "brain" / "x" / "a.jpg"
+            made.parent.mkdir(parents=True)
+            made.write_bytes(jpeg_with(16, 16, []))
+            check("--generator naming the deeper home's generator is accepted",
+                  recipe.main(["capture", "--from", str(made), "--generator", aspect_gen,
+                               "--to", str(d / "nested.jpg"), "--prompt", PROMPT]), 0)
+            check("and without it the deeper home's generator is recorded",
+                  recipe.main(["capture", "--from", str(made), "--to",
+                               str(d / "nested2.jpg"), "--prompt", PROMPT]), 0)
+            side = recipe.sidecar_of(d / "nested2.jpg").read_text(encoding="utf-8")
+            truthy("its own invocation", recipe.GENERATORS[aspect_gen]["invoke"] in side)
+        finally:
+            recipe.GENERATORS[aspect_gen]["home_default"] = old_default
+        check("home_of is restored", recipe.home_of(aspect_gen), inner)
     finally:
         if old is None:
             os.environ.pop("CODEX_HOME")
@@ -1518,18 +1542,23 @@ def test_recipe_round_five(tmp: Path) -> None:
         truthy(f"and --input {spec!r} places nothing", not (d / f"no-path-{i}.png").exists())
 
     (d / "src.png").write_bytes(png(64, 32))
+    (d / "refs").mkdir()
+    (d / "refs" / "shot 12:30.png").write_bytes(png(8, 8))
+    (d / "ref.png").write_bytes(png(8, 8))
     here = os.getcwd()
     os.chdir(d)                                # --from as a relative path
     try:
         check("capture with an input whose name holds a colon",
               recipe.main(["capture", "--from", "src.png", "--to", str(d / "colon.png"),
                            "--prompt", PROMPT, "--generator", recipe.DEFAULT_GENERATOR,
-                           "--input", "refs/shot 12:30.png:edit target"]), 0)
+                           "--input", "refs/shot 12:30.png:edit target",
+                           "--input", "ref.png:mask: inpaint the sky"]), 0)
     finally:
         os.chdir(here)
     doc = yaml.safe_load(recipe.sidecar_of(d / "colon.png").read_text(encoding="utf-8"))
-    check("the role is after the last colon",
-          doc["inputs"], [{"path": "refs/shot 12:30.png", "role": "edit target"}])
+    check("the split is where the path that exists ends, on either side of a colon",
+          doc["inputs"], [{"path": "refs/shot 12:30.png", "role": "edit target"},
+                          {"path": "ref.png", "role": "mask: inpaint the sky"}])
     check("output.generated is absolute, so it names the file from anywhere",
           doc["output"]["generated"], str(d / "src.png"))
     check("and the recipe capture wrote passes check",

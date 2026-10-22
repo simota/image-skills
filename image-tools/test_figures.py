@@ -100,6 +100,16 @@ CASES: list[tuple[str, str, str, str, str]] = [
 ]
 
 
+# Valid tables a check must still read: GFM makes the outer pipes optional, so
+# a row or a delimiter without its closing one is ordinary writing.
+QUIET: list[tuple[str, str, str]] = [
+    (SIZES, "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish |",
+     "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish"),
+    (SIZES, "| Size | Breaks |\n|---|---|", "| Size | Breaks |\n|---|---"),
+    (RUNGS, "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 768x512 | 1.5 | 1152x768"),
+]
+
+
 def run(root: Path) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, str(root / "image-tools" / "figures_check.py")],
                           capture_output=True, text=True)
@@ -132,6 +142,22 @@ def main() -> int:
             if not r.returncode or f"[{checker}]" not in r.stdout:
                 silent.append(f"{i}:{checker}/{kind}")
                 print(f"  case {i} ({checker}, {kind}) did not fire\n{r.stdout}{r.stderr}")
+
+    for i, (page, old, new) in enumerate(QUIET, 1):
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "repo"
+            shutil.copytree(ROOT, copy, symlinks=True,
+                            ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            f = copy / page
+            text = f.read_text(encoding="utf-8")
+            if old not in text:
+                silent.append(f"quiet {i}: fixture text gone")
+                continue
+            f.write_text(text.replace(old, new, 1), encoding="utf-8")
+            r = run(copy)
+            if r.returncode:
+                silent.append(f"quiet {i}")
+                print(f"  quiet case {i} fired\n{r.stdout}{r.stderr}")
 
     kinds = {k for _, k, *_ in CASES}
     print(f"{len(CASES)} cases exercised ({', '.join(sorted(kinds))}), "

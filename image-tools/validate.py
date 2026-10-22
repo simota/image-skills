@@ -17,6 +17,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True                             # no __pycache__ in the tools dir
 from render import headings                                # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -178,10 +179,16 @@ def v4_playbook_orphans():
         if not pb_dir.exists():
             continue
         body = sections(read(d / "SKILL.md")).get("Decide first", "")
-        linked = {Path(m).name for m in LINK_RE.findall(body)}
+        linked = _targets(LINK_RE.findall(body), d)
         for pb in sorted(pb_dir.rglob("*.md")):
-            if pb.name not in linked:
-                fail("V4", f"{d.name}/playbooks/{pb.name} is not linked from Decide first")
+            if pb.resolve() not in linked:
+                fail("V4", f"{pb.relative_to(ROOT)} is not linked from Decide first")
+
+
+def _targets(found, *bases: Path) -> set[Path]:
+    """Where links lead, resolved: a name alone let a nested copy pass for the
+    linked page it shares a name with."""
+    return {(b / m.split("#")[0]).resolve() for m in found for b in bases}
 
 
 def v5_playbook_budget():
@@ -634,12 +641,13 @@ def v30_reference_orphans():
         if not ref_dir.exists():
             continue
         body = sections(read(d / "SKILL.md")).get("Decide first", "")
-        linked = {Path(m).name for m in LINK_RE.findall(body)}
+        linked = _targets(LINK_RE.findall(body), d)
         for pb in sorted((d / "playbooks").rglob("*.md")) if (d / "playbooks").exists() else []:
-            linked |= {Path(m).name for m in LINK_RE.findall(read(pb))}
-            linked |= {Path(m).name for m in TICK_PATH_RE.findall(read(pb))}
+            # A link is relative to its page; a backticked path to the skill.
+            linked |= _targets(LINK_RE.findall(read(pb)), pb.parent, d)
+            linked |= _targets(TICK_PATH_RE.findall(read(pb)), d)
         for f in sorted(ref_dir.rglob("*.md")):
-            if f.name not in linked:
+            if f.resolve() not in linked:
                 fail("V30", f"{f.relative_to(ROOT)} is reachable from nothing — "
                             "not the Decide first table, not a playbook")
 
@@ -773,7 +781,9 @@ def v34_tools_reachable():
             if link.parent == d and link.suffix == ".py":
                 continue                          # judged above
             target = link.resolve()
-            if target == tools_dir or tools_dir in target.parents:
+            # The directory, anything in it, or anything that contains it.
+            if target == tools_dir or tools_dir in target.parents \
+                    or target in tools_dir.parents:
                 fail("V34", f"{link.relative_to(SKILLS_ROOT)} reaches {SET}-tools/; "
                             "a tool is linked by name beside SKILL.md, where "
                             "linked_tools declares it")

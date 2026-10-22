@@ -141,7 +141,14 @@ def capture(a: argparse.Namespace) -> int:
         print(f"{a.generator} is not one of {sorted(GENERATORS)}", file=sys.stderr)
         return 2
     if a.source:
-        src, produced_by = a.source, a.generator or generator_holding(a.source)
+        held = generator_holding(a.source)
+        if a.generator and held and held != a.generator:
+            # The directory is evidence and the flag is a claim; recording the
+            # claim would put the wrong invocation in `engine`.
+            print(f"{a.source} is in {held}'s output directory, not "
+                  f"{a.generator}'s; nothing was written", file=sys.stderr)
+            return 2
+        src, produced_by = a.source, a.generator or held
         if produced_by is None:
             print(f"{src} is not under any generator's output directory; name "
                   f"the one that made it with --generator {sorted(GENERATORS)}",
@@ -155,6 +162,24 @@ def capture(a: argparse.Namespace) -> int:
             return 2
         produced_by, src = found
     gen = GENERATORS[produced_by]
+    # A flag given as whitespace is a field nobody decided; `check` rejects it,
+    # so it is refused here, before an asset is placed that a retry cannot replace.
+    for flag, value in (("--model", a.model), ("--engine", a.engine),
+                        ("--excluded", a.excluded), ("--asked", a.asked)):
+        if value is not None and not value.strip():
+            print(f"{flag} is blank; leave it out or say what it was", file=sys.stderr)
+            return 2
+    inputs = []
+    for spec in a.input or []:
+        # The role is after the last colon: a file name can hold one, and a
+        # split at the first cut the path short and passed it off as the role.
+        path, sep, role = spec.rpartition(":")
+        if not sep:
+            path, role = spec, ""
+        if not path.strip():
+            print(f"--input {spec!r} names no path", file=sys.stderr)
+            return 2
+        inputs.append({"path": path, "role": role.strip() or "unstated"})
     if not src.exists():
         print(f"{src}: no such file", file=sys.stderr)
         return 2
@@ -218,11 +243,6 @@ def capture(a: argparse.Namespace) -> int:
               "in the recipe", file=sys.stderr)
         return 2
 
-    inputs = []
-    for spec in a.input or []:
-        path, _, role = spec.partition(":")
-        inputs.append({"path": path, "role": role or "unstated"})
-
     doc = {
         "engine": a.engine or gen["invoke"],
         "model": a.model or "unreported",
@@ -231,7 +251,9 @@ def capture(a: argparse.Namespace) -> int:
         "size": {"asked": a.asked or UNASKED[gen["control"]],
                  "on_disk": facts["size"]},
         "inputs": inputs,
-        "output": {"generated": str(src), "placed": str(dest)},
+        # Absolute, so the field still names the file when read from elsewhere;
+        # not resolved, so it is the path the run returned.
+        "output": {"generated": os.path.abspath(src), "placed": str(dest)},
         "note": NO_SEED,
     }
     try:
@@ -354,15 +376,17 @@ def _umask() -> int:
 
 def check_one(image: Path) -> list[str]:
     side = sidecar_of(image)
-    if not side.exists():
-        return [f"{image}: no recipe. Record it as origin: unknown rather than "
-                "reconstructing one — a remembered prompt is a plausible prompt"]
     try:
+        if not side.exists():
+            return [f"{image}: no recipe. Record it as origin: unknown rather than "
+                    "reconstructing one — a remembered prompt is a plausible prompt"]
         doc = yaml.safe_load(side.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
         return [f"{side}: not readable as YAML ({e.__class__.__name__})"]
     except UnicodeDecodeError:
         return [f"{side}: not UTF-8 text; a recipe is written as UTF-8"]
+    except OSError as e:                     # one odd entry is one problem, and
+        return [f"{side}: {e.strerror or e}"]   # the rest still get checked
     if not isinstance(doc, dict):
         return [f"{side}: a recipe is a mapping of fields, not a "
                 f"{type(doc).__name__}; a chain of edits is one recipe per file"]
@@ -414,6 +438,10 @@ def check_one(image: Path) -> list[str]:
     except (imgfacts.Unreadable, OSError) as e:
         return problems + [f"{image}: {e}"]
     size = doc["size"] if isinstance(doc.get("size"), dict) else {}
+    # Both halves: a recipe holding only what is on disk lost what was asked.
+    if isinstance(doc.get("size"), dict) and not (
+            isinstance(size.get("asked"), str) and size["asked"].strip()):
+        problems.append(f"{side}: size.asked must be text, not {size.get('asked')!r}")
     on_disk = size.get("on_disk")
     if on_disk != facts["size"]:
         problems.append(f"{side}: size.on_disk is {on_disk!r}, the file is "
@@ -459,6 +487,8 @@ def show(a: argparse.Namespace) -> int:
                   else "origin: unknown   # no recipe beside this file")
         except UnicodeDecodeError:
             print(f"{side}: not UTF-8 text")
+        except OSError as e:
+            print(f"{side}: {e.strerror or e}")
     return 0
 
 

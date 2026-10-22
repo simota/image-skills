@@ -30,8 +30,8 @@ recipe.py check --dir generated/       # only a directory of retained generated 
 
 `--generator` picks whose output directory is searched and whose invocation goes
 into `engine`. A `--from` file inside a generator's output directory is
-attributed to that generator; one anywhere else is refused until `--generator`
-names it. With neither flag, every declared generator's directory is searched
+attributed to that generator, and a `--generator` naming another one is
+refused; one anywhere else is refused until `--generator` names it. With neither flag, every declared generator's directory is searched
 and the newest file across all of them wins. That fallback is not proof of which
 run made the file: prefer the actual returned path and invocation, particularly
 after failure or concurrent work. Unknown-origin photographs do not need a

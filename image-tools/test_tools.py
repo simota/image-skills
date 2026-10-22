@@ -1482,6 +1482,89 @@ def test_edges_round_four(tmp: Path) -> None:
     truthy("render names markers in the wrong order as such", "order" in said)
 
 
+def test_recipe_round_five(tmp: Path) -> None:
+    """A flag contradicting the directory, recipes capture wrote and check
+    refused, an input path cut at its own colon, and one odd entry ending a
+    whole check."""
+    import os
+    d = tmp / "r5"
+    home = d / "codex-home"
+    out = home / "generated_images" / "s1"
+    out.mkdir(parents=True)
+    (out / "exec-1.png").write_bytes(png(32, 32))
+    aspect_gen = sorted(imgfacts.ASPECT_GENERATORS)[0]
+    old = os.environ.get("CODEX_HOME")
+    os.environ["CODEX_HOME"] = str(home)
+    try:
+        check("--generator naming another generator than the directory is refused",
+              recipe.main(["capture", "--from", str(out / "exec-1.png"),
+                           "--generator", aspect_gen, "--to", str(d / "x.png"),
+                           "--prompt", PROMPT]), 2)
+        truthy("and nothing is placed", not (d / "x.png").exists())
+    finally:
+        if old is None:
+            os.environ.pop("CODEX_HOME")
+        else:
+            os.environ["CODEX_HOME"] = old
+
+    for flag in ("model", "engine", "excluded", "asked"):
+        check(f"a blank --{flag} is refused before anything is placed",
+              capture(d, f"blank-{flag}.png", **{flag: "  "}), 2)
+        truthy(f"so a blank --{flag} leaves no asset behind",
+               not (d / f"blank-{flag}.png").exists())
+    for i, spec in enumerate(("", ":role")):
+        check(f"--input {spec!r} names no path and is refused",
+              capture(d, f"no-path-{i}.png", input=spec), 2)
+        truthy(f"and --input {spec!r} places nothing", not (d / f"no-path-{i}.png").exists())
+
+    (d / "src.png").write_bytes(png(64, 32))
+    here = os.getcwd()
+    os.chdir(d)                                # --from as a relative path
+    try:
+        check("capture with an input whose name holds a colon",
+              recipe.main(["capture", "--from", "src.png", "--to", str(d / "colon.png"),
+                           "--prompt", PROMPT, "--generator", recipe.DEFAULT_GENERATOR,
+                           "--input", "refs/shot 12:30.png:edit target"]), 0)
+    finally:
+        os.chdir(here)
+    doc = yaml.safe_load(recipe.sidecar_of(d / "colon.png").read_text(encoding="utf-8"))
+    check("the role is after the last colon",
+          doc["inputs"], [{"path": "refs/shot 12:30.png", "role": "edit target"}])
+    check("output.generated is absolute, so it names the file from anywhere",
+          doc["output"]["generated"], str(d / "src.png"))
+    check("and the recipe capture wrote passes check",
+          recipe.check_one(d / "colon.png"), [])
+
+    side = recipe.sidecar_of(d / "colon.png")
+    good = side.read_text(encoding="utf-8")
+    for value in (None, "", ["x"]):
+        doc = yaml.safe_load(good)
+        doc["size"]["asked"] = value
+        side.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        truthy(f"size.asked {value!r} is reported",
+               any("size.asked" in p for p in recipe.check_one(d / "colon.png")))
+    doc = yaml.safe_load(good)
+    del doc["size"]["asked"]
+    side.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    truthy("a size with no asked half is reported",
+           any("size.asked" in p for p in recipe.check_one(d / "colon.png")))
+    side.write_text(good, encoding="utf-8")
+
+    e = d / "odd"
+    e.mkdir()
+    (e / "a.png").write_bytes(png(8, 8))                 # no recipe: a problem
+    (e / "c.png").write_bytes(png(8, 8))
+    recipe.sidecar_of(e / "c.png").mkdir()               # a directory, not a recipe
+    truthy("a sidecar that is a directory is a problem, not a traceback",
+           recipe.check_one(e / "c.png"))
+    said = io.StringIO()
+    with contextlib.redirect_stdout(said):
+        rc = recipe.main(["check", "--dir", str(e)])
+    check("and check --dir still reaches every other image",
+          (rc, said.getvalue().splitlines()[-1]), (1, "2 image(s), 2 problem(s)"))
+    check("show says so too", recipe.main(["show", str(e / "c.png")]), 0)
+
+
 def test_strip_round_five(tmp: Path) -> None:
     """A scan cut at a filled restart, and blocks that kept or dropped the
     wrong thing by marker or tag alone."""
@@ -2074,6 +2157,7 @@ def main() -> int:
         test_strip_writes(tmp)
         test_strip_concurrent_change(tmp)
         test_strip_round_five(tmp)
+        test_recipe_round_five(tmp)
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_cli_bounds_and_render_sections(tmp)

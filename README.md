@@ -132,7 +132,8 @@ embedded thumbnails, and anything appended after the image ends — while
 keeping the colour profile, the alpha channel and any content credential the
 project decided to carry. [`refute.py`](image-tools/refute.py) puts a claim to
 the engines that did not make it and asks them to break it; an answer outside
-its schema is no answer, a claim refuted or contested exits 3, one that not
+its schema, from an engine that exited non-zero or reported an error, or in
+text that is not UTF-8, is no answer, a claim refuted or contested exits 3, one that not
 every refuter could read exits 1, and unrefuted is never proof.
 
 None of the three file tools needs an image library: they read and edit headers rather than

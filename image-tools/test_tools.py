@@ -938,13 +938,23 @@ if os.environ.get("FAKE_SPAWN"):                   # a tree that outlives a kill
     open(os.environ["FAKE_SPAWN"], "w").write(str(p.pid))
     import time; time.sleep(30)
 answer = os.environ["FAKE_ANSWER"]
+if os.environ.get("FAKE_STDERR_BYTES"):            # a log that is not UTF-8
+    sys.stderr.buffer.write(b"progress \\xff\\xfe\\n"); sys.stderr.flush()
 if "-o" in argv:                                   # codex writes a file
-    open(argv[argv.index("-o") + 1], "w").write(answer)
+    with open(argv[argv.index("-o") + 1], "wb") as f:
+        f.write(answer.encode() + (b"\\xff" if os.environ.get("FAKE_BYTES") else b""))
 else:                                              # claude and agy print an envelope
-    print(json.dumps({"type": "result", "structured_output": json.loads(answer)}))
+    envelope = {"type": "result", "structured_output": json.loads(answer)}
+    if os.environ.get("FAKE_IS_ERROR"):
+        envelope.update(subtype="error_during_execution", is_error=True)
+    sys.stdout.flush()
+    sys.stdout.buffer.write(json.dumps(envelope).encode()
+                            + (b"\\xff" if os.environ.get("FAKE_BYTES") else b"") + b"\\n")
+    sys.stdout.flush()
     noise = os.environ.get("FAKE_NOISE")
     if noise:
         print(noise)                               # a log line after the answer
+sys.exit(int(os.environ.get("FAKE_RC", "0")))
 """
 
 
@@ -1829,6 +1839,91 @@ def test_engine_integrity(tmp: Path) -> None:
         refute.refuters = real_pool
 
 
+def test_engine_failures(tmp: Path) -> None:
+    """An engine that said it failed, or answered in bytes nobody can read, did
+    not answer — and one engine failing that way leaves the others' verdicts."""
+    import os
+    good = {"refuted": False, "reason": "r", "what_would_settle_it": "w"}
+
+    def answer_or_error(fn):
+        try:
+            return fn()
+        except engine.EngineError as e:
+            return f"EngineError: {e}"
+
+    def under(flag: str, value: str, fn):
+        os.environ[flag] = value
+        try:
+            return fn()
+        finally:
+            os.environ.pop(flag)
+
+    for name in engine.ENGINES["runs_on"]:
+        with fake_engines(tmp, good):
+            truthy(f"{name}: a conforming answer from an engine that exited 1 is no answer",
+                   under("FAKE_RC", "1", lambda: raises(
+                       lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError)))
+            truthy(f"{name}: an answer that is not UTF-8 is an EngineError, not a traceback",
+                   under("FAKE_BYTES", "1", lambda: raises(
+                       lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError)))
+            check(f"{name}: a log on stderr that is not UTF-8 does not cost the answer",
+                  under("FAKE_STDERR_BYTES", "1", lambda: answer_or_error(
+                      lambda: engine.run(name, "p", refute.SCHEMA))), good)
+        with fake_engines(tmp, dict(good, reason="a\ud800b")):
+            truthy(f"{name}: an answer holding a lone surrogate is an EngineError",
+                   raises(lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError))
+    for name in ("claude", "agy"):
+        with fake_engines(tmp, good):
+            truthy(f"{name}: an envelope marked is_error is no answer",
+                   under("FAKE_IS_ERROR", "1", lambda: raises(
+                       lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError)))
+
+    claims = tmp / "failures.json"
+    claims.write_text(json.dumps([{"id": "c1", "claim": "the file is 1536x1024"}]))
+    with fake_engines(tmp, good):
+        check("refute: a run where every engine exited 1 is unchecked, not unrefuted",
+              under("FAKE_RC", "1", lambda: refute.main(["--running", "codex", str(claims)])), 1)
+    with fake_engines(tmp, dict(good, refuted=True, reason="a\ud800b")):
+        for extra in ([], ["--json"]):
+            check(f"refute {extra}: an unprintable reason does not crash the run",
+                  refute.main(["--running", "codex", *extra, str(claims)]), 1)
+
+    p = tmp / "p.txt"
+    p.write_text("p", encoding="utf-8")
+    sfile = tmp / "broken.json"
+    for bad in ({"type": 5}, {"type": {"x": 1}}, {"type": "objekt"},
+                {"type": "object", "properties": ["a"]},
+                {"type": "object", "required": "a"},
+                {"type": "object", "properties": {"rows": {"type": "array",
+                                                           "items": {"type": 7}}}}):
+        sfile.write_text(json.dumps(bad), encoding="utf-8")
+        with fake_engines(tmp, {"a": 1}) as log:
+            check(f"a malformed schema {bad!r} exits 2",
+                  engine.main(["--running", "claude", "codex", "--prompt-file", str(p),
+                               "--schema", str(sfile)]), 2)
+            check("and no engine is paid to answer it", log.read_text(), "")
+
+    # The locale is fixed when Python starts, so this one runs in a child under
+    # the C locale, where text-mode pipes are ASCII.
+    probe = ("import json, pathlib, sys; sys.path.insert(0, sys.argv[1]); "
+             "import test_tools as t; "
+             "good = dict(refuted=False, reason='\\u7406\\u7531', what_would_settle_it='w'); "
+             "ctx = t.fake_engines(pathlib.Path(sys.argv[2]), good); ctx.__enter__(); "
+             "print(json.dumps([t.engine.run(n, '\\u753b\\u50cf', t.refute.SCHEMA) == good "
+             "for n in ('claude', 'codex')]))")
+    child = subprocess.run([sys.executable, "-c", probe, str(Path(__file__).resolve().parent),
+                            str(tmp)], capture_output=True, text=True, encoding="utf-8",
+                           env=dict(os.environ, LC_ALL="C", LANG="C", PYTHONUTF8="0",
+                                    PYTHONCOERCECLOCALE="0", PYTHONIOENCODING="utf-8"))
+    check("under the C locale a non-ASCII prompt and answer still go through",
+          child.stdout.strip() or child.stderr.strip()[-300:], "[true, true]")
+
+    untyped = {"type": "object", "properties": {"rows": {"type": "array", "items": {
+        "properties": {"v": {"type": "integer"}}}}}}
+    truthy("an object schema without `type` is closed too",
+           engine.conforms({"rows": [{"v": 1, "stowaway": "x"}]}, engine.strict(untyped)))
+
+
 def alive(pid: int) -> bool:
     """Whether `pid` still runs — a zombie awaiting its reaper does not; one
     found running is killed so that a failed check leaves nothing behind."""
@@ -2213,6 +2308,7 @@ def main() -> int:
         test_cli_bounds_and_render_sections(tmp)
         test_engine(tmp)
         test_engine_integrity(tmp)
+        test_engine_failures(tmp)
         test_precommit_hook(tmp)
         test_edges_round_four(tmp)
     if failures:

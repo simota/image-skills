@@ -110,13 +110,18 @@ def newest_generated(name: str | None = None) -> tuple[str, Path] | None:
     return n, p
 
 
+def generators_holding(path: Path) -> list[str]:
+    """Every generator whose home holds this file, the deepest home first: one
+    home can sit inside another (a CODEX_HOME set to the user's home)."""
+    where = path.resolve()
+    held = [n for n in GENERATORS if where.is_relative_to(home_of(n).resolve())]
+    return sorted(held, key=lambda n: -len(home_of(n).resolve().parts))
+
+
 def generator_holding(path: Path) -> str | None:
     """The generator whose output directory this file sits in, if any."""
-    where = path.resolve()
-    for n in GENERATORS:
-        if where.is_relative_to(home_of(n).resolve()):
-            return n
-    return None
+    held = generators_holding(path)
+    return held[0] if held else None
 
 
 # What a placed file's extension promises. A JPEG written to `hero.png` is a
@@ -136,12 +141,37 @@ def sidecar_of(image: Path) -> Path:
 
 # --- capture -----------------------------------------------------------------
 
+def _split_input(spec: str) -> tuple[str, str]:
+    """PATH:ROLE, where either half may hold a colon. The split whose path
+    exists wins; with none existing, the first colon, as the flag reads. Two
+    splits that both name a file are a question, so ValueError says which."""
+    cuts = [i for i, c in enumerate(spec) if c == ":"]
+    found = [i for i in cuts + [len(spec)]
+             if spec[:i] and Path(spec[:i]).expanduser().exists()]
+    if len(found) > 1:
+        raise ValueError(" and ".join(repr(spec[:i]) for i in found))
+    if found:
+        return spec[:found[0]], spec[found[0] + 1:]
+    return (spec[:cuts[0]], spec[cuts[0] + 1:]) if cuts else (spec, "")
+
+
 def capture(a: argparse.Namespace) -> int:
     if a.generator and a.generator not in GENERATORS:
         print(f"{a.generator} is not one of {sorted(GENERATORS)}", file=sys.stderr)
         return 2
     if a.source:
-        src, produced_by = a.source, a.generator or generator_holding(a.source)
+        held = generators_holding(a.source)
+        # Only the deepest home is evidence: a broader one holding it too is
+        # the nesting, not a second place the file could have come from.
+        deepest = [n for n in held
+                   if len(home_of(n).resolve().parts) == len(home_of(held[0]).resolve().parts)]
+        if a.generator and held and a.generator not in deepest:
+            # The directory is evidence and the flag is a claim; recording the
+            # claim would put the wrong invocation in `engine`.
+            print(f"{a.source} is in {held[0]}'s output directory, not "
+                  f"{a.generator}'s; nothing was written", file=sys.stderr)
+            return 2
+        src, produced_by = a.source, a.generator or (held[0] if held else None)
         if produced_by is None:
             print(f"{src} is not under any generator's output directory; name "
                   f"the one that made it with --generator {sorted(GENERATORS)}",
@@ -155,6 +185,25 @@ def capture(a: argparse.Namespace) -> int:
             return 2
         produced_by, src = found
     gen = GENERATORS[produced_by]
+    # A flag given as whitespace is a field nobody decided; `check` rejects it,
+    # so it is refused here, before an asset is placed that a retry cannot replace.
+    for flag, value in (("--model", a.model), ("--engine", a.engine),
+                        ("--excluded", a.excluded), ("--asked", a.asked)):
+        if value is not None and not value.strip():
+            print(f"{flag} is blank; leave it out or say what it was", file=sys.stderr)
+            return 2
+    inputs = []
+    for spec in a.input or []:
+        try:
+            path, role = _split_input(spec)
+        except ValueError as e:
+            print(f"--input {spec!r} could name either of {e}; rename one, "
+                  "or pass a path that names only one", file=sys.stderr)
+            return 2
+        if not path.strip():
+            print(f"--input {spec!r} names no path", file=sys.stderr)
+            return 2
+        inputs.append({"path": path, "role": role.strip() or "unstated"})
     if not src.exists():
         print(f"{src}: no such file", file=sys.stderr)
         return 2
@@ -218,11 +267,6 @@ def capture(a: argparse.Namespace) -> int:
               "in the recipe", file=sys.stderr)
         return 2
 
-    inputs = []
-    for spec in a.input or []:
-        path, _, role = spec.partition(":")
-        inputs.append({"path": path, "role": role or "unstated"})
-
     doc = {
         "engine": a.engine or gen["invoke"],
         "model": a.model or "unreported",
@@ -231,7 +275,9 @@ def capture(a: argparse.Namespace) -> int:
         "size": {"asked": a.asked or UNASKED[gen["control"]],
                  "on_disk": facts["size"]},
         "inputs": inputs,
-        "output": {"generated": str(src), "placed": str(dest)},
+        # Absolute, so the field still names the file when read from elsewhere;
+        # not resolved, so it is the path the run returned.
+        "output": {"generated": os.path.abspath(src), "placed": str(dest)},
         "note": NO_SEED,
     }
     try:
@@ -354,15 +400,17 @@ def _umask() -> int:
 
 def check_one(image: Path) -> list[str]:
     side = sidecar_of(image)
-    if not side.exists():
-        return [f"{image}: no recipe. Record it as origin: unknown rather than "
-                "reconstructing one — a remembered prompt is a plausible prompt"]
     try:
+        if not side.exists():
+            return [f"{image}: no recipe. Record it as origin: unknown rather than "
+                    "reconstructing one — a remembered prompt is a plausible prompt"]
         doc = yaml.safe_load(side.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
         return [f"{side}: not readable as YAML ({e.__class__.__name__})"]
     except UnicodeDecodeError:
         return [f"{side}: not UTF-8 text; a recipe is written as UTF-8"]
+    except OSError as e:                     # one odd entry is one problem, and
+        return [f"{side}: {e.strerror or e}"]   # the rest still get checked
     if not isinstance(doc, dict):
         return [f"{side}: a recipe is a mapping of fields, not a "
                 f"{type(doc).__name__}; a chain of edits is one recipe per file"]
@@ -392,6 +440,11 @@ def check_one(image: Path) -> list[str]:
         # a recipe that lost what the input was for, not one that never said.
         problems.append(f"{side}: inputs must be a list of entries with a path "
                         f"and a role, not {doc['inputs']!r}")
+    # Both halves: a recipe holding only what is on disk lost what was asked.
+    if isinstance(doc.get("size"), dict):
+        asked = doc["size"].get("asked")
+        if not (isinstance(asked, str) and asked.strip()):
+            problems.append(f"{side}: size.asked must be text, not {asked!r}")
     if isinstance(doc.get("output"), dict):
         for k in ("placed", "generated"):
             v = doc["output"].get(k)
@@ -459,6 +512,8 @@ def show(a: argparse.Namespace) -> int:
                   else "origin: unknown   # no recipe beside this file")
         except UnicodeDecodeError:
             print(f"{side}: not UTF-8 text")
+        except OSError as e:
+            print(f"{side}: {e.strerror or e}")
     return 0
 
 

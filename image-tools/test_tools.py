@@ -638,7 +638,9 @@ def test_strip(tmp: Path) -> None:
         (0xE1, b"Exif\x00\x00" + exif(None)),
         (0xE1, b"http://ns.adobe.com/xap/1.0/\x00<x/>"),
         (0xE2, b"ICC_PROFILE\x00\x01\x01" + b"\x00" * 8),
-        (0xEB, b"JP\x00\x00" + b"c2pa" + b"\x00" * 8),
+        # JPEG XT framing (CI, En, Z), then the JUMBF superbox header
+        (0xEB, b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 24) + b"jumb"
+         + b"c2pa" + b"\x00" * 12),
         (0xEE, b"Adobe\x00\x64\x00\x00\x00\x00\x00"),
         (0xFE, b"a comment"),
     ]))
@@ -1482,6 +1484,183 @@ def test_edges_round_four(tmp: Path) -> None:
     truthy("render names markers in the wrong order as such", "order" in said)
 
 
+def test_recipe_round_five(tmp: Path) -> None:
+    """A flag contradicting the directory, recipes capture wrote and check
+    refused, an input path cut at its own colon, and one odd entry ending a
+    whole check."""
+    import os
+    d = tmp / "r5"
+    home = d / "codex-home"
+    out = home / "generated_images" / "s1"
+    out.mkdir(parents=True)
+    (out / "exec-1.png").write_bytes(png(32, 32))
+    aspect_gen = sorted(imgfacts.ASPECT_GENERATORS)[0]
+    old = os.environ.get("CODEX_HOME")
+    os.environ["CODEX_HOME"] = str(home)
+    try:
+        check("--generator naming another generator than the directory is refused",
+              recipe.main(["capture", "--from", str(out / "exec-1.png"),
+                           "--generator", aspect_gen, "--to", str(d / "x.png"),
+                           "--prompt", PROMPT]), 2)
+        truthy("and nothing is placed", not (d / "x.png").exists())
+        # One home inside another: the file is the deeper one's, and naming
+        # that generator is not a contradiction.
+        os.environ["CODEX_HOME"] = str(d)
+        inner = recipe.home_of(aspect_gen)
+        old_default = recipe.GENERATORS[aspect_gen]["home_default"]
+        recipe.GENERATORS[aspect_gen]["home_default"] = str(d / "nested-home")
+        try:
+            got = recipe.generators_holding(d / "nested-home" / "a.jpg")
+            check("the deepest home holding a file comes first",
+                  got, [aspect_gen, recipe.DEFAULT_GENERATOR])
+            made = d / "nested-home" / "brain" / "x" / "a.jpg"
+            made.parent.mkdir(parents=True)
+            made.write_bytes(jpeg_with(16, 16, []))
+            check("--generator naming only the broader home's generator is refused",
+                  recipe.main(["capture", "--from", str(made), "--generator",
+                               recipe.DEFAULT_GENERATOR, "--to", str(d / "broad.jpg"),
+                               "--prompt", PROMPT]), 2)
+            check("--generator naming the deeper home's generator is accepted",
+                  recipe.main(["capture", "--from", str(made), "--generator", aspect_gen,
+                               "--to", str(d / "nested.jpg"), "--prompt", PROMPT]), 0)
+            check("and without it the deeper home's generator is recorded",
+                  recipe.main(["capture", "--from", str(made), "--to",
+                               str(d / "nested2.jpg"), "--prompt", PROMPT]), 0)
+            side = recipe.sidecar_of(d / "nested2.jpg").read_text(encoding="utf-8")
+            truthy("its own invocation", recipe.GENERATORS[aspect_gen]["invoke"] in side)
+        finally:
+            recipe.GENERATORS[aspect_gen]["home_default"] = old_default
+        check("home_of is restored", recipe.home_of(aspect_gen), inner)
+    finally:
+        if old is None:
+            os.environ.pop("CODEX_HOME")
+        else:
+            os.environ["CODEX_HOME"] = old
+
+    for flag in ("model", "engine", "excluded", "asked"):
+        check(f"a blank --{flag} is refused before anything is placed",
+              capture(d, f"blank-{flag}.png", **{flag: "  "}), 2)
+        truthy(f"so a blank --{flag} leaves no asset behind",
+               not (d / f"blank-{flag}.png").exists())
+    for i, spec in enumerate(("", ":role")):
+        check(f"--input {spec!r} names no path and is refused",
+              capture(d, f"no-path-{i}.png", input=spec), 2)
+        truthy(f"and --input {spec!r} places nothing", not (d / f"no-path-{i}.png").exists())
+
+    (d / "src.png").write_bytes(png(64, 32))
+    (d / "refs").mkdir()
+    (d / "refs" / "shot 12:30.png").write_bytes(png(8, 8))
+    (d / "ref.png").write_bytes(png(8, 8))
+    here = os.getcwd()
+    os.chdir(d)                                # --from as a relative path
+    try:
+        check("capture with an input whose name holds a colon",
+              recipe.main(["capture", "--from", "src.png", "--to", str(d / "colon.png"),
+                           "--prompt", PROMPT, "--generator", recipe.DEFAULT_GENERATOR,
+                           "--input", "refs/shot 12:30.png:edit target",
+                           "--input", "ref.png:mask: inpaint the sky"]), 0)
+    finally:
+        os.chdir(here)
+    doc = yaml.safe_load(recipe.sidecar_of(d / "colon.png").read_text(encoding="utf-8"))
+    check("the split is where the path that exists ends, on either side of a colon",
+          doc["inputs"], [{"path": "refs/shot 12:30.png", "role": "edit target"},
+                          {"path": "ref.png", "role": "mask: inpaint the sky"}])
+    (d / "refs" / "shot 12").write_bytes(png(8, 8))      # now both splits name a file
+    os.chdir(d)
+    try:
+        check("an input two splits could both name is refused, not guessed",
+              recipe.main(["capture", "--from", "src.png", "--to", str(d / "ambig.png"),
+                           "--prompt", PROMPT, "--generator", recipe.DEFAULT_GENERATOR,
+                           "--input", "refs/shot 12:30.png:edit target"]), 2)
+    finally:
+        os.chdir(here)
+    truthy("and nothing is placed", not (d / "ambig.png").exists())
+    check("output.generated is absolute, so it names the file from anywhere",
+          doc["output"]["generated"], str(d / "src.png"))
+    check("and the recipe capture wrote passes check",
+          recipe.check_one(d / "colon.png"), [])
+
+    side = recipe.sidecar_of(d / "colon.png")
+    good = side.read_text(encoding="utf-8")
+    for value in (None, "", ["x"]):
+        doc = yaml.safe_load(good)
+        doc["size"]["asked"] = value
+        side.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        truthy(f"size.asked {value!r} is reported",
+               any("size.asked" in p for p in recipe.check_one(d / "colon.png")))
+    doc = yaml.safe_load(good)
+    del doc["size"]["asked"]
+    side.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    truthy("a size with no asked half is reported",
+           any("size.asked" in p for p in recipe.check_one(d / "colon.png")))
+    side.write_text(good, encoding="utf-8")
+
+    e = d / "odd"
+    e.mkdir()
+    (e / "a.png").write_bytes(png(8, 8))                 # no recipe: a problem
+    (e / "c.png").write_bytes(png(8, 8))
+    recipe.sidecar_of(e / "c.png").mkdir()               # a directory, not a recipe
+    truthy("a sidecar that is a directory is a problem, not a traceback",
+           recipe.check_one(e / "c.png"))
+    said = io.StringIO()
+    with contextlib.redirect_stdout(said):
+        rc = recipe.main(["check", "--dir", str(e)])
+    check("and check --dir still reaches every other image",
+          (rc, said.getvalue().splitlines()[-1]), (1, "2 image(s), 2 problem(s)"))
+    check("show says so too", recipe.main(["show", str(e / "c.png")]), 0)
+
+
+def test_strip_round_five(tmp: Path) -> None:
+    """A scan cut at a filled restart, and blocks that kept or dropped the
+    wrong thing by marker or tag alone."""
+    f = tmp / "fill.jpg"
+    head = jpeg_with(16, 16, [])[:-len(b"ENTROPY\xff\xd9")]
+    entropy = b"AB\xff\xff\xd0CD\xff\xff\xff\xd1EF\xff\xff\x00GH"
+    f.write_bytes(head + entropy + b"\xff\xd9")
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("fill bytes before a restart do not end the scan", entropy in out)
+    check("and nothing in it is reported as stray", dropped, [])
+    f.write_bytes(head + b"AB\xff\x4a\x00\x03\x00CDEFG" + b"\xff\xd9")
+    truthy("bytes a scan's walk could not place are refused, not dropped as stray",
+           refuses(f, Opt(), "after a scan began"))
+
+    jfif = b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00"
+    f.write_bytes(jpeg_with(16, 16, [(0xE0, jfif + b"PROMPTTEXT")]))
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("bytes after a JFIF header with no thumbnail are removed",
+           b"PROMPTTEXT" not in out and jfif in out)
+    truthy("and reported", any("after the JFIF header" in d for d in dropped))
+
+    jumbf = b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 16) + b"jumb" + b"c2pa-box"
+    xt = b"JP\x00\x01\x00\x00\x00\x01" + struct.pack(">I", 16) + b"priv" + b"SECRET2"
+    f.write_bytes(jpeg_with(16, 16, [(0xEB, b"XMP\x00SECRET"), (0xEB, xt), (0xEB, jumbf)]))
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("an APP11 that is not JUMBF is removed", b"SECRET" not in out)
+    truthy("nor is a JPEG XT box that only opens like one", b"SECRET2" not in out)
+    truthy("a JUMBF APP11 is a credential and stays", jumbf in out)
+    out, _, _ = strip.strip(f, Opt(drop_credentials=True))
+    truthy("unless credentials are dropped", jumbf not in out)
+
+    f = tmp / "c2pa.webp"
+    f.write_bytes(webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4)),
+                                        (b"C2PA", b"manifest")]))
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("a WebP C2PA chunk is a credential and stays", b"C2PA" in webp_tags(out))
+    check("and nothing is reported", dropped, [])
+    out, dropped, _ = strip.strip(f, Opt(drop_credentials=True))
+    truthy("--drop-credentials removes it", b"C2PA" not in webp_tags(out))
+
+    lossless = b"VP8L" + struct.pack("<I", 5) + b"\x2f" + bytes(4) + b"\x00"
+    short = (b"VP8X" + struct.pack("<I", 0) + lossless)
+    raw = b"RIFF" + struct.pack("<I", 4 + len(short)) + b"WEBP" + short
+    truthy("a VP8X declaring too little to hold a size is Unreadable",
+           raises(lambda: imgfacts.probe_bytes(raw), imgfacts.Unreadable))
+    f = tmp / "short-vp8x.webp"
+    f.write_bytes(raw)
+    check("and strip says so rather than reading the next chunk",
+          strip.main([str(f)]), 1)
+
+
 def test_strip_concurrent_change(tmp: Path) -> None:
     """--in-place writes back only over the bytes it stripped. Another process
     changing the file in between keeps its change: the run refuses instead of
@@ -2027,6 +2206,8 @@ def main() -> int:
         test_strip_leaks(tmp)
         test_strip_writes(tmp)
         test_strip_concurrent_change(tmp)
+        test_strip_round_five(tmp)
+        test_recipe_round_five(tmp)
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_cli_bounds_and_render_sections(tmp)

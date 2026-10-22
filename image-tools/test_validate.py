@@ -524,6 +524,80 @@ def _(r):
                  encoding="utf-8")
 
 
+@case("V2-capitalised", says="'rather than'")
+def _(r): sub(r / f"{S}image-deliver/SKILL.md", "Use once the image is chosen.",
+              "Rather than polishing, use once the image is chosen.")
+
+
+@case("V7-misspelt-chain", says="has no chain")
+def _(r):
+    f = r / "image-registry/routes.yaml"
+    f.write_text(f.read_text(encoding="utf-8") + "\nshortcut:\n  pattern: linear\n"
+                 "  when: x\n  chian: [image-generate, image-deliver]\n", encoding="utf-8")
+
+
+@case("V7-empty-chain", says="has no chain")
+def _(r):
+    f = r / "image-registry/routes.yaml"
+    f.write_text(f.read_text(encoding="utf-8") + "\nshortcut:\n  pattern: linear\n"
+                 "  when: x\n  chain:\n", encoding="utf-8")
+
+
+@case("V16-fenced-heading", says="missing section 'Done when'")
+def _(r): sub(r / f"{S}image-refine/SKILL.md", "\n## Done when\n",
+              "\n```text\n## Done when\n```\n")
+
+
+@case("V17-blank-line", says="differs")
+def _(r): sub(r / f"{S}image-review/SKILL.md", "<!-- deliver:sizing -->\n",
+              "<!-- deliver:sizing -->\n\n")
+
+
+@case("V17-duplicated", says="duplicated")
+def _(r):
+    f = r / f"{S}image-refine/SKILL.md"
+    t = f.read_text(encoding="utf-8")
+    block = t[t.index("<!-- deliver:values -->"):t.index("<!-- /deliver:values -->")]
+    f.write_text(t + "\n" + block + "<!-- /deliver:values -->\n", encoding="utf-8")
+
+
+@case("V19-shared-per-skill", says="as read by image-review")
+def _(r): sub(r / f"{S}_image/CONTRACT.md", "(`imgfacts.py`)", "(`strip.py`)")
+
+
+@case("V29-nested", says="has no 'Purpose:'")
+def _(r):
+    sub_dir = r / f"{S}image-deliver/reference/formats"
+    sub_dir.mkdir()
+    (sub_dir / "avif.md").write_text("<!-- image:deferred -->\nAVIF.\n", encoding="utf-8")
+
+
+@case("V34-whole-directory", says="reaches image-tools/")
+def _(r): (r / f"{S}image-generate/tools").symlink_to("../../image-tools")
+
+
+@case("V34-ancestor", says="reaches image-tools/")
+def _(r): (r / f"{S}image-review/playbooks/root").symlink_to("../../..")
+
+
+@case("V30-skill-relative-link", says="orphan.md is reachable from nothing")
+def _(r):
+    # A Markdown link resolves from its own page; read from the skill root it
+    # made a page the link does not reach look linked.
+    (r / f"{S}image-prompt/reference/orphan.md").write_text(
+        "<!-- image:deferred -->\n", encoding="utf-8")
+    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee [o](reference/orphan.md).\n",
+                 encoding="utf-8")
+
+
+@case("V4-nested-copy", says="playbooks/old/structure.md")
+def _(r):
+    (r / f"{S}image-prompt/playbooks/old").mkdir()
+    shutil.copy(r / f"{S}image-prompt/playbooks/structure.md",
+                r / f"{S}image-prompt/playbooks/old/structure.md")
+
+
 # The other half: edits a rule must stay quiet about. A rule that fires on
 # ordinary writing gets switched off, which is a slower way to have no rule.
 QUIET: dict[str, callable] = {}
@@ -541,6 +615,11 @@ def _(r):
     f = r / f"{S}image-deliver/reference/export-targets.md"
     f.write_text(f.read_text(encoding="utf-8") + "\n# PNG | WEBP\n\n# Output: PNG | WEBP\n"
                  "\n  # Output: PNG | WEBP\n", encoding="utf-8")   # indented, still a heading
+
+
+@quiet("a heading quoted in a fence opens no section")
+def _(r): sub(r / f"{S}image-refine/SKILL.md", "## Verify with\n",
+              "## Verify with\n\n```markdown\n## Edit log\n```\n")
 
 
 @quiet("a marker in double-backtick code is quoted too")

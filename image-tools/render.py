@@ -21,16 +21,19 @@ PREFIX = H["prefix"]
 SKILLS_ROOT = ROOT / H["skills_dir"] if H.get("skills_dir") else ROOT
 
 
-def section_span(text: str, section: str) -> tuple[int, int] | None:
-    """Where the body of the H2 named `section` starts and ends, or None.
+# An ATX heading of level 1 or 2. A closing run of #s needs a space before it
+# (CommonMark); "Name###" is the heading's text, not the heading closed.
+HEADING = re.compile(r" {0,3}(#{1,2})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*")
 
-    Read line by line, as a renderer would: an H3 with the same words, or a
-    heading quoted inside a fence, is not the section, and the section ends at
-    the next heading of level 1 or 2 rather than only at the next H2."""
-    # A closing run of #s needs a space before it (CommonMark); "Name###" is
-    # another heading's text, not this one closed.
-    own = re.compile(rf" {{0,3}}## +{re.escape(section)}([ \t]+#+)?[ \t]*")
-    pos, start, fence = 0, None, None
+
+def headings(text: str):
+    """Every heading of level 1 or 2 outside a fence, as (start, end, level,
+    title): where its line starts and where the next line does.
+
+    Read line by line, as a renderer would: a heading quoted inside a fence is
+    not one. Shared with the validator, so the two cannot disagree about where
+    a section is."""
+    pos, fence = 0, None
     for line in text.splitlines(keepends=True):
         bare = line.rstrip("\r\n")
         run = re.match(r" {0,3}(`{3,}|~{3,})", bare)
@@ -41,12 +44,24 @@ def section_span(text: str, section: str) -> tuple[int, int] | None:
         elif run and not (run.group(1)[0] == "`" and "`" in bare[run.end():]):
             fence = run.group(1)             # (a backtick in a backtick fence's
                                              # info string makes it plain text)
-        elif start is None:
-            if own.fullmatch(bare):
-                start = pos + len(line)
-        elif re.match(r" {0,3}#{1,2}(\s|$)", bare):
-            return start, pos
+        else:
+            m = HEADING.fullmatch(bare)
+            if m:
+                yield pos, pos + len(line), len(m.group(1)), m.group(2) or ""
         pos += len(line)
+
+
+def section_span(text: str, section: str) -> tuple[int, int] | None:
+    """Where the body of the H2 named `section` starts and ends, or None.
+
+    An H3 with the same words is not the section, and the section ends at the
+    next heading of level 1 or 2 rather than only at the next H2."""
+    start = None
+    for at, end, level, title in headings(text):
+        if start is not None:
+            return start, at
+        if level == 2 and title == section:
+            start = end
     return None if start is None else (start, len(text))
 
 

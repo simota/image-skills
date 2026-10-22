@@ -183,14 +183,23 @@ def jpeg_segments(raw: bytes, through_scans: bool = False):
 
 def _entropy_end(raw: bytes, i: int) -> int:
     """Where a scan's entropy-coded data stops: the first `0xFF` that is not a
-    stuffed zero or a restart marker. The end of the file if nothing is."""
+    stuffed zero or a restart marker. The end of the file if nothing is.
+
+    Fill bytes may precede any marker, a restart included, so a run of `0xFF`
+    is looked through before deciding. Stopping at `FF FF D0` cut the scan at
+    its first restart, and the stripper dropped the rest as stray bytes."""
     while True:
         k = raw.find(b"\xff", i)
-        if k < 0 or k + 1 >= len(raw):
+        if k < 0:
             return len(raw)
-        nxt = raw[k + 1]
+        m = k + 1
+        while m < len(raw) and raw[m] == 0xFF:
+            m += 1                              # fill bytes before the marker
+        if m >= len(raw):
+            return len(raw)
+        nxt = raw[m]
         if nxt == 0x00 or 0xD0 <= nxt <= 0xD7:
-            i = k + 2
+            i = m + 1
             continue
         return k
 
@@ -226,6 +235,11 @@ def _webp(b: bytes) -> dict:
     need = {b"VP8X": 30, b"VP8L": 25, b"VP8 ": 30}.get(tag)
     if need and len(b) < need:
         raise Unreadable(f"WebP {tag.decode('latin-1').strip()} header is truncated")
+    # The chunk's own size has to cover the fields read below; one declared
+    # shorter than that leaves them to be read out of whatever chunk follows.
+    if need and int.from_bytes(b[16:20], "little") < need - 20:
+        raise Unreadable(f"WebP {tag.decode('latin-1').strip()} chunk is too short "
+                         "to state a size")
     if tag == b"VP8X":
         flags = b[20]
         w = int.from_bytes(b[24:27], "little") + 1

@@ -39,6 +39,11 @@ CASES: list[tuple[str, str, str, str, str]] = [
      "| `3840x2160` | 16:9 | 8.29 MP", "| `3840x2160` | 16:9 | 8.31 MP"),
     ("check_sizes", "wrong", SIZES,
      "| `1000x1000` | multiple of 16 |", "| `1024x1024` | multiple of 16 |"),
+    # a row without its closing pipe is still a row; the table used to end
+    # there, taking this row and every one after it out of the check
+    ("check_sizes", "wrong", SIZES,
+     "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish |",
+     "| `2048x2048` | 1:1 | 4.20 MP | square, print-ish"),
     ("check_sizes", "vacuous", SIZES,
      "1. Maximum edge is 3840px or less", "1. Keep the long edge sensible"),
     ("check_sizes", "vacuous", SIZES,
@@ -57,6 +62,10 @@ CASES: list[tuple[str, str, str, str, str]] = [
      "| `@2x` | 768x512 | 2.0 | 1536x1024 |", "| `@2x` | 768x512 | 1.5 | 1152x768 |"),
     ("check_density", "vacuous", RUNGS,
      "Source must be at least: 2304x1536", "The source should be big enough."),
+    # a second floor that disagrees with the first; only the first was read
+    ("check_density", "wrong", RUNGS,
+     "Source must be at least: 2304x1536",
+     "Source must be at least: 2304x1536\n\nSource must be at least: 768x512"),
     ("check_density", "vacuous", RUNGS,
      "| `@1x` | 768x512 | 1.0 | 768x512 |", "| `@1x` | the CSS box | none | the same again |"),
     ("check_canvas", "wrong", REG, "    max_edge: 3840", "    max_edge: 4096"),
@@ -88,6 +97,16 @@ CASES: list[tuple[str, str, str, str, str]] = [
     ("check_aspects", "vacuous", SIZES,
      "| `9:16` | tall, full-bleed on a phone |",
      "| tall as a phone | full-bleed |"),
+]
+
+
+# Valid tables a check must still read: GFM makes the outer pipes optional, so
+# a row or a delimiter without its closing one is ordinary writing.
+QUIET: list[tuple[str, str, str]] = [
+    (SIZES, "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish |",
+     "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish"),
+    (SIZES, "| Size | Breaks |\n|---|---|", "| Size | Breaks |\n|---|---"),
+    (RUNGS, "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 768x512 | 1.5 | 1152x768"),
 ]
 
 
@@ -123,6 +142,22 @@ def main() -> int:
             if not r.returncode or f"[{checker}]" not in r.stdout:
                 silent.append(f"{i}:{checker}/{kind}")
                 print(f"  case {i} ({checker}, {kind}) did not fire\n{r.stdout}{r.stderr}")
+
+    for i, (page, old, new) in enumerate(QUIET, 1):
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "repo"
+            shutil.copytree(ROOT, copy, symlinks=True,
+                            ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            f = copy / page
+            text = f.read_text(encoding="utf-8")
+            if old not in text:
+                silent.append(f"quiet {i}: fixture text gone")
+                continue
+            f.write_text(text.replace(old, new, 1), encoding="utf-8")
+            r = run(copy)
+            if r.returncode:
+                silent.append(f"quiet {i}")
+                print(f"  quiet case {i} fired\n{r.stdout}{r.stderr}")
 
     kinds = {k for _, k, *_ in CASES}
     print(f"{len(CASES)} cases exercised ({', '.join(sorted(kinds))}), "

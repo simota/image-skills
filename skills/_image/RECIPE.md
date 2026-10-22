@@ -60,8 +60,8 @@ engine: "codex exec (image generation)"
 model: "<as the run reported it, or unreported>"
 prompt: "<verbatim>"
 excluded: "<as sent, or none>"
-size: { asked: 1536x1024, on_disk: 1536x1024 }   # on_disk read off the file;
-                                                 # on the aspect path `asked` is a ratio
+size: { asked: 1536x1024, on_disk: 1536x1024 }   # on_disk read off the file; an aspect
+                                                 # `asked` is quoted: bare 16:9 is a number
 inputs: [{ path: brand/mark.png, role: "logo to match" }]
 output: { generated: "<generator path>", placed: "assets/hero.png" }
 note: IRREPRODUCIBLE — exact regeneration not established; this file is the artifact

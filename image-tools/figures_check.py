@@ -68,12 +68,13 @@ CONSTRAINT_RE = {
 
 LEGAL_ROW = re.compile(
     r"^\|\s*`(\d+)x(\d+)`\s*\|\s*(\d+):(\d+)\s*\|\s*([0-9.]+) MP\s*\|")
-REJECT_ROW = re.compile(r"^\|\s*`(\d+)x(\d+)`\s*\|\s*([a-z0-9 ]+?)\s*\|\s*$")
+# A closing pipe is optional in GFM, so the last cell of a row may end the line.
+REJECT_ROW = re.compile(r"^\|\s*`(\d+)x(\d+)`\s*\|\s*([a-z0-9 ]+?)\s*(?:\|\s*)?$")
 
 LEGAL_HEAD = re.compile(r"^\|\s*Size\s*\|\s*Ratio\s*\|\s*Megapixels\s*\|")
 REJECT_HEAD = re.compile(r"^\|\s*Size\s*\|\s*Breaks\s*\|")
 RUNG_HEAD = re.compile(r"^\|\s*Rung\s*\|\s*Base\s*\|\s*Factor\s*\|\s*Emitted\s*\|")
-SEP = re.compile(r"^\|[\s:|-]+\|$")
+SEP = re.compile(r"^\|[\s:|]*-[\s:|-]*$")
 
 
 def table_rows(text: str, head: re.Pattern) -> list[tuple[int, str]]:
@@ -93,7 +94,9 @@ def table_rows(text: str, head: re.Pattern) -> list[tuple[int, str]]:
             s = lines[i].strip()
             if SEP.match(s):
                 continue
-            if not (s.startswith("|") and s.endswith("|")):
+            # A row without its closing pipe is still a row (GFM); ending the
+            # table there dropped it, and every row after it, from the check.
+            if not s.startswith("|"):
                 break
             out.append((i + 1, s))
     return out
@@ -199,7 +202,7 @@ def check_sizes() -> int:
 
 RUNG_ROW = re.compile(
     r"^\|\s*`@(\d+(?:\.\d+)?)x`\s*\|\s*(\d+)x(\d+)\s*\|\s*(\d+(?:\.\d+)?)\s*\|"
-    r"\s*(\d+)x(\d+)\s*\|")
+    r"\s*(\d+)x(\d+)\s*(?:\||$)")
 FLOOR = re.compile(r"Source must be at least:\s*(\d+)x(\d+)")
 
 
@@ -237,11 +240,11 @@ def check_density() -> int:
         if ew * eh > widest[0] * widest[1]:
             widest = (ew, eh)
 
-    m = FLOOR.search(text)
-    if not m:
+    floors = list(FLOOR.finditer(text))
+    if not floors:
         fail("export-targets.md", "no `Source must be at least: WxH` line; the "
                                   "floor the rungs imply is not stated")
-    else:
+    for m in floors:                          # every statement, as for the canvas
         stated = (int(m.group(1)), int(m.group(2)))
         if stated != widest:
             fail("export-targets.md",

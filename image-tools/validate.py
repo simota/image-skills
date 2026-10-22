@@ -16,6 +16,10 @@ from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True                             # no __pycache__ in the tools dir
+from render import headings                                # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 FAILURES: list[str] = []
 
@@ -116,16 +120,13 @@ def _fm(d: Path) -> dict:
 
 
 def sections(text: str) -> dict[str, str]:
-    out, cur, buf = {}, None, []
-    for line in text.splitlines():
-        if line.startswith("## "):
-            if cur:
-                out[cur] = "\n".join(buf)
-            cur, buf = line[3:].strip(), []
-        elif cur:
-            buf.append(line)
-    if cur:
-        out[cur] = "\n".join(buf)
+    """Each H2's body, up to the next heading of level 1 or 2 — found the way
+    render.py finds them, so a heading quoted in a fence is text to both."""
+    out, marks = {}, list(headings(text))
+    for i, (_, end, level, title) in enumerate(marks):
+        if level == 2:
+            stop = marks[i + 1][0] if i + 1 < len(marks) else len(text)
+            out[title] = text[end:stop].rstrip("\n")
     return out
 
 
@@ -157,7 +158,7 @@ def v2_description_terms():
     for d in SKILL_DIRS:
         desc = _fm(d).get("description", "")
         for term in H["forbidden_description_terms"]:
-            if term in desc:
+            if term.lower() in desc.lower():    # "Rather than" opens a sentence
                 fail("V2", f"{d.name} description contains {term!r}; "
                            "boundaries belong in capabilities.yaml `not:`")
         for name in others - {d.name}:
@@ -178,15 +179,21 @@ def v4_playbook_orphans():
         if not pb_dir.exists():
             continue
         body = sections(read(d / "SKILL.md")).get("Decide first", "")
-        linked = {Path(m).name for m in LINK_RE.findall(body)}
-        for pb in sorted(pb_dir.glob("*.md")):
-            if pb.name not in linked:
-                fail("V4", f"{d.name}/playbooks/{pb.name} is not linked from Decide first")
+        linked = _targets(LINK_RE.findall(body), d)
+        for pb in sorted(pb_dir.rglob("*.md")):
+            if pb.resolve() not in linked:
+                fail("V4", f"{pb.relative_to(ROOT)} is not linked from Decide first")
+
+
+def _targets(found, *bases: Path) -> set[Path]:
+    """Where links lead, resolved: a name alone let a nested copy pass for the
+    linked page it shares a name with."""
+    return {(b / m.split("#")[0]).resolve() for m in found for b in bases}
 
 
 def v5_playbook_budget():
     for d in SKILL_DIRS:
-        pbs = sorted((d / "playbooks").glob("*.md")) if (d / "playbooks").exists() else []
+        pbs = sorted((d / "playbooks").rglob("*.md")) if (d / "playbooks").exists() else []
         if len(pbs) > LIM["playbooks_per_skill"]:
             fail("V5", f"{d.name} has {len(pbs)} playbooks (max {LIM['playbooks_per_skill']})")
         for pb in pbs:
@@ -212,7 +219,12 @@ def v6_budgets():
 
 def v7_routes_real():
     for name, r in ROUTES.items():
-        for s in r.get("chain", []):
+        chain = r.get("chain")
+        if not (isinstance(chain, list) and chain):
+            # A misspelt key leaves a route every chain rule skips in silence.
+            fail("V7", f"route {name} has no chain; every route is a list of stages")
+            continue
+        for s in chain:
             if s not in SKILLS:
                 fail("V7", f"route {name} chains {s}, which does not exist")
 
@@ -334,8 +346,17 @@ def v17_delivery():
             if open_m not in text or close_m not in text:
                 fail("V17", f"{d.name}/SKILL.md is missing the {key} delivery block")
                 continue
-            got = text.split(open_m, 1)[1].split(close_m, 1)[0].strip("\n")
-            if got != want:
+            if text.count(open_m) != 1 or text.count(close_m) != 1 \
+                    or text.index(open_m) > text.index(close_m):
+                # render.py refuses these; a check that read the first copy
+                # passed what the build step then could not render.
+                fail("V17", f"{d.name}/SKILL.md {key} markers are duplicated or "
+                            "out of order")
+                continue
+            # Exactly what render.py writes, blank lines included: a looser
+            # comparison passed blocks that CI's render step then rewrote.
+            got = text.split(open_m, 1)[1].split(close_m, 1)[0]
+            if got != f"\n{want}\n":
                 fail("V17", f"{d.name}/SKILL.md {key} block differs from "
                             f"image-registry/delivered/{key}.md (run: make render)")
             body = sections(text).get(spec["section"], "")
@@ -362,7 +383,6 @@ def v19_paths_resolve():
     """
     if not SKILL_DIRS:
         return                            # V3 reports the roster mismatch
-    probe = SKILL_DIRS[0]
     shared = sorted((SKILLS_ROOT / SHARED).glob("*.md"))
     for d in SKILL_DIRS:
         # reference/ is read by the skill too, so its paths resolve the same way
@@ -370,8 +390,11 @@ def v19_paths_resolve():
             + sorted((d / "reference").rglob("*.md"))
         for f in readable:
             _check_paths(f, d, f"{d.name}/{f.relative_to(d)}")
-    for f in shared:                      # checked once, against one skill dir
-        _check_paths(f, probe, f"{SHARED}/{f.name}")
+    # Every skill reads them, and skills link different tools: a path that
+    # resolves from one skill's directory can be missing from another's.
+    for f in shared:
+        for d in SKILL_DIRS:
+            _check_paths(f, d, f"{SHARED}/{f.name} (as read by {d.name})")
 
 
 # A backticked path is a reference to this set only if it names a file or sits
@@ -529,7 +552,7 @@ def v24_rendered_tables():
 def v25_playbook_rot():
     pats = [re.compile(p) for p in H["rot_patterns"]]
     for d in SKILL_DIRS:
-        for pb in sorted((d / "playbooks").glob("*.md")) if (d / "playbooks").exists() else []:
+        for pb in sorted((d / "playbooks").rglob("*.md")) if (d / "playbooks").exists() else []:
             for i, line in enumerate(read(pb).splitlines(), 1):
                 for p in pats:
                     if p.search(line):
@@ -602,7 +625,7 @@ def v29_reference_headers():
     """
     want = H["reference_headers"]
     for d in SKILL_DIRS:
-        for f in sorted((d / "reference").glob("*.md")) if (d / "reference").exists() else []:
+        for f in sorted((d / "reference").rglob("*.md")) if (d / "reference").exists() else []:
             head = "\n".join(read(f).splitlines()[:12])
             for header in want:
                 if header not in head:
@@ -618,12 +641,13 @@ def v30_reference_orphans():
         if not ref_dir.exists():
             continue
         body = sections(read(d / "SKILL.md")).get("Decide first", "")
-        linked = {Path(m).name for m in LINK_RE.findall(body)}
-        for pb in sorted((d / "playbooks").glob("*.md")) if (d / "playbooks").exists() else []:
-            linked |= {Path(m).name for m in LINK_RE.findall(read(pb))}
-            linked |= {Path(m).name for m in TICK_PATH_RE.findall(read(pb))}
-        for f in sorted(ref_dir.glob("*.md")):
-            if f.name not in linked:
+        linked = _targets(LINK_RE.findall(body), d)
+        for pb in sorted((d / "playbooks").rglob("*.md")) if (d / "playbooks").exists() else []:
+            # A link is relative to its page; a backticked path to the skill.
+            linked |= _targets(LINK_RE.findall(read(pb)), pb.parent)
+            linked |= _targets(TICK_PATH_RE.findall(read(pb)), d)
+        for f in sorted(ref_dir.rglob("*.md")):
+            if f.resolve() not in linked:
                 fail("V30", f"{f.relative_to(ROOT)} is reachable from nothing — "
                             "not the Decide first table, not a playbook")
 
@@ -640,7 +664,7 @@ def v31_verified_names_a_check():
         fail("V31", "harness.yaml declares no verified_markers; this rule is checking nothing")
         return
     for d in SKILL_DIRS:
-        for f in sorted((d / "reference").glob("*.md")) if (d / "reference").exists() else []:
+        for f in sorted((d / "reference").rglob("*.md")) if (d / "reference").exists() else []:
             lines = read(f).splitlines()
             start = next((i for i, l in enumerate(lines) if l.startswith("Verified:")), None)
             if start is None:
@@ -749,6 +773,20 @@ def v34_tools_reachable():
             if entry.suffix == ".py" and entry.name not in declared_tools:
                 fail("V34", f"{d.name}/{entry.name} is a tool link nothing "
                             "declares; add it to linked_tools or remove it")
+    # Beside SKILL.md is the only place a tool is linked. A link to the whole
+    # directory, or one tucked under playbooks/, reaches what nothing declared.
+    tools_dir = (ROOT / f"{SET}-tools").resolve()
+    for d in SKILL_DIRS:
+        for link in sorted(_links_under(d)):
+            if link.parent == d and link.suffix == ".py":
+                continue                          # judged above
+            target = link.resolve()
+            # The directory, anything in it, or anything that contains it.
+            if target == tools_dir or tools_dir in target.parents \
+                    or target in tools_dir.parents:
+                fail("V34", f"{link.relative_to(SKILLS_ROOT)} reaches {SET}-tools/; "
+                            "a tool is linked by name beside SKILL.md, where "
+                            "linked_tools declares it")
 
 
 def v35_signature():
@@ -876,7 +914,7 @@ def v37_source_pins_the_rot():
                     "silence and emptiness have to look different")
         return
     for d in SKILL_DIRS:
-        for f in sorted((d / "reference").glob("*.md")) if (d / "reference").exists() else []:
+        for f in sorted((d / "reference").rglob("*.md")) if (d / "reference").exists() else []:
             lines = read(f).splitlines()
             start = next((i for i, l in enumerate(lines) if l.startswith("Source:")), None)
             if start is None:
@@ -1011,7 +1049,7 @@ def v39_post_change_review():
         fail("V39", "completion roles are missing; this check would be vacuous")
         return
     for name, route in ROUTES.items():
-        chain = route.get("chain", [])
+        chain = route.get("chain") or []
         changes = [i for i, stage in enumerate(chain) if stage in changers]
         delivers = [i for i, stage in enumerate(chain) if stage in deliverers]
         if not changes or not (delivers or any(s in editors for s in chain)):

@@ -59,6 +59,15 @@ PNG_RENDER = {"tRNS", "bKGD", "pHYs"}
 PNG_CREDENTIALS = {"caBX"}                    # C2PA content credentials
 
 JPEG_CREDENTIALS = {0xEB}                     # APP11, JUMBF
+# Kept only when it is JUMBF: after the common identifier, the En and Z
+# fields, every segment repeats the box header, whose type is `jumb`. Any
+# other APP11 — another JPEG XT box, or private data that happens to open
+# with "JP" — is a block nobody here has named, and those go.
+JUMBF_CI = b"JP"
+
+
+def _is_jumbf(body: bytes) -> bool:
+    return body.startswith(JUMBF_CI) and body[12:16] == b"jumb"
 # Kept by marker *and* signature: APP0 also carries JFXX thumbnails, and an
 # embedded thumbnail is on the list of what goes.
 JPEG_KEEP_APP = {0xE0: b"JFIF\x00",          # density
@@ -68,6 +77,7 @@ JFIF_HEAD = 14                                # "JFIF\0", version, units, densit
 
 WEBP_STRUCTURE = {b"VP8 ", b"VP8L", b"VP8X", b"ALPH", b"ANIM", b"ANMF"}
 WEBP_COLOUR = {b"ICCP"}
+WEBP_CREDENTIALS = {b"C2PA"}                  # where C2PA embeds in a RIFF file
 VP8X_EXIF, VP8X_XMP = 0x08, 0x04
 
 
@@ -144,11 +154,19 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
     # skips are reported rather than lost quietly, and a file that ends before
     # EOI is refused as PNG's missing IEND is: half a picture is not stripped.
     out, dropped, tail, pos = bytearray(b"\xff\xd8"), [], None, 2
+    scanned = False
     for marker, start, end, body in imgfacts.jpeg_segments(raw, through_scans=True):
         if end > len(raw):
             raise Refused("JPEG is truncated inside a segment; nothing was changed")
         if start > pos:
+            if scanned:
+                # Once a scan has begun, bytes the walk could not place are
+                # most likely pixels it misread; dropping them would edit the
+                # picture, which this never does.
+                raise Refused(f"{start - pos} bytes after a scan began could not be "
+                              "placed in any segment; nothing was changed")
             dropped.append(("stray bytes between segments", start - pos))
+        scanned = scanned or marker == 0xDA
         pos = end
         whole = raw[start:end]
         if body is None:                       # entropy data, or a standalone marker
@@ -168,15 +186,18 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
         elif marker == 0xE2 and body.startswith(b"ICC_PROFILE\x00"):
             keep = not opt.drop_profile
         elif marker in JPEG_CREDENTIALS:
-            keep = not opt.drop_credentials
+            keep = _is_jumbf(body) and not opt.drop_credentials
         else:
             keep = body.startswith(JPEG_KEEP_APP.get(marker, b"\x00unmatched"))
-        if keep and marker == 0xE0 and len(body) > JFIF_HEAD and body[12:14] != b"\x00\x00":
+        if keep and marker == 0xE0 and len(body) > JFIF_HEAD:
             # JFIF carries an optional thumbnail after its 14-byte header. The
-            # header stays, the thumbnail goes, and the segment says so.
+            # header stays, the thumbnail goes, and the segment says so. Bytes
+            # there under a 0x0 thumbnail go too: the header does not name them.
             head = body[:12] + b"\x00\x00"
             out += b"\xff\xe0" + struct.pack(">H", len(head) + 2) + head
-            dropped.append(("JFIF thumbnail", len(whole) - len(head) - 4))
+            what = ("JFIF thumbnail" if body[12:14] != b"\x00\x00"
+                    else "bytes after the JFIF header")
+            dropped.append((what, len(whole) - len(head) - 4))
         elif keep:
             out += whole
         else:
@@ -214,7 +235,8 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
         # the trailer's, not a pad to copy along.
         whole = raw[i:min(i + 8 + padded, end)]
         keep = (tag in WEBP_STRUCTURE
-                or (tag in WEBP_COLOUR and not opt.drop_profile))
+                or (tag in WEBP_COLOUR and not opt.drop_profile)
+                or (tag in WEBP_CREDENTIALS and not opt.drop_credentials))
         if tag == b"EXIF":
             o = _orientation(raw[i + 8:i + 8 + size])
             if o not in (None, 1) and not opt.orientation_is_applied:

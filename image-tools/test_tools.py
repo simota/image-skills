@@ -1482,6 +1482,52 @@ def test_edges_round_four(tmp: Path) -> None:
     truthy("render names markers in the wrong order as such", "order" in said)
 
 
+def test_strip_round_five(tmp: Path) -> None:
+    """A scan cut at a filled restart, and blocks that kept or dropped the
+    wrong thing by marker or tag alone."""
+    f = tmp / "fill.jpg"
+    head = jpeg_with(16, 16, [])[:-len(b"ENTROPY\xff\xd9")]
+    entropy = b"AB\xff\xff\xd0CD\xff\xff\xff\xd1EF\xff\xff\x00GH"
+    f.write_bytes(head + entropy + b"\xff\xd9")
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("fill bytes before a restart do not end the scan", entropy in out)
+    check("and nothing in it is reported as stray", dropped, [])
+
+    jfif = b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00"
+    f.write_bytes(jpeg_with(16, 16, [(0xE0, jfif + b"PROMPTTEXT")]))
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("bytes after a JFIF header with no thumbnail are removed",
+           b"PROMPTTEXT" not in out and jfif in out)
+    truthy("and reported", any("after the JFIF header" in d for d in dropped))
+
+    jumbf = b"JP\x00\x01\x00\x00\x00\x01" + b"c2pa-box"
+    f.write_bytes(jpeg_with(16, 16, [(0xEB, b"XMP\x00SECRET"), (0xEB, jumbf)]))
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("an APP11 that is not JUMBF is removed", b"SECRET" not in out)
+    truthy("a JUMBF APP11 is a credential and stays", jumbf in out)
+    out, _, _ = strip.strip(f, Opt(drop_credentials=True))
+    truthy("unless credentials are dropped", jumbf not in out)
+
+    f = tmp / "c2pa.webp"
+    f.write_bytes(webp_with(16, 16, 0, [(b"VP8L", b"\x2f" + bytes(4)),
+                                        (b"C2PA", b"manifest")]))
+    out, dropped, _ = strip.strip(f, Opt())
+    truthy("a WebP C2PA chunk is a credential and stays", b"C2PA" in webp_tags(out))
+    check("and nothing is reported", dropped, [])
+    out, dropped, _ = strip.strip(f, Opt(drop_credentials=True))
+    truthy("--drop-credentials removes it", b"C2PA" not in webp_tags(out))
+
+    lossless = b"VP8L" + struct.pack("<I", 5) + b"\x2f" + bytes(4) + b"\x00"
+    short = (b"VP8X" + struct.pack("<I", 0) + lossless)
+    raw = b"RIFF" + struct.pack("<I", 4 + len(short)) + b"WEBP" + short
+    truthy("a VP8X declaring too little to hold a size is Unreadable",
+           raises(lambda: imgfacts.probe_bytes(raw), imgfacts.Unreadable))
+    f = tmp / "short-vp8x.webp"
+    f.write_bytes(raw)
+    check("and strip says so rather than reading the next chunk",
+          strip.main([str(f)]), 1)
+
+
 def test_strip_concurrent_change(tmp: Path) -> None:
     """--in-place writes back only over the bytes it stripped. Another process
     changing the file in between keeps its change: the run refuses instead of
@@ -2027,6 +2073,7 @@ def main() -> int:
         test_strip_leaks(tmp)
         test_strip_writes(tmp)
         test_strip_concurrent_change(tmp)
+        test_strip_round_five(tmp)
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_cli_bounds_and_render_sections(tmp)

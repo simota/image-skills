@@ -1157,6 +1157,18 @@ def test_precommit_hook(tmp: Path) -> None:
     r = subprocess.run(["sh", str(hook)], cwd=other, env=env, capture_output=True, text=True)
     check("in a repository that is not this set the hook stands aside",
           (r.returncode, r.stderr), (0, ""))
+    # Sharing a file name is not being this set.
+    (other / "image-tools").mkdir()
+    (other / "image-tools" / "validate.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(other), "add", "-A"], env=env, capture_output=True)
+    r = subprocess.run(["sh", str(hook)], cwd=other, env=env, capture_output=True, text=True)
+    check("nor in one that only has a file of the same name",
+          (r.returncode, r.stderr), (0, ""))
+    # This set deleting its own registry is still this set's commit to judge.
+    git("rm", "-q", "--cached", "image-registry/harness.yaml")
+    check("a commit removing the registry is judged, not waved through",
+          hook_passes(), False)
+    git("reset", "-q", "--hard")
 
 
 def test_strip_writes(tmp: Path) -> None:
@@ -1619,6 +1631,14 @@ def test_recipe_round_six(tmp: Path) -> None:
             .replace("../../assets/n.png", str(jpg)), encoding="utf-8")
         truthy("check reports a JPEG living under a .png name",
                any("is JPEG, and its name says PNG" in x for x in recipe.check_one(jpg)))
+        odd = d / "conv" / "a.bin"
+        jpg.rename(odd)
+        recipe.sidecar_of(jpg).rename(recipe.sidecar_of(odd))
+        side = recipe.sidecar_of(odd)
+        side.write_text(side.read_text(encoding="utf-8").replace(str(jpg), str(odd)),
+                        encoding="utf-8")
+        truthy("and one under a name that promises no format at all",
+               any("no format this checks" in x for x in recipe.check_one(odd)))
     finally:
         os.chdir(here)
         if old is None:

@@ -9,9 +9,11 @@
 set -e
 # A hooks directory can be shared (a global core.hooksPath), and then this runs
 # for every repository on the machine. One that is not this set is not ours to
-# judge, and refusing its commits over a missing validator would be.
-if ! git cat-file -e :image-tools/validate.py 2>/dev/null \
-        && ! git cat-file -e :image-registry/harness.yaml 2>/dev/null; then
+# judge, and refusing its commits over a missing validator would be. The set is
+# known by its own declaration, not by a file name another repository may share,
+# in the index or in HEAD — so a commit deleting it is still judged.
+ours() { git show "$1:image-registry/harness.yaml" 2>/dev/null | grep -q '^set: image$'; }
+if ! ours "" && ! ours HEAD; then
     exit 0
 fi
 tmp=$(mktemp -d)

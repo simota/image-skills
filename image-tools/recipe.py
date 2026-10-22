@@ -496,10 +496,11 @@ def check_one(image: Path) -> list[str]:
     except (imgfacts.Unreadable, OSError) as e:
         return problems + [f"{image}: {e}"]
     promised = SUFFIX_FORMAT.get(image.suffix.lower())
-    if promised and promised != facts["format"]:
+    if promised != facts["format"]:
         # What capture refuses to place, a later rename or conversion can
         # still produce; every reader after that trusts the name.
-        problems.append(f"{image}: is {facts['format']}, and its name says {promised}")
+        problems.append(f"{image}: is {facts['format']}, and its name says "
+                        f"{promised or 'no format this checks'}")
     size = doc["size"] if isinstance(doc.get("size"), dict) else {}
     on_disk = size.get("on_disk")
     if on_disk != facts["size"]:

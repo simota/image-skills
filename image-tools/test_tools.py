@@ -1888,6 +1888,12 @@ def test_strip_round_six(tmp: Path) -> None:
     out, dropped, _ = strip.strip(w, Opt())
     check("an animation with nothing hidden in it is unchanged", (out, dropped),
           (w.read_bytes(), []))
+    odd = bytes(16) + b"VP8L" + struct.pack("<I", 5) + b"\x2f" + bytes(4)   # 29 bytes
+    raw = webp_with(16, 16, 0x02, [(b"ANIM", bytes(6)), (b"ANMF", odd)])
+    w.write_bytes(raw[:-1] + b"\x7f")         # a pad byte someone wrote non-zero
+    out, dropped, _ = strip.strip(w, Opt())
+    check("an odd frame with nothing to lose keeps its pad byte as it was",
+          (out, dropped), (w.read_bytes(), []))
     w.write_bytes(webp_with(16, 16, 0x02, [(b"ANMF", frame[:20] + b"\xff\xff\x00\x00")]))
     truthy("a frame whose chunk runs past it is refused", refuses(w, Opt(), "ANMF"))
 

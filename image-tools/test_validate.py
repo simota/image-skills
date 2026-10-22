@@ -810,6 +810,12 @@ def _(r):
         "Mark 1920 wide, and a marker 2000 px.\n\n## ")
 
 
+@quiet("a link in an indented code block is an example")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\nFor example:\n\n    [label](missing.md)\n\n## ")
+
+
 @quiet("a code span runs across the lines of one block quote")
 def _(r):
     sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",

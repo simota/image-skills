@@ -265,7 +265,7 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
         if tag == b"EXIF":
             _refuse_rotation(raw[i + 8:i + 8 + size], opt)
         if keep and tag == b"ANMF":
-            whole, gone = _frame(raw[i + 8:i + 8 + size], len(whole) - 8 - size)
+            whole, gone = _frame(whole, size)
             dropped += gone
         if keep:
             if tag == b"VP8X":                 # the flags must stop advertising
@@ -300,9 +300,11 @@ ANMF_FRAME = {b"ALPH", b"VP8 ", b"VP8L"}
 ANMF_HEAD = 16
 
 
-def _frame(data: bytes, pad: int) -> tuple[bytes, list]:
-    """One ANMF chunk, rebuilt with only its frame's image chunks, and the
-    ledger entries for what it lost. `pad` is the pad byte the chunk had."""
+def _frame(whole: bytes, size: int) -> tuple[bytes, list]:
+    """One ANMF chunk — `whole`, header and any pad byte included — rebuilt with
+    only its frame's image chunks, and the ledger entries for what it lost.
+    With nothing to lose it is returned exactly as read, pad byte and all."""
+    data = whole[8:8 + size]
     if len(data) < ANMF_HEAD:
         raise Refused("WebP has an ANMF frame shorter than its header; nothing was changed")
     kept, gone, j = bytearray(data[:ANMF_HEAD]), [], ANMF_HEAD
@@ -322,11 +324,11 @@ def _frame(data: bytes, pad: int) -> tuple[bytes, list]:
             gone.append(f"{tag.decode('latin-1').strip()} in an ANMF frame")
         j += len(sub)
     if not gone:
-        return b"ANMF" + struct.pack("<I", len(data)) + data + b"\0" * pad, []
-    whole = b"ANMF" + struct.pack("<I", len(kept)) + bytes(kept) + b"\0" * (len(kept) & 1)
+        return whole, []
+    rebuilt = b"ANMF" + struct.pack("<I", len(kept)) + bytes(kept) + b"\0" * (len(kept) & 1)
     # One entry carries the whole difference, pad bytes included, so the
     # ledger still balances against what the file lost.
-    return whole, [(", ".join(gone), 8 + len(data) + pad - len(whole))]
+    return rebuilt, [(", ".join(gone), len(whole) - len(rebuilt))]
 
 
 HANDLERS = {"PNG": _strip_png, "JPEG": _strip_jpeg, "WebP": _strip_webp}

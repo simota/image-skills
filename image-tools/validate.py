@@ -122,6 +122,8 @@ def prose_links(text: str) -> list[str]:
         if m and not (m.group(1)[0] == "`" and "`" in line[m.end():]):
             flush()
             fence = m.group(1)
+        elif not para and re.match(r"^( {4}|\t)", line):
+            continue                               # indented code: an example
         elif line.strip():
             if _LINK_BLOCK.match(line) or (
                     para and bool(_QUOTED.match(line)) != bool(_QUOTED.match(para[-1]))):

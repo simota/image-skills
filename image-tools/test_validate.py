@@ -830,6 +830,13 @@ def _(r):
         "\n> > ```\n> > example\n> See [guide](gone.md).\n\n## ")
 
 
+@case("V8-quote-depth", says="links to missing gone.md")
+def _(r):
+    """A backtick one quote deep does not pair with one two quotes deep."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> Press ` to toggle.\n> > See [guide](gone.md) and `x`.\n\n## ")
+
+
 @quiet("an indented or fenced example inside a block quote is code too")
 def _(r):
     sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",

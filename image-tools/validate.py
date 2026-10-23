@@ -96,7 +96,6 @@ _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 # Lines that open a block of their own: a code span never runs across one, so
 # a lone backtick in one list item cannot pair with one in the next.
 _LINK_BLOCK = re.compile(r"^ {0,3}(#{1,6}(\s|$)|[-*+]\s|\d+[.)]\s|\|)")
-_QUOTED = re.compile(r"^ {0,3}>")
 _QUOTE_PREFIX = re.compile(r"^(?: {0,3}> ?)+")
 
 
@@ -104,7 +103,7 @@ def prose_links(text: str) -> list[str]:
     """Link targets a reader can follow: outside fences and code spans, where
     `![alt](hero.png)` is an example of the syntax rather than a link, with an
     optional title and `<...>` brackets taken off."""
-    found, fence, fence_depth, para = [], None, 0, []
+    found, fence, fence_depth, para, para_depth = [], None, 0, [], 0
 
     def flush():
         # A link counts when its `[` is prose; its text may hold a code span.
@@ -130,16 +129,17 @@ def prose_links(text: str) -> list[str]:
         if m and not (m.group(1)[0] == "`" and "`" in line[m.end():]):
             flush()
             fence, fence_depth = m.group(1), depth
-        elif re.match(r"^( {4}|\t)", line) and (
-                not para or (q and not _QUOTED.match(para[-1]))):
+        elif re.match(r"^( {4}|\t)", line) and (not para or depth > para_depth):
             # Indented code opens a block, and cannot interrupt a paragraph:
             # an indented line after one, even outside its quote, continues it.
             continue                               # indented code: an example
         elif line.strip():
-            if _LINK_BLOCK.match(line) or (
-                    para and bool(q) != bool(_QUOTED.match(para[-1]))):
+            # A change of quote depth is a change of block: `> a` and `> > b`
+            # are two paragraphs, and a backtick in one never pairs with the other.
+            if _LINK_BLOCK.match(line) or (para and depth != para_depth):
                 flush()
             para.append(whole)
+            para_depth = depth
             if re.match(r"^ {0,3}#{1,6}(\s|$)", line):
                 flush()                            # a heading is one line long
         else:

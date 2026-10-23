@@ -134,12 +134,15 @@ def prose_links(text: str) -> list[str]:
             # an indented line after one, even outside its quote, continues it.
             continue                               # indented code: an example
         elif line.strip():
-            # A change of quote depth is a change of block: `> a` and `> > b`
-            # are two paragraphs, and a backtick in one never pairs with the other.
-            if _LINK_BLOCK.match(line) or (para and depth != para_depth):
+            # A deeper quote opens a block: `> a` and `> > b` are two paragraphs,
+            # and a backtick in one never pairs with the other. A shallower line
+            # is a lazy continuation of the paragraph it follows, as CommonMark
+            # reads it, so the paragraph keeps its own depth.
+            if _LINK_BLOCK.match(line) or (para and depth > para_depth):
                 flush()
+            if not para:
+                para_depth = depth
             para.append(whole)
-            para_depth = depth
             if re.match(r"^ {0,3}#{1,6}(\s|$)", line):
                 flush()                            # a heading is one line long
         else:

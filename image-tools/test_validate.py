@@ -837,6 +837,12 @@ def _(r):
         "\n> Press ` to toggle.\n> > See [guide](gone.md) and `x`.\n\n## ")
 
 
+@quiet("a lazy continuation keeps a quoted code span whole")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\n> Quote `[x](not-a-link.md)\nstill code` here.\n\n## ")
+
+
 @quiet("an indented or fenced example inside a block quote is code too")
 def _(r):
     sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",

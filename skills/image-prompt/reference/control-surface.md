@@ -7,7 +7,8 @@ Verified: 2026-08-23 — read off the installed backing skill and confirmed by
 running one generation through the default path. The second generator's section
 was added 2026-08-24 from one run through it and its own parameter list. Model
 names and mode behaviour are a snapshot of one machine; no automated check
-re-reads them, and only the aspect list is checked, by `make figures`.
+re-reads them. The aspect list is not restated here: it is in `reference/sizes.md`,
+where `make figures` checks it against the registry.
 
 # What the generators will and will not honour
 
@@ -66,7 +67,7 @@ The `generate_image` tool built into the `agy` CLI. No API key, no flag, no
 second mode: the model calls it because the prompt asked for an image.
 
 **What it takes:** `Prompt`, an `ImageName` for the filename stem, an optional
-`AspectRatio` from seven fixed shapes, and optional `ImagePaths` for inputs.
+`AspectRatio` from a fixed list of shapes, and optional `ImagePaths` for inputs.
 
 **What it does not take:** a pixel size, a seed, quality, an output path, an
 output format, a mask, a transparency flag. `AspectRatio` is the only

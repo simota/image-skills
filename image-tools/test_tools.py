@@ -1171,6 +1171,20 @@ def test_precommit_hook(tmp: Path) -> None:
     check("a commit removing the registry is judged, not waved through",
           hook_passes(), False)
     git("reset", "-q", "--hard")
+    # The set is known by what the YAML says, not by one spelling of the line:
+    # a trailing comment like its neighbours', quotes, or CRLF line endings
+    # made every later commit, broken or not, pass without a word.
+    reg = repo / "image-registry" / "harness.yaml"
+    plain = reg.read_text(encoding="utf-8")
+    for spelling in ("set: image   # every name derives from this", 'set: "image"',
+                     "set: image\r"):
+        reg.write_text(plain.replace("set: image\n", spelling + "\n", 1), encoding="utf-8")
+        target.write_text(broken, encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "--no-verify", "-m", "respelt")   # HEAD carries it too
+        check(f"the hook still judges this set when the line reads {spelling!r}",
+              hook_passes(), False)
+        git("reset", "-q", "--hard", "HEAD~1")
 
 
 def test_strip_writes(tmp: Path) -> None:

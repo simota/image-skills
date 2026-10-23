@@ -11,8 +11,13 @@ set -e
 # for every repository on the machine. One that is not this set is not ours to
 # judge, and refusing its commits over a missing validator would be. The set is
 # known by its own declaration, not by a file name another repository may share,
-# in the index or in HEAD — so a commit deleting it is still judged.
-ours() { git show "$1:image-registry/harness.yaml" 2>/dev/null | grep -q '^set: image$'; }
+# in the index or in HEAD — so a commit deleting it is still judged. Any way
+# YAML may write that line counts: a trailing comment like its neighbours',
+# quotes, or CRLF endings once made every commit pass here without a word.
+ours() {
+    git show "$1:image-registry/harness.yaml" 2>/dev/null | tr -d '\r' |
+        grep -Eq "^set:[[:space:]]*[\"']?image[\"']?[[:space:]]*(#.*)?\$"
+}
 if ! ours "" && ! ours HEAD; then
     exit 0
 fi

@@ -36,9 +36,24 @@ def load(name: str):
         return yaml.safe_load(fh)
 
 
+def _mappings(doc, what: str, rule: str) -> dict:
+    """The entries that are mappings. Every rule reads an entry as one, so an
+    entry of any other shape is reported here, once, and set aside: a list-form
+    route or an empty stub for a new skill raised a traceback, which reported
+    nothing at all — the roster message included."""
+    out = {}
+    for name, v in (doc or {}).items():
+        if isinstance(v, dict):
+            out[name] = v
+        else:
+            fail(rule, f"{what} {name} is {'empty' if v is None else 'not a mapping'}; "
+                       "every entry is a mapping of its fields")
+    return out
+
+
 H = load("harness.yaml")
-CAP = load("capabilities.yaml")
-ROUTES = load("routes.yaml")
+CAP = _mappings(load("capabilities.yaml"), "capability", "V3")
+ROUTES = _mappings(load("routes.yaml"), "route", "V7")
 FIX = load("fixtures.yaml")
 
 LIM = H["limits"]
@@ -54,7 +69,11 @@ PLATFORM_DIRS = set(H["platform_dirs"])
 SKILLS_ROOT = ROOT / H["skills_dir"] if H.get("skills_dir") else ROOT
 SKILL_DIRS = sorted(p for p in SKILLS_ROOT.glob(f"{PREFIX}*") if (p / "SKILL.md").exists())
 SKILLS = [p.name for p in SKILL_DIRS]
-LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+# Link text may be empty: `![](hero.png)` is an image with no alt, and a link.
+LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+# A reference definition, `[label]: target`: the target a `[text][label]` link
+# leads to. A footnote (`[^1]:`) is not one.
+REF_DEF_RE = re.compile(r" {0,3}\[(?!\^)[^\]]+\]:[ \t]*(\S+)")
 # A backticked token is a path if it contains a slash or names a file. Matching
 # only on the slash misses the bare sibling reference (`SIZING.md`), which is
 # the form that breaks: it resolves against the skill directory, not against
@@ -116,6 +135,14 @@ def prose_links(text: str) -> list[str]:
         prose = _prose_ranges(joined)
         found.extend(m.group(1) for m in LINK_RE.finditer(joined)
                      if any(a <= m.start() < b for a, b in prose))
+        # Reference definitions open a paragraph, one per line, and cannot
+        # interrupt one: the leading run of them is where those links lead.
+        for whole in para:
+            q = _QUOTE_PREFIX.match(whole)
+            d = REF_DEF_RE.match(whole[q.end():] if q else whole)
+            if not d:
+                break
+            found.append(d.group(1))
         para.clear()
     for whole in text.splitlines():
         # Fences and indented code are judged inside any block-quote prefix:
@@ -406,6 +433,16 @@ def v14_patterns():
             for key in ("oracle", "checker", "max_cycles"):
                 if key not in r:
                     fail("V14", f"loop route {name} is missing {key}")
+            # Present is not the same as said: "until it looks right" in the
+            # hard stop is the loop with no stopping rule this exists to catch.
+            if "oracle" in r and not (isinstance(r["oracle"], str) and r["oracle"].strip()):
+                fail("V14", f"loop route {name} has oracle {r['oracle']!r}; the "
+                            "condition that ends the loop is stated, not left blank")
+            cycles = r.get("max_cycles")
+            if "max_cycles" in r and not (isinstance(cycles, int)
+                                          and not isinstance(cycles, bool) and cycles > 0):
+                fail("V14", f"loop route {name} has max_cycles {cycles!r}; a hard "
+                            "stop is a positive whole number of cycles")
         if p == "report-only" and "stops_at" not in r:
             fail("V14", f"report-only route {name} is missing stops_at")
 
@@ -440,7 +477,17 @@ def v16_sections():
                 fail("V16", f"{d.name}/SKILL.md is missing section {s!r}")
 
 
+DELIVER_MARK = re.compile(r"<!-- /?deliver:([\w-]+) -->")
+
+
 def v17_delivery():
+    # A key retired from `delivered:` leaves its blocks behind, frozen: render
+    # skips them, the comparison below skips them, and the text inside them
+    # then counted as the skill's own words.
+    for d in SKILL_DIRS:
+        for key in sorted(set(DELIVER_MARK.findall(read(d / "SKILL.md"))) - set(H["delivered"])):
+            fail("V17", f"{d.name}/SKILL.md carries a {key} delivery block that "
+                        "harness.yaml delivered: has not declared")
     for key, spec in H["delivered"].items():
         source = ROOT / "image-registry" / "delivered" / f"{key}.md"
         if not source.exists():
@@ -552,7 +599,7 @@ def _check_paths(f: Path, base: Path, label: str, at: str = "") -> None:
 # A definition, as against a mention: a table row or a heading that opens with
 # the word. `patterns` and `checkers` are route vocabulary and live in
 # routes.yaml, so no page is asked to define them.
-DEFINITION_FORMS = ("| `{w}` |", "| `[{w}]` |", "## `{w}`")
+DEFINITION_FORMS = (r"\|\s*`{w}`\s*\|", r"\|\s*`\[{w}\]`\s*\|", r"#{{1,6}}\s+`{w}`")
 ROUTE_VOCAB = {"patterns", "checkers"}
 
 
@@ -563,23 +610,32 @@ def v20_contract_vocabulary():
     and a word used in a sentence passed as defined — the check §5.7 names,
     that one replaced definition does not trip. A definition is a row or a
     heading, and every vocabulary key is held to it, not three.
+
+    A row or heading *opens* with the word: the same word in a later cell is a
+    mention. And a word declared under two keys (`BLOCKED` is a status and a
+    residual class) means two things, so it needs two definitions — one row
+    used to satisfy both, and deleting the other passed.
     """
-    pages = {p.name: read(p) for p in (SKILLS_ROOT / SHARED).glob("*.md")}
+    lines = [l for p in (SKILLS_ROOT / SHARED).glob("*.md") for l in read(p).splitlines()]
+    keys_of: dict[str, list[str]] = {}
     for key, words in VOCAB.items():
-        if key in ROUTE_VOCAB:
-            continue
-        for word in words:
-            forms = [f.format(w=word) for f in DEFINITION_FORMS]
-            if not any(f in t for t in pages.values() for f in forms):
-                fail("V20", f"no page under {SHARED}/ defines {word!r} ({key}) — "
-                            "a table row or a heading, not a mention")
+        if key not in ROUTE_VOCAB:
+            for word in words:
+                keys_of.setdefault(word, []).append(key)
+    for word, keys in keys_of.items():
+        forms = re.compile(r"^ {0,3}(?:" + "|".join(f.format(w=re.escape(word))
+                                                    for f in DEFINITION_FORMS) + ")")
+        found = sum(1 for l in lines if forms.match(l))
+        if found < len(keys):
+            fail("V20", f"{SHARED}/ defines {word!r} {found} time(s) and it is declared "
+                        f"under {len(keys)} key(s) ({', '.join(keys)}) — each meaning a "
+                        "table row or a heading that opens with it, not a mention")
 
 
 def strip_delivered(text: str) -> str:
-    for key in H["delivered"]:
-        text = re.sub(rf"<!-- deliver:{key} -->.*?<!-- /deliver:{key} -->",
-                      "", text, flags=re.S)
-    return text
+    # Every block, declared or not: an orphaned one is still not the skill's
+    # own words, and V17 reports it.
+    return re.sub(r"<!-- deliver:([\w-]+) -->.*?<!-- /deliver:\1 -->", "", text, flags=re.S)
 
 
 def v21_verify_names_a_grade():
@@ -1038,7 +1094,8 @@ def v37_source_pins_the_rot():
     page on test oracles depended on git, having found it inside "legitimate".
     """
     def names(text: str, name: str) -> bool:
-        return re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text) is not None
+        # Case-blind: "Codex's" opens a sentence and leans on codex all the same.
+        return re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text, re.I) is not None
 
     declared = H.get("source_authorities")
     none_marker = H.get("source_none_marker")
@@ -1092,7 +1149,7 @@ def v37_source_pins_the_rot():
 # upper-case words joined by pipes. Underscored and parenthesised forms are not
 # matched, so this is a floor.
 ENUM_RE = re.compile(r"(?:^|:\s*)((?:[A-Z][A-Z-]*(?: [A-Z][A-Z-]*)*)"
-                     r"(?:\s*\|\s*(?:[A-Z][A-Z-]*(?: [A-Z][A-Z-]*)*))+)\s*(?:#.*)?$")
+                     r"(?:\s*\|\s*(?:[A-Z][A-Z-]*(?: [A-Z][A-Z-]*)*))+)[.,;:]?\s*(?:#.*)?$")
 
 
 def v38_enumerations_declared():

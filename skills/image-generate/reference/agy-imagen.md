@@ -34,7 +34,7 @@ permission prompt has nobody to answer it.
 |---|---|---|
 | `Prompt` | yes | the request, and nearly the whole control surface |
 | `ImageName` | yes | the stem of the filename, not a caption |
-| `AspectRatio` | no | one of seven fixed shapes, listed in the registry |
+| `AspectRatio` | no | one of a fixed list of shapes, listed in the registry |
 | `ImagePaths` | no | input images: edit targets or references |
 
 **There is no size, no seed, no quality, no output path, no format, no mask.**

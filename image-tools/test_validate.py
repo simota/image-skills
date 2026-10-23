@@ -591,6 +591,21 @@ def _(r):
                  encoding="utf-8")
 
 
+@case("V4-commented-out", says="severity.md is not linked")
+def _(r):
+    # A row commented out is not shown, so nothing a reader sees leads there.
+    row = "| Deciding how much a defect matters | [severity](playbooks/severity.md)"
+    sub(r / f"{S}image-review/SKILL.md", row, "<!--\n" + row)
+    sub(r / f"{S}image-review/SKILL.md", "not by how odd it is up close |",
+        "not by how odd it is up close |\n-->")
+
+
+@case("V30-code-span", says="defect-catalogue.md is reachable from nothing")
+def _(r): sub(r / f"{S}image-review/SKILL.md",
+              "[defect-catalogue](reference/defect-catalogue.md)",
+              "`[defect-catalogue](reference/defect-catalogue.md)`")
+
+
 @case("V4-nested-copy", says="playbooks/old/structure.md")
 def _(r):
     (r / f"{S}image-prompt/playbooks/old").mkdir()
@@ -868,6 +883,19 @@ def _(r):
 def _(r):
     sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
         "\n> Quote `[x](not-a-link.md)\n> still code` here.\n\n## ")
+
+
+@quiet("a repeated heading is the one render.py writes under: the first")
+def _(r):
+    f = r / f"{S}image-review/SKILL.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\n## Before starting\n",
+                 encoding="utf-8")
+
+
+@quiet("a one-line comment ends where it closes, and the link after it counts")
+def _(r): sub(r / f"{S}image-review/SKILL.md",
+              "| Deciding how much a defect matters |",
+              "<!-- a note -->\n| Deciding how much a defect matters |")
 
 
 @quiet("a link that climbs within the skill resolves")

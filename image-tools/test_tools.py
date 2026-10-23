@@ -963,6 +963,8 @@ else:                                              # claude and agy print an env
     envelope = {"type": "result", "structured_output": json.loads(answer)}
     if os.environ.get("FAKE_IS_ERROR"):
         envelope.update(subtype="error_during_execution", is_error=True)
+    if me == "agy":                                # agy states how the run ended
+        envelope["status"] = os.environ.get("FAKE_STATUS", "SUCCESS")
     sys.stdout.flush()
     sys.stdout.buffer.write(json.dumps(envelope).encode()
                             + (b"\\xff" if os.environ.get("FAKE_BYTES") else b"") + b"\\n")
@@ -2320,6 +2322,11 @@ def test_engine_failures(tmp: Path) -> None:
             truthy(f"{name}: an envelope marked is_error is no answer",
                    under("FAKE_IS_ERROR", "1", lambda: raises(
                        lambda: engine.run(name, "p", refute.SCHEMA), engine.EngineError)))
+    with fake_engines(tmp, good):
+        # The observed agy failure: `status: ERROR` and no `is_error` at all.
+        truthy("agy: an envelope whose status is ERROR is no answer",
+               under("FAKE_STATUS", "ERROR", lambda: raises(
+                   lambda: engine.run("agy", "p", refute.SCHEMA), engine.EngineError)))
 
     claims = tmp / "failures.json"
     claims.write_text(json.dumps([{"id": "c1", "claim": "the file is 1536x1024"}]))

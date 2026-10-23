@@ -170,9 +170,9 @@ def _split_input(spec: str) -> tuple[str, str]:
 
 
 def project_root(path: Path) -> Path | None:
-    """The nearest directory above `path` holding `.git`: the root a recipe
-    committed with the file is read from, in whatever checkout it is read."""
-    for d in path.parents:
+    """The nearest directory holding `.git`, `path` itself or above it: the
+    root a recipe committed with the file is read from, in any checkout."""
+    for d in (path, *path.parents):
         if (d / ".git").exists():
             return d
     return None
@@ -181,18 +181,23 @@ def project_root(path: Path) -> Path | None:
 def recorded(path) -> str:
     """A path as a recipe records it: as given, unless it climbs out of the
     directory capture ran in, or is absolute — neither of which a later reader
-    in another checkout shares. Then from the project root it lies in, or
-    absolute when it lies in none."""
+    in another checkout shares. Then from the root of the project capture runs
+    in, when it lies there; absolute when it lies anywhere else, where a path
+    from this project's root would name nothing."""
     # Normalised only to ask the question: `link/../x` names what `link`
     # points beside, so the path as given is what is kept.
     climbs = Path(os.path.normpath(path)).parts[:1] == ("..",)
     if not climbs and not os.path.isabs(path):
         return str(path)
-    if not climbs and ".." in Path(path).parts:  # the same question, absolute
+    root = project_root(Path.cwd().resolve())
+    # Resolved, not normalised, to say where it lies: that is the file the
+    # path reaches, links and `..` included.
+    real = Path(path).resolve()
+    if root is not None and real.is_relative_to(root):
+        return str(real.relative_to(root))
+    if not climbs:
         return str(path)
-    full = Path(os.path.abspath(path))
-    root = project_root(full)
-    return str(full.relative_to(root)) if root else str(full)
+    return os.path.abspath(path)
 
 
 def capture(a: argparse.Namespace) -> int:
@@ -549,9 +554,9 @@ def _same_file(placed: str, image: Path, beside: Path) -> bool:
         # Written on another machine, or before the checkout moved: the file
         # must still sit where it sat within the project, which is the part of
         # the path that travelled with it.
+        # Outside a project nothing says which part travelled, so only the
+        # exact path will do.
         root = project_root(target)
-        if root is None and target.is_relative_to(Path.cwd().resolve()):
-            root = Path.cwd().resolve()
         if root is None:
             return False
         rel = target.relative_to(root).parts

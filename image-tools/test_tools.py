@@ -1693,15 +1693,34 @@ def test_round_seven(tmp: Path) -> None:
     # recipe: a recipe still names its file in another checkout.
     proj = d / "proj"
     (proj / ".git").mkdir(parents=True)
-    with contextlib.redirect_stdout(io.StringIO()):
-        check("a capture to an absolute path in a project",
-              capture(d, "proj/assets/h.png"), 0)
+    (proj / "sub").mkdir()
+    other = d / "brand"                      # another repository beside it
+    (other / ".git").mkdir(parents=True)
+    (other / "logo.png").write_bytes(png(8, 8))
+    here = os.getcwd()
+    os.chdir(proj / "sub")
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            check("a capture to an absolute path in the project it runs in",
+                  capture(d, "proj/assets/h.png", input=f"{other / 'logo.png'}:style"), 0)
+            check("and one written through ..", capture(
+                d, "proj/sub/../img/y.png"), 0)
+            check("and one into another repository", capture(d, "brand/x.png"), 0)
+    finally:
+        os.chdir(here)
     side = recipe.sidecar_of(proj / "assets" / "h.png")
     doc = yaml.safe_load(side.read_text(encoding="utf-8"))
     check("is recorded from the project root", doc["output"]["placed"], "assets/h.png")
+    check("an input in another repository stays absolute, naming where it is",
+          doc["inputs"][0]["path"], str(other / "logo.png"))
+    check("a path through .. is recorded from the root too", yaml.safe_load(
+        recipe.sidecar_of(proj / "img" / "y.png").read_text(encoding="utf-8"))
+        ["output"]["placed"], "img/y.png")
+    check("a file placed in another repository is not named from its root",
+          yaml.safe_load(recipe.sidecar_of(other / "x.png").read_text(encoding="utf-8"))
+          ["output"]["placed"], str(other / "x.png"))
     clone = d / "clone"
     proj.rename(clone)
-    here = os.getcwd()
     os.chdir(clone)
     try:
         check("so check passes it in a checkout somewhere else",
@@ -1723,6 +1742,27 @@ def test_round_seven(tmp: Path) -> None:
                any("end marker" in x for x in recipe.check_one(Path("assets/h.png"))))
     finally:
         os.chdir(here)
+    plain = d / "plain"
+    plain.mkdir()
+    truthy("the temporary directory lies in no project",
+           recipe.project_root(plain) is None)
+    if recipe.project_root(plain) is None:   # under a repo, this proves nothing
+        (plain / "a").mkdir()
+        (plain / "b").mkdir()
+        with contextlib.redirect_stdout(io.StringIO()):
+            capture(plain, "a/pic.png")
+        for f in ("pic.png", "pic.png" + recipe.SIDECAR):
+            (plain / "b" / f).write_bytes((plain / "a" / f).read_bytes())
+        verdicts = []
+        for cwd, arg in ((plain / "b", "pic.png"), (plain, "b/pic.png"),
+                         (plain / "a", "../b/pic.png")):
+            os.chdir(cwd)
+            try:
+                verdicts.append(bool(recipe.check_one(Path(arg))))
+            finally:
+                os.chdir(here)
+        check("outside a project, a recipe copied beside another file fails "
+              "from every directory", verdicts, [True, True, True])
     (d / "assets-file").write_text("x")
     err = io.StringIO()
     with contextlib.redirect_stderr(err):

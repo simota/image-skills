@@ -45,8 +45,9 @@ format — a JPEG placed as `.png` is a conversion nobody performed — and
 `check` reports the same mismatch on a file renamed or converted afterwards. An
 `--input` that does not exist is refused rather than recorded, and a path that
 climbs out of the directory capture ran in (`../`), or is absolute, is recorded
-from the project root — the nearest directory holding `.git` — so the recipe
-names it in any checkout; outside a project it is recorded absolute. `check`
+from the root of the project capture runs in (the directory holding its
+`.git`) when it lies there, so the recipe names it in any checkout; anywhere
+else — another repository, or no project at all — it is recorded absolute. `check`
 also passes an absolute path an older capture wrote, as long as the file still
 sits where it sat within the project, and reports a placed file cut short, as
 capture refuses one. Capture reads the prompt before copying anything, so a

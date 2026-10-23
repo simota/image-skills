@@ -844,6 +844,13 @@ def _(r):
         "\n> Press ` to toggle.\n***\nSee [guide](gone.md) and `x`.\n\n## ")
 
 
+@case("V8-html-block", says="links to missing gone.md")
+def _(r):
+    """An HTML comment interrupts a quoted paragraph; it is no lazy continuation."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> Press ` to toggle.\n<!-- end quote -->\nSee [guide](gone.md) and `x`.\n\n## ")
+
+
 @quiet("a lazy continuation keeps a quoted code span whole")
 def _(r):
     sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",

@@ -97,7 +97,9 @@ _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 # a lone backtick in one list item cannot pair with one in the next.
 # A thematic break among them: it cannot be a lazy continuation either.
 _LINK_BLOCK = re.compile(r"^ {0,3}(#{1,6}(\s|$)|[-*+]\s|\d+[.)]\s|\||"
-                         r"(?P<rule>[-*_])[ \t]*((?P=rule)[ \t]*){2,}$)")
+                         r"(?P<rule>[-*_])[ \t]*((?P=rule)[ \t]*){2,}$|"
+                         # the HTML blocks that may interrupt a paragraph
+                         r"<!--|<\?|<![A-Za-z]|<!\[CDATA\[)")
 _QUOTE_PREFIX = re.compile(r"^(?: {0,3}> ?)+")
 
 

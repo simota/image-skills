@@ -532,8 +532,12 @@ def check(a: argparse.Namespace) -> int:
         print(f"{a.dir} is not a directory", file=sys.stderr)
         return 2
     if a.dir:
+        # An image is found by its extension, or by the recipe beside it: a
+        # captured file renamed to a suffix that names no format is still one
+        # this check has to see, and say so.
         targets += [p for p in sorted(a.dir.rglob("*"))
-                    if p.suffix.lower() in SUFFIX_FORMAT and p.is_file()]
+                    if p.is_file() and not p.name.endswith(SIDECAR)
+                    and (p.suffix.lower() in SUFFIX_FORMAT or sidecar_of(p).exists())]
     if not targets:
         print("nothing to check", file=sys.stderr)
         return 2

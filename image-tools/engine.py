@@ -187,6 +187,17 @@ def malformed(schema, where: str = "schema") -> list[str]:
         elif isinstance(schema.get(k), dict):
             for n, v in schema[k].items():
                 wrong += malformed(v, f"{where}.{k}.{n}")
+    # The pre-2019 `dependencies` maps each name to a schema or to the names
+    # it requires; anything else is neither.
+    deps = schema.get("dependencies")
+    if "dependencies" in schema and not isinstance(deps, dict):
+        wrong.append(f"{where}.dependencies is not a map")
+    for n, v in (deps.items() if isinstance(deps, dict) else []):
+        if isinstance(v, list):
+            if not all(isinstance(x, str) for x in v):
+                wrong.append(f"{where}.dependencies.{n} is not a list of names")
+        else:
+            wrong += malformed(v, f"{where}.dependencies.{n}")
     if "required" in schema and not (isinstance(schema["required"], list)
                                      and all(isinstance(r, str) for r in schema["required"])):
         wrong.append(f"{where}.required is not a list of names")

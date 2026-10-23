@@ -1639,6 +1639,10 @@ def test_recipe_round_six(tmp: Path) -> None:
                         encoding="utf-8")
         truthy("and one under a name that promises no format at all",
                any("no format this checks" in x for x in recipe.check_one(odd)))
+        with contextlib.redirect_stdout(io.StringIO()) as said:
+            check("check --dir finds it by its recipe, and fails",
+                  recipe.main(["check", "--dir", str(d / "conv")]), 1)
+        truthy("naming the format it lacks", "no format this checks" in said.getvalue())
     finally:
         os.chdir(here)
         if old is None:
@@ -2122,6 +2126,7 @@ def test_engine_failures(tmp: Path) -> None:
                 {"type": "object", "properties": ["a"]},
                 {"type": "object", "required": "a"},
                 {"type": "object", "not": []}, {"additionalProperties": []},
+                {"dependencies": {"flag": 7}}, {"dependencies": {"flag": [1]}},
                 {"type": "object", "properties": {"rows": {"type": "array",
                                                            "items": {"type": 7}}}}):
         sfile.write_text(json.dumps(bad), encoding="utf-8")

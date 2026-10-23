@@ -104,7 +104,7 @@ def prose_links(text: str) -> list[str]:
     """Link targets a reader can follow: outside fences and code spans, where
     `![alt](hero.png)` is an example of the syntax rather than a link, with an
     optional title and `<...>` brackets taken off."""
-    found, fence, fence_quoted, para = [], None, False, []
+    found, fence, fence_depth, para = [], None, 0, []
 
     def flush():
         # A link counts when its `[` is prose; its text may hold a code span.
@@ -118,8 +118,9 @@ def prose_links(text: str) -> list[str]:
         # `>     [x](y.md)` is code in a quote, not a link.
         q = _QUOTE_PREFIX.match(whole)
         line = whole[q.end():] if q else whole
+        depth = q.group(0).count(">") if q else 0
         m = _FENCE.match(line)
-        if fence and fence_quoted and not q:
+        if fence and depth < fence_depth:
             fence = None                           # its quote ended, and so did it
         if fence:
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
@@ -128,7 +129,7 @@ def prose_links(text: str) -> list[str]:
             continue
         if m and not (m.group(1)[0] == "`" and "`" in line[m.end():]):
             flush()
-            fence, fence_quoted = m.group(1), bool(q)
+            fence, fence_depth = m.group(1), depth
         elif re.match(r"^( {4}|\t)", line) and (
                 not para or (q and not _QUOTED.match(para[-1]))):
             # Indented code opens a block, and cannot interrupt a paragraph:

@@ -598,6 +598,93 @@ def _(r):
                 r / f"{S}image-prompt/playbooks/old/structure.md")
 
 
+# --- round six: rules that were vacuous on ordinary ways of writing ----------
+
+@case("V8-image-syntax", says="links to missing")
+def _(r):
+    """Prose outside code still counts once code is set aside."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\nSee `![alt](hero.png)` and [the old page](gone.md).\n\n## ")
+
+
+@case("V10-shape", says="needs an `ask` and an `expect`")
+def _(r): sub(r / "image-registry/fixtures.yaml", "- ask: \"we need a hero picture",
+              "- asks: \"we need a hero picture")
+
+
+@case("V11-packs", says="packs_needed_above")
+def _(r): sub(r / "image-registry/harness.yaml", "packs_needed_above: 20",
+              "packs_needed_above: 3")
+
+
+@case("V15-writes", says="writes: False")
+def _(r): sub(r / "image-registry/harness.yaml", "tools: \"Read, Grep, Glob, Bash\"\n    writes: false",
+              "tools: \"Read, Grep, Glob, Bash, Edit\"\n    writes: false")
+
+
+@case("V19-link", says="links to '../_image/CONTRACT.md'")
+def _(r): sub(r / f"{S}image-review/SKILL.md", "## Owns",
+              "## Owns\n\nSee [CONTRACT](../_image/CONTRACT.md).\n")
+
+
+@case("V19-link-tools", says="links to '../../image-tools/imgfacts.py'")
+def _(r): sub(r / f"{S}image-review/SKILL.md", "## Owns",
+              "## Owns\n\nRun [imgfacts](../../image-tools/imgfacts.py).\n")
+
+
+@case("V23-vocabulary", says="not one of document_labels")
+def _(r): sub(r / "image-registry/harness.yaml", '"skills/*/playbooks/*.md": guidance',
+              '"skills/*/playbooks/*.md": guidence')
+
+
+def _drop_line(path: Path, start: str) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    kept = [l for l in lines if not l.startswith(start)]
+    assert len(kept) == len(lines) - 1, f"no single line opens with {start!r}"
+    path.write_text("".join(kept), encoding="utf-8")
+
+
+@case("V24-routing-row", says="has no table row for image-deliver")
+def _(r): _drop_line(r / f"{S}_image/ROUTING.md", "| `image-deliver` |")
+
+
+@case("V24-readme-row", says="README.md has no table row for image-prompt")
+def _(r): _drop_line(r / "README.md", "| [`image-prompt`]")
+
+
+@case("V8-list-items", says="links to missing gone.md")
+def _(r):
+    """A lone backtick in one list item does not pair with one in the next."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n- Press the ` key to toggle.\n- See [guide](gone.md) and use `x` here.\n\n## ")
+
+
+@case("V25-case")
+def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# Imagen 4 reads text worse — ")
+
+
+@case("V25-gpt")
+def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# on gpt-5 — ")
+
+
+@case("V25-month")
+def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# checked in August 2026 — ")
+
+
+@case("V25-slash")
+def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# held in 2026/08 — ")
+
+
+@case("V26-shape", says="is not a mapping")
+def _(r): sub(r / "image-registry/capabilities.yaml",
+              "    - what: \"wording the request the model actually receives\"\n      go: image-prompt",
+              "    - image-prompt")
+
+
+@case("V34-copy", says="holds a copy of strip.py")
+def _(r): shutil.copy(r / "image-tools/strip.py", r / "skills/image-review/strip.py")
+
+
 # The other half: edits a rule must stay quiet about. A rule that fires on
 # ordinary writing gets switched off, which is a slower way to have no rule.
 QUIET: dict[str, callable] = {}
@@ -707,6 +794,86 @@ def _(r):
     f.write_text(f.read_text(encoding="utf-8")
                  + "\nA marker reads `#" + "TODO(agent): <action>` in a document.\n",
                  encoding="utf-8")
+
+
+@quiet("an image link quoted as code, a link title and angle brackets are not missing files")
+def _(r):
+    sub(r / f"{S}image-prompt/playbooks/structure.md", "\n## ",
+        "\nWrite alt text as `![alt](hero.png)`; see [this](exclusions.md \"Exclusions\") "
+        "and [that](<exclusions.md>).\n\n```md\n[an example](not-here.md)\n```\n\n## ")
+
+
+@quiet("pixel arithmetic and words that open like a month are not dates")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\nDecrease 2048 to 1024 for a thumbnail; a 2048/16 grid gives 128 px cells. "
+        "Mark 1920 wide, and a marker 2000 px.\n\n## ")
+
+
+@quiet("a link in an indented code block is an example")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\nFor example:\n\n    [label](missing.md)\n\n## ")
+
+
+@case("V8-quoted-fence", says="links to missing gone.md")
+def _(r):
+    """A fence left open inside a quote closes with the quote."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> ```\n> example\n\nSee [guide](gone.md).\n\n## ")
+
+
+@case("V8-nested-quoted-fence", says="links to missing gone.md")
+def _(r):
+    """A fence left open two quotes deep closes when the inner quote does."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> > ```\n> > example\n> See [guide](gone.md).\n\n## ")
+
+
+@case("V8-quote-depth", says="links to missing gone.md")
+def _(r):
+    """A backtick one quote deep does not pair with one two quotes deep."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> Press ` to toggle.\n> > See [guide](gone.md) and `x`.\n\n## ")
+
+
+@case("V8-thematic-break", says="links to missing gone.md")
+def _(r):
+    """A thematic break ends a quoted paragraph; it is no lazy continuation."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> Press ` to toggle.\n***\nSee [guide](gone.md) and `x`.\n\n## ")
+
+
+@case("V8-html-block", says="links to missing gone.md")
+def _(r):
+    """An HTML comment interrupts a quoted paragraph; it is no lazy continuation."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> Press ` to toggle.\n<!-- end quote -->\nSee [guide](gone.md) and `x`.\n\n## ")
+
+
+@quiet("a lazy continuation keeps a quoted code span whole")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\n> Quote `[x](not-a-link.md)\nstill code` here.\n\n## ")
+
+
+@quiet("an indented or fenced example inside a block quote is code too")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\n> For example:\n>\n>     [label](missing.md)\n\n"
+        "> ```md\n> [other](missing-too.md)\n> ```\n\n## ")
+
+
+@quiet("a code span runs across the lines of one block quote")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\n> Quote `[x](not-a-link.md)\n> still code` here.\n\n## ")
+
+
+@quiet("a link that climbs within the skill resolves")
+def _(r):
+    sub(r / f"{S}image-review/playbooks/seeing.md", "\n## ",
+        "\nThe forms are in [diagram forms](../reference/diagram-forms.md).\n\n## ")
 
 
 def main() -> int:

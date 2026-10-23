@@ -86,7 +86,10 @@ def strict(schema):
             out[k] = {n: strict(v) for n, v in out[k].items()}   # lists; strict()
                                                                  # passes those through
     kind = out.get("type")
-    if kind == "object" or (isinstance(kind, list) and "object" in kind):
+    # `properties` with no `type` still describes an object, and an engine
+    # told it open may add a key the check would then let through.
+    if kind == "object" or (isinstance(kind, list) and "object" in kind) \
+            or (kind is None and isinstance(out.get("properties"), dict)):
         out["additionalProperties"] = False
         out["properties"] = out.get("properties") or {}
         out["required"] = list(out["properties"])
@@ -166,9 +169,79 @@ def conforms(got, schema: dict, where: str = "answer") -> list[str]:
     return wrong
 
 
+def malformed(schema, where: str = "schema") -> list[str]:
+    """What makes `schema` unusable by `conforms`, found before an engine is paid
+    to answer it: a `type` that is not a JSON type, `properties` that are not a
+    map, `required` that is not a list — at every depth `strict` recurses into."""
+    if not isinstance(schema, dict):
+        return [] if isinstance(schema, bool) else [f"{where} is not a schema"]
+    wrong = []
+    kinds = schema.get("type")
+    if kinds is not None:
+        listed = kinds if isinstance(kinds, list) else [kinds]
+        if not listed or not all(isinstance(k, str) and k in _TYPES for k in listed):
+            wrong.append(f"{where}.type is {kinds!r}, not one of {sorted(_TYPES)}")
+    for k in ("properties", "$defs", "definitions", "patternProperties", "dependentSchemas"):
+        if k in schema and not isinstance(schema[k], dict):
+            wrong.append(f"{where}.{k} is not a map of schemas")
+        elif isinstance(schema.get(k), dict):
+            for n, v in schema[k].items():
+                wrong += malformed(v, f"{where}.{k}.{n}")
+    # The pre-2019 `dependencies` maps each name to a schema or to the names
+    # it requires; anything else is neither.
+    deps = schema.get("dependencies")
+    if "dependencies" in schema and not isinstance(deps, dict):
+        wrong.append(f"{where}.dependencies is not a map")
+    for n, v in (deps.items() if isinstance(deps, dict) else []):
+        if isinstance(v, list):
+            if not all(isinstance(x, str) for x in v):
+                wrong.append(f"{where}.dependencies.{n} is not a list of names")
+        else:
+            wrong += malformed(v, f"{where}.dependencies.{n}")
+    if "required" in schema and not (isinstance(schema["required"], list)
+                                     and all(isinstance(r, str) for r in schema["required"])):
+        wrong.append(f"{where}.required is not a list of names")
+    for k in _SCHEMA_LIST:
+        if k in schema and not isinstance(schema[k], list):
+            wrong.append(f"{where}.{k} is not a list of schemas")
+        elif isinstance(schema.get(k), list):
+            for n, v in enumerate(schema[k]):
+                wrong += malformed(v, f"{where}.{k}[{n}]")
+    for k in _SCHEMA_ONE:
+        v = schema.get(k)
+        if isinstance(v, list) and k != "items":
+            # Only `items` has a list form (positional, pre-2020); `not: []`
+            # is no schema at all, and an empty list would check nothing.
+            wrong.append(f"{where}.{k} is a list, and {k} takes one schema")
+            continue
+        for n, sub in enumerate(v) if isinstance(v, list) else [(None, v)] if k in schema else []:
+            wrong += malformed(sub, f"{where}.{k}" + ("" if n is None else f"[{n}]"))
+    return wrong
+
+
+def _unencodable(got, where: str = "answer") -> list[str]:
+    """Text no UTF-8 reader can take. JSON's `\\ud800` escape decodes to a lone
+    surrogate, which passes as a `str` and then fails whoever prints it."""
+    if isinstance(got, str):
+        try:
+            got.encode("utf-8")
+        except UnicodeEncodeError:
+            return [f"{where} holds a lone surrogate"]
+        return []
+    if isinstance(got, list):
+        return [w for n, v in enumerate(got) for w in _unencodable(v, f"{where}[{n}]")]
+    if isinstance(got, dict):
+        return [w for k, v in got.items()
+                for w in _unencodable(k, f"{where} key") + _unencodable(v, f"{where}.{k!r}")]
+    return []
+
+
 def run(engine: str, prompt: str, schema: dict) -> dict:
     """Ask `engine` for one object matching `schema`. Raises rather than guessing."""
     got = _ask(engine, prompt, schema)
+    bad = _unencodable(got)
+    if bad:
+        raise EngineError(f"{engine} answered with text that cannot be printed: {'; '.join(bad)}")
     # Checked against what every engine was told: the closed schema, so a key
     # the engine added is an error rather than a stowaway in the verdict.
     wrong = conforms(got, strict(schema))
@@ -191,7 +264,10 @@ def _ask(engine: str, prompt: str, schema: dict):
             argv = ["codex", "exec", "--output-schema", str(s), "-o", str(out),
                     "--sandbox", "read-only", "--skip-git-repo-check", "-"]
             r = _spawn(engine, argv, prompt)
-            body = out.read_text(encoding="utf-8") if out.exists() else ""
+            try:
+                body = out.read_text(encoding="utf-8") if out.exists() else ""
+            except (OSError, UnicodeDecodeError) as e:
+                raise EngineError(f"codex wrote an answer that cannot be read: {e}") from None
             if not body.strip():
                 raise EngineError(f"codex wrote no answer.\n{_tail(r)}")
             return _parse(engine, body)
@@ -199,7 +275,7 @@ def _ask(engine: str, prompt: str, schema: dict):
             argv = ["claude", "-p", "--output-format", "json",
                     "--json-schema", json.dumps(strict(schema))]
             r = _spawn(engine, argv, prompt)
-            envelope = _parse(engine, r.stdout)
+            envelope = _envelope(engine, r)
             if "structured_output" not in envelope:
                 raise EngineError(f"claude returned no structured_output "
                                   f"(subtype {envelope.get('subtype')!r}).\n{_tail(r)}")
@@ -208,7 +284,7 @@ def _ask(engine: str, prompt: str, schema: dict):
             argv = ["agy", f"--print={prompt}", "--output-format", "json",
                     "--json-schema", str(s)]
             r = _spawn(engine, argv)
-            envelope = _parse(engine, r.stdout)
+            envelope = _envelope(engine, r)
             if "structured_output" not in envelope:
                 raise EngineError(f"agy returned no structured_output "
                                   f"(status {envelope.get('status')!r}).\n{_tail(r)}")
@@ -216,24 +292,43 @@ def _ask(engine: str, prompt: str, schema: dict):
     raise EngineError(f"no invocation is known for {engine}")
 
 
+def _envelope(engine: str, r: subprocess.CompletedProcess) -> dict:
+    """The envelope claude and agy print, refused when it says the run failed:
+    a schema-shaped object beside `is_error` is a leftover, not an answer."""
+    envelope = _parse(engine, r.stdout)
+    if envelope.get("is_error"):
+        raise EngineError(f"{engine} reported an error "
+                          f"(subtype {envelope.get('subtype')!r}).\n{_tail(r)}")
+    return envelope
+
+
 def _spawn(engine: str, argv: list[str], stdin: str | None = None
            ) -> subprocess.CompletedProcess:
     """Run one engine in its own process group, so that a timeout ends the
-    whole tree it started rather than only its first process."""
+    whole tree it started rather than only its first process.
+
+    Bytes in and out, decoded here: the answer as strict UTF-8, whatever the
+    locale says, and the log leniently — a progress line in another encoding
+    is no reason to throw away the answer printed beside it. An engine that
+    exits non-zero did not answer, whatever it printed."""
+    try:
+        sent = stdin.encode("utf-8") if stdin is not None else None
+    except UnicodeError as e:
+        raise EngineError(f"{engine} could not be sent the prompt: {e}") from None
     try:
         p = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin is not None
                              else subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, text=True, start_new_session=True)
+                             stderr=subprocess.PIPE, start_new_session=True)
     except FileNotFoundError:
         raise EngineError(f"{engine} is not on PATH") from None
     except (OSError, ValueError) as e:       # an argument list too long, a NUL
         raise EngineError(f"{engine} could not be started: {e}") from None
     try:
-        out, err = p.communicate(input=stdin, timeout=TIMEOUT)
+        out, err = p.communicate(input=sent, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         _kill_tree(p)
         raise EngineError(f"{engine} did not answer within {TIMEOUT}s") from None
-    except (OSError, ValueError, UnicodeError) as e:   # a prompt it cannot be sent
+    except (OSError, ValueError) as e:       # a prompt it cannot be sent
         _kill_tree(p)
         raise EngineError(f"{engine} could not be sent the prompt: {e}") from None
     except BaseException:
@@ -241,7 +336,14 @@ def _spawn(engine: str, argv: list[str], stdin: str | None = None
         # interrupt here has to end the tree before it is passed on.
         _kill_tree(p)
         raise
-    return subprocess.CompletedProcess(argv, p.returncode, out, err)
+    r = subprocess.CompletedProcess(argv, p.returncode, None, err.decode("utf-8", "replace"))
+    try:
+        r.stdout = out.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise EngineError(f"{engine} printed output that is not UTF-8: {e}\n{_tail(r)}") from None
+    if r.returncode != 0:
+        raise EngineError(f"{engine} exited {r.returncode}.\n{_tail(r)}")
+    return r
 
 
 def _kill_tree(p: subprocess.Popen) -> None:
@@ -367,6 +469,10 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(schema, dict):
             print(f"{a.schema}: a schema is an object, not a {type(schema).__name__}",
                   file=sys.stderr)
+            return 2
+        bad = malformed(schema)
+        if bad:
+            print(f"{a.schema}: {'; '.join(bad)}", file=sys.stderr)
             return 2
         got = run(engine, prompt, schema)
     except EngineError as e:

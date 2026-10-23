@@ -7,12 +7,24 @@
 # failed clean commits over unrelated unstaged edits, and passed broken staged
 # files whose fix happened to sit unstaged beside them.
 set -e
+# A hooks directory can be shared (a global core.hooksPath), and then this runs
+# for every repository on the machine. One that is not this set is not ours to
+# judge, and refusing its commits over a missing validator would be. The set is
+# known by its own declaration, not by a file name another repository may share,
+# in the index or in HEAD — so a commit deleting it is still judged.
+ours() { git show "$1:image-registry/harness.yaml" 2>/dev/null | grep -q '^set: image$'; }
+if ! ours "" && ! ours HEAD; then
+    exit 0
+fi
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+idx=$(mktemp)
+trap 'rm -rf "$tmp" "$idx"' EXIT
 trap 'exit 1' INT TERM
-# Sparse checkouts leave files out of the tree, not out of the commit; the flag
-# needs git 2.35, and an older git exports what it can.
-git checkout-index --all --ignore-skip-worktree-bits --prefix="$tmp/" 2>/dev/null \
-    || { rm -rf "$tmp"; mkdir "$tmp"; git checkout-index --all --prefix="$tmp/"; }
+# Exported from the tree the commit will record, through an index of its own:
+# an intent-to-add entry (`git add -N`) is in the index and not in the commit,
+# and the index itself would write it out as an empty file. A fresh index also
+# carries no skip-worktree bits, so a sparse checkout exports in full.
+GIT_INDEX_FILE="$idx" git read-tree "$(git write-tree)"
+GIT_INDEX_FILE="$idx" git checkout-index --all --prefix="$tmp/"
 python3 "$tmp/image-tools/validate.py"
 python3 "$tmp/image-tools/figures_check.py"

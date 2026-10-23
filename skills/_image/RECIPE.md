@@ -56,7 +56,7 @@ Prefer capture with the returned file and actual generator: a newest-file
 timestamp alone cannot bind a cached file to this invocation.
 
 ```yaml
-engine: "codex exec (image generation)"
+engine: "codex exec --enable image_generation"
 model: "<as the run reported it, or unreported>"
 prompt: "<verbatim>"
 excluded: "<as sent, or none>"

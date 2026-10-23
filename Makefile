@@ -80,6 +80,20 @@ hooks:
 # format expects it. The prefix alone is not the test: image-registry/ and
 # image-tools/ share it and must never be installed.
 SKILL_DIRS := $(patsubst %/SKILL.md,%,$(wildcard skills/image-*/SKILL.md))
+SKILL_NAMES := $(notdir $(SKILL_DIRS))
+
+# A skill renamed or retired here leaves its link behind in every host, pointing
+# into this checkout at a directory that is gone. Looping over today's skills
+# alone never sees it, so unlink and status also look for links into this repo's
+# skills/ under a name this repo no longer has, at a directory that is gone. A
+# second name for a live skill (an alias someone made) is theirs, not stale.
+RETIRED = for target in "$$dir"/image-*; do \
+		[ -L "$$target" ] && [ ! -e "$$target" ] || continue; \
+		name=$$(basename "$$target"); \
+		case " $(SKILL_NAMES) " in *" $$name "*) continue;; esac; \
+		case "$$(readlink "$$target")" in "$(REPO)/skills/"*) ;; *) continue;; esac; \
+		$(1); \
+	done
 
 link:
 	@for dir in $(HOST_DIRS); do \
@@ -112,6 +126,7 @@ unlink:
 				rm "$$target"; echo "  unlink $$name"; \
 			elif [ -L "$$target" ]; then echo "  skip $$name (not this repo's link)"; fi; \
 		done; \
+		$(call RETIRED,rm "$$target" && echo "  unlink $$name (no longer a skill here)"); \
 	done
 
 status:
@@ -126,4 +141,5 @@ status:
 			elif [ -e "$$target" ] || [ -L "$$target" ]; then echo "  foreign  $$name"; \
 			else echo "  unlinked $$name"; fi; \
 		done; \
+		$(call RETIRED,echo "  retired  $$name -> $$(readlink "$$target")  (make unlink removes it)"); \
 	done

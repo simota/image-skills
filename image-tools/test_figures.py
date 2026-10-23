@@ -50,6 +50,9 @@ CASES: list[tuple[str, str, str, str, str]] = [
      "| `1024x1024` | 1:1 | 1.05 MP", "| about 1024 square | roughly 1:1 | about 1 MP"),
     ("check_sizes", "vacuous", SIZES,
      "| Size | Ratio | Megapixels | Use |", "| Canvas | Shape | Pixels | Use |"),
+    # a megapixel figure that is not a number read as one, and crashed
+    ("check_sizes", "vacuous", SIZES,
+     "| `1024x1024` | 1:1 | 1.05 MP", "| `1024x1024` | 1:1 | 1.05. MP"),
     ("check_sizes", "vacuous", SIZES,
      "| Size | Breaks |", "| Size | Note |"),
     ("check_density", "wrong", RUNGS,

@@ -67,7 +67,7 @@ CONSTRAINT_RE = {
 }
 
 LEGAL_ROW = re.compile(
-    r"^\|\s*`(\d+)x(\d+)`\s*\|\s*(\d+):(\d+)\s*\|\s*([0-9.]+) MP\s*\|")
+    r"^\|\s*`(\d+)x(\d+)`\s*\|\s*(\d+):(\d+)\s*\|\s*(\d+(?:\.\d+)?) MP\s*\|")
 # A closing pipe is optional in GFM, so the last cell of a row may end the line.
 REJECT_ROW = re.compile(r"^\|\s*`(\d+)x(\d+)`\s*\|\s*([a-z0-9 ]+?)\s*(?:\|\s*)?$")
 

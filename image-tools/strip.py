@@ -106,11 +106,31 @@ def _orientation(block: bytes) -> int | None:
         for i in range(count):
             e = off + 2 + i * 12
             tag, typ, n = struct.unpack(end + "HHI", b[e:e + 8])
+            # SHORT is what the standard says; LONG is what some writers use
+            # and what common readers still honour, so it is read too.
             if tag == 0x0112 and typ == 3 and n == 1:
                 return struct.unpack(end + "H", b[e + 8:e + 10])[0]
+            if tag == 0x0112 and typ == 4 and n == 1:
+                return struct.unpack(end + "I", b[e + 8:e + 12])[0]
     except (struct.error, IndexError):
         return None
     return None
+
+
+def _refuse_rotation(block: bytes, opt) -> None:
+    """Refuse when the block turns the picture. Only 2-8 do: 1 is upright, and
+    0 or anything past 8 is no orientation at all, which readers show upright."""
+    o = _orientation(block)
+    if o in range(2, 9) and not opt.orientation_is_applied:
+        raise Refused(f"Exif orientation is {o}, not upright. Rotate the "
+                      "pixels first, then pass --orientation-is-applied")
+
+
+# An HDR gain map: the primary JPEG names it in XMP (`hdrgm`) or an ISO 21496-1
+# APP2, and the map itself is a second JPEG after EOI, found through MPF. All
+# of that is removed here, and an HDR display then shows the SDR base alone —
+# a change to how the picture is shown, as dropping a PNG's cICP would be.
+GAIN_MAP_SIGNS = (b"http://ns.adobe.com/hdr-gain-map/1.0/", b"urn:iso:std:iso:ts:21496:-1")
 
 
 # --- PNG ---------------------------------------------------------------------
@@ -128,10 +148,7 @@ def _strip_png(raw: bytes, opt) -> tuple[bytes, list[str]]:
                 or (name in PNG_COLOUR and not opt.drop_profile)
                 or (name in PNG_CREDENTIALS and not opt.drop_credentials))
         if name == "eXIf":
-            o = _orientation(body)
-            if o not in (None, 1) and not opt.orientation_is_applied:
-                raise Refused(f"Exif orientation is {o}, not upright. Rotate the "
-                              "pixels first, then pass --orientation-is-applied")
+            _refuse_rotation(body, opt)
         if keep:
             out += whole
         else:
@@ -154,7 +171,7 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
     # skips are reported rather than lost quietly, and a file that ends before
     # EOI is refused as PNG's missing IEND is: half a picture is not stripped.
     out, dropped, tail, pos = bytearray(b"\xff\xd8"), [], None, 2
-    scanned = False
+    scanned = gain_named = secondary = False
     for marker, start, end, body in imgfacts.jpeg_segments(raw, through_scans=True):
         if end > len(raw):
             raise Refused("JPEG is truncated inside a segment; nothing was changed")
@@ -175,10 +192,11 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
                 tail = end
             continue
         if marker == 0xE1 and body.startswith(EXIF_SIG):
-            o = _orientation(body)
-            if o not in (None, 1) and not opt.orientation_is_applied:
-                raise Refused(f"Exif orientation is {o}, not upright. Rotate the "
-                              "pixels first, then pass --orientation-is-applied")
+            _refuse_rotation(body, opt)
+        if marker in (0xE1, 0xE2) and any(sign in body for sign in GAIN_MAP_SIGNS):
+            gain_named = True
+        if marker == 0xE2 and body.startswith(b"MPF\x00"):
+            secondary = True
         if marker == 0xFE:                     # COM is a comment; it goes
             keep = False
         elif not 0xE0 <= marker <= 0xEF:       # everything structural stays
@@ -206,6 +224,13 @@ def _strip_jpeg(raw: bytes, opt) -> tuple[bytes, list[str]]:
             dropped.append((f"{label} {hint!r}", end - start))
     if tail is None:
         raise Refused("JPEG has no EOI, so it is truncated; nothing was changed")
+    # Named is not carried: an editor that copied the XMP across and dropped
+    # the second image left nothing to lose. The map is there when an image is.
+    if gain_named and (secondary or tail < len(raw)) \
+            and not getattr(opt, "drop_gain_map", False):
+        raise Refused("this JPEG carries an HDR gain map, which stripping "
+                      "removes: an HDR display would show the SDR base alone. "
+                      "Pass --drop-gain-map if that is the decision")
     if tail < len(raw):
         # Not this image: an appended second picture (a motion photo, an MPF
         # preview) carries its own Exif and location, and ships them if kept.
@@ -238,10 +263,10 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
                 or (tag in WEBP_COLOUR and not opt.drop_profile)
                 or (tag in WEBP_CREDENTIALS and not opt.drop_credentials))
         if tag == b"EXIF":
-            o = _orientation(raw[i + 8:i + 8 + size])
-            if o not in (None, 1) and not opt.orientation_is_applied:
-                raise Refused(f"Exif orientation is {o}, not upright. Rotate the "
-                              "pixels first, then pass --orientation-is-applied")
+            _refuse_rotation(raw[i + 8:i + 8 + size], opt)
+        if keep and tag == b"ANMF":
+            whole, gone = _frame(whole, size)
+            dropped += gone
         if keep:
             if tag == b"VP8X":                 # the flags must stop advertising
                 head = bytearray(whole)        # blocks that are no longer there
@@ -269,6 +294,43 @@ def _strip_webp(raw: bytes, opt) -> tuple[bytes, list[str]]:
     return b"RIFF" + struct.pack("<I", len(body)) + bytes(body), dropped
 
 
+# What a frame of an animated WebP may hold after its 16-byte header. The spec
+# lets unknown chunks in there too, and naming what stays holds one level down.
+ANMF_FRAME = {b"ALPH", b"VP8 ", b"VP8L"}
+ANMF_HEAD = 16
+
+
+def _frame(whole: bytes, size: int) -> tuple[bytes, list]:
+    """One ANMF chunk — `whole`, header and any pad byte included — rebuilt with
+    only its frame's image chunks, and the ledger entries for what it lost.
+    With nothing to lose it is returned exactly as read, pad byte and all."""
+    data = whole[8:8 + size]
+    if len(data) < ANMF_HEAD:
+        raise Refused("WebP has an ANMF frame shorter than its header; nothing was changed")
+    kept, gone, j = bytearray(data[:ANMF_HEAD]), [], ANMF_HEAD
+    while j < len(data):
+        if j + 8 > len(data):
+            raise Refused("WebP has an ANMF frame that ends inside a chunk header; "
+                          "nothing was changed")
+        tag = data[j:j + 4]
+        size = struct.unpack("<I", data[j + 4:j + 8])[0]
+        if j + 8 + size > len(data):
+            raise Refused(f"WebP is truncated inside {tag!r} in an ANMF frame; "
+                          "nothing was changed")
+        sub = data[j:min(j + 8 + size + (size & 1), len(data))]
+        if tag in ANMF_FRAME:
+            kept += sub
+        else:
+            gone.append(f"{tag.decode('latin-1').strip()} in an ANMF frame")
+        j += len(sub)
+    if not gone:
+        return whole, []
+    rebuilt = b"ANMF" + struct.pack("<I", len(kept)) + bytes(kept) + b"\0" * (len(kept) & 1)
+    # One entry carries the whole difference, pad bytes included, so the
+    # ledger still balances against what the file lost.
+    return rebuilt, [(", ".join(gone), len(whole) - len(rebuilt))]
+
+
 HANDLERS = {"PNG": _strip_png, "JPEG": _strip_jpeg, "WebP": _strip_webp}
 
 
@@ -284,6 +346,18 @@ def strip(path: Path, opt) -> tuple[bytes, list[str], dict]:
     if fn is None:
         raise Refused(f"{before['format']} is not handled; nothing was changed")
     out, ledger = fn(raw, opt)
+    # A content credential's hard binding is a hash over every byte outside its
+    # own manifest, so keeping one while anything else changes ships a
+    # credential that every validator reads as tampered. Told nothing, this
+    # keeps the credential and the file whole rather than choosing for the
+    # project which of the two it can do without.
+    if out != raw and not opt.drop_credentials:
+        unsigned, _ = fn(raw, _Without(opt))
+        if unsigned != out:
+            raise Refused("this file carries a content credential whose signature "
+                          "covers every byte: stripping anything else would make it "
+                          "read as tampered. Strip before signing, or pass "
+                          "--drop-credentials and sign the result again; nothing was changed")
     # The report is a ledger and has to balance: what it names, byte for byte,
     # is what the file lost. Each handler counts what it actually dropped, and
     # a mismatch is refused rather than written under a report that is wrong —
@@ -308,6 +382,14 @@ def strip(path: Path, opt) -> tuple[bytes, list[str], dict]:
                       f"{before['colour']!r} to {after['colour']!r}; "
                       "the file was not written")
     return out, dropped, before
+
+
+class _Without:
+    """`opt`, with credentials dropped: what the strip would be without them."""
+
+    def __init__(self, opt):
+        self.__dict__.update(vars(opt))
+        self.drop_credentials = True
 
 
 class Changed(OSError):
@@ -440,6 +522,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="also remove content credentials. A project decision")
     p.add_argument("--orientation-is-applied", action="store_true",
                    help="the pixels are already upright; the flag may go")
+    p.add_argument("--drop-gain-map", action="store_true",
+                   help="an HDR JPEG may lose its gain map and show as SDR")
     a = p.parse_args(argv)
     if a.out and (len(a.files) > 1 or a.in_place):
         p.error("--out takes one input and does not combine with --in-place")

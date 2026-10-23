@@ -110,11 +110,24 @@ def newest_generated(name: str | None = None) -> tuple[str, Path] | None:
     return n, p
 
 
+def _left_by(where: Path, name: str) -> bool:
+    """Whether `where` is a file `name` leaves: under its home, at a path its
+    output glob matches whole. Anywhere else under that home — a reference
+    image in ~/.codex, a download in a CODEX_HOME set to the user's home — is
+    not evidence of who made it. (`match` anchors at the right only, so the
+    depth is compared too; `full_match` needs a newer Python than CI runs.)"""
+    home = home_of(name).resolve()
+    if not where.is_relative_to(home):
+        return False
+    rel, glob = where.relative_to(home), GENERATORS[name]["output_glob"]
+    return len(rel.parts) == len(Path(glob).parts) and rel.match(glob)
+
+
 def generators_holding(path: Path) -> list[str]:
-    """Every generator whose home holds this file, the deepest home first: one
-    home can sit inside another (a CODEX_HOME set to the user's home)."""
+    """Every generator that leaves files where this one is, the deepest home
+    first: one home can sit inside another (a CODEX_HOME set to the user's home)."""
     where = path.resolve()
-    held = [n for n in GENERATORS if where.is_relative_to(home_of(n).resolve())]
+    held = [n for n in GENERATORS if _left_by(where, n)]
     return sorted(held, key=lambda n: -len(home_of(n).resolve().parts))
 
 
@@ -153,6 +166,15 @@ def _split_input(spec: str) -> tuple[str, str]:
     if found:
         return spec[:found[0]], spec[found[0] + 1:]
     return (spec[:cuts[0]], spec[cuts[0] + 1:]) if cuts else (spec, "")
+
+
+def recorded(path) -> str:
+    """A path as a recipe records it: as given, unless it climbs out of the
+    directory capture ran in, which no later reader shares — then absolute."""
+    # Normalised only to ask the question: `link/../x` names what `link`
+    # points beside, so the path as given is what is kept.
+    climbs = Path(os.path.normpath(path)).parts[:1] == ("..",)
+    return os.path.abspath(path) if climbs else str(path)
 
 
 def capture(a: argparse.Namespace) -> int:
@@ -203,7 +225,14 @@ def capture(a: argparse.Namespace) -> int:
         if not path.strip():
             print(f"--input {spec!r} names no path", file=sys.stderr)
             return 2
-        inputs.append({"path": path, "role": role.strip() or "unstated"})
+        if not Path(path).expanduser().exists():
+            # The chain is only as good as its links: a mistyped input is a
+            # recipe that points at nothing, and check never opens inputs.
+            print(f"--input {spec!r}: {path} does not exist; nothing was written",
+                  file=sys.stderr)
+            return 2
+        inputs.append({"path": recorded(Path(path).expanduser()),
+                       "role": role.strip() or "unstated"})
     if not src.exists():
         print(f"{src}: no such file", file=sys.stderr)
         return 2
@@ -277,7 +306,7 @@ def capture(a: argparse.Namespace) -> int:
         "inputs": inputs,
         # Absolute, so the field still names the file when read from elsewhere;
         # not resolved, so it is the path the run returned.
-        "output": {"generated": os.path.abspath(src), "placed": str(dest)},
+        "output": {"generated": os.path.abspath(src), "placed": recorded(dest)},
         "note": NO_SEED,
     }
     try:
@@ -466,6 +495,12 @@ def check_one(image: Path) -> list[str]:
         facts = imgfacts.probe(image)
     except (imgfacts.Unreadable, OSError) as e:
         return problems + [f"{image}: {e}"]
+    promised = SUFFIX_FORMAT.get(image.suffix.lower())
+    if promised != facts["format"]:
+        # What capture refuses to place, a later rename or conversion can
+        # still produce; every reader after that trusts the name.
+        problems.append(f"{image}: is {facts['format']}, and its name says "
+                        f"{promised or 'no format this checks'}")
     size = doc["size"] if isinstance(doc.get("size"), dict) else {}
     on_disk = size.get("on_disk")
     if on_disk != facts["size"]:
@@ -483,14 +518,26 @@ def _same_file(placed: str, image: Path, beside: Path) -> bool:
         return True
     # Recorded relative to the directory `capture` ran in: the path's tail
     # still has to name this file, under the same parents as far as it goes.
-    return target.parts[-len(p.parts):] == p.parts
+    # Climbing parts say where that directory was, not what the file is
+    # under, so they are not part of the tail (older captures recorded them).
+    parts = Path(os.path.normpath(p)).parts
+    while parts[:1] == ("..",):
+        parts = parts[1:]
+    return bool(parts) and target.parts[-len(parts):] == parts
 
 
 def check(a: argparse.Namespace) -> int:
     targets = list(a.images)
+    if a.dir and not a.dir.is_dir():
+        print(f"{a.dir} is not a directory", file=sys.stderr)
+        return 2
     if a.dir:
+        # An image is found by its extension, or by the recipe beside it: a
+        # captured file renamed to a suffix that names no format is still one
+        # this check has to see, and say so.
         targets += [p for p in sorted(a.dir.rglob("*"))
-                    if p.suffix.lower() in SUFFIX_FORMAT and p.is_file()]
+                    if p.is_file() and not p.name.endswith(SIDECAR)
+                    and (p.suffix.lower() in SUFFIX_FORMAT or sidecar_of(p).exists())]
     if not targets:
         print("nothing to check", file=sys.stderr)
         return 2

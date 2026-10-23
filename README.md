@@ -130,9 +130,11 @@ dimensions later. [`strip.py`](image-tools/strip.py) removes what
 should not ship — Exif, XMP, generation parameters, comments, timestamps,
 embedded thumbnails, and anything appended after the image ends — while
 keeping the colour profile, the alpha channel and any content credential the
-project decided to carry. [`refute.py`](image-tools/refute.py) puts a claim to
+project decided to carry — and refusing to keep a credential beside any other
+removal, which would leave its signature reading as tampered. [`refute.py`](image-tools/refute.py) puts a claim to
 the engines that did not make it and asks them to break it; an answer outside
-its schema is no answer, a claim refuted or contested exits 3, one that not
+its schema, from an engine that exited non-zero or reported an error, or in
+text that is not UTF-8, is no answer, a claim refuted or contested exits 3, one that not
 every refuter could read exits 1, and unrefuted is never proof.
 
 None of the three file tools needs an image library: they read and edit headers rather than
@@ -252,7 +254,9 @@ make hooks      # run the rules on every commit, against what is staged
 The hook checks the index, not the working tree: the commit is what is staged,
 so an unrelated unstaged edit cannot fail it and an unstaged fix cannot pass it.
 It will not replace a different pre-commit hook that is already installed
-unless told to with `FORCE=1`.
+unless told to with `FORCE=1`, and in a shared hooks directory it stands aside
+in any repository that is not this set. An intent-to-add file (`git add -N`)
+is not in the commit, so it is not checked.
 
 Adding a rule means adding a deliberate violation to
 `image-tools/test_validate.py`, and adding a figure check means adding one to

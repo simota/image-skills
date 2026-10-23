@@ -108,7 +108,9 @@ refutation:
 # Neither generator is reimplemented here and neither image API is called
 # directly. `control:` is what separates them and it is the thing a prompt has to
 # know: `canvas` takes pixel dimensions, `aspect` takes a ratio from a fixed list
-# and nothing else. `default` is what `recipe.py` assumes when a run does not say.
+# and nothing else. `default` is the generator the tests capture under; no run
+# assumes it — `recipe.py` reads the generator off the file's directory or the
+# flag, because recording a default would put a command nobody ran in `engine`.
 #
 # These are a snapshot of one installed copy of each on one machine (see each
 # reference page's `Verified:` line). Nothing re-reads the backing tools.
@@ -223,10 +225,13 @@ external_paths: [".agents/", "CLAUDE.md", "AGENTS.md", "GEMINI.md", "settings.js
 # is checked for freshness instead. A model identifier is the fastest-rotting
 # string in this domain — it belongs beside a `Verified:` line, never in a
 # playbook that is budgeted precisely because it is not supposed to rot.
+# Matched case-blind: "Imagen 4" rots exactly as fast as "imagen-4".
 rot_patterns:
-  - '\b(19|20)\d{2}-\d{2}\b'
+  # a month, not any 20xx pixel size divided by something: 2048/16 is arithmetic
+  - '\b(19|20)\d{2}[-/](0[1-9]|1[0-2])\b'
+  - '\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.? (19|20)\d{2}\b'
   - '\bv\d+\.\d+(\.\d+)?\b'
-  - '\b(gpt-image|dall-e|imagen|gemini|sdxl|flux)[- ]?\d'
+  - '\b(gpt-image|gpt|dall-e|imagen|gemini|sdxl|flux)[- ]?\d'
 
 # reference/ carries no line budget. It carries these headers instead, so a
 # reader can tell what a file claims and when anyone last checked it.

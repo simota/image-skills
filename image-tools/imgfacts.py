@@ -24,12 +24,14 @@ takes an aspect ratio off a fixed list and takes no pixel count at all. Asking
 so the aspect list gets its own check rather than being folded into the canvas one.
 
 What it cannot do is judge the picture. Dimensions, format, bytes, whether there
-is an alpha channel and whether a colour profile is declared are all it knows.
+is an alpha channel, whether a colour profile is declared, and an Exif
+orientation that turns how the picture is shown are all it knows.
 Six fingers is still a job for somebody who opened the image and looked.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
@@ -70,6 +72,44 @@ class Unreadable(Exception):
     """The bytes are not an image this tool knows how to read."""
 
 
+# --- Exif orientation ----------------------------------------------------------
+
+EXIF_SIG = b"Exif\x00\x00"
+
+
+def exif_orientation(block: bytes) -> int | None:
+    """The Exif orientation tag, or None when the block does not state one.
+
+    The `Exif\x00\x00` prefix is optional here on purpose. A JPEG APP1 always
+    carries it, a PNG `eXIf` chunk holds bare TIFF, and WebP encoders differ —
+    so the caller hands over whatever the container held and this decides. An
+    earlier version had each caller prepend the prefix, which for the WebP
+    encoders that already write one produced `ExifExif\x00\x00...`, no
+    recognisable TIFF header, no orientation found, and a sideways picture
+    stripped without a word. Shared with `strip.py`, which refuses what this
+    reports: two readers of one tag is two chances to disagree about it.
+    """
+    b = block[len(EXIF_SIG):] if block.startswith(EXIF_SIG) else block
+    if len(b) < 8 or b[:2] not in (b"II", b"MM"):
+        return None
+    end = "<" if b[:2] == b"II" else ">"
+    try:
+        off = struct.unpack(end + "I", b[4:8])[0]
+        count = struct.unpack(end + "H", b[off:off + 2])[0]
+        for i in range(count):
+            e = off + 2 + i * 12
+            tag, typ, n = struct.unpack(end + "HHI", b[e:e + 8])
+            # SHORT is what the standard says; LONG is what some writers use
+            # and what common readers still honour, so it is read too.
+            if tag == 0x0112 and typ == 3 and n == 1:
+                return struct.unpack(end + "H", b[e + 8:e + 10])[0]
+            if tag == 0x0112 and typ == 4 and n == 1:
+                return struct.unpack(end + "I", b[e + 8:e + 12])[0]
+    except (struct.error, IndexError):
+        return None
+    return None
+
+
 # --- PNG ---------------------------------------------------------------------
 
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
@@ -86,13 +126,15 @@ def _png(b: bytes) -> dict:
     if colour not in PNG_COLOUR:
         raise Unreadable(f"PNG colour type {colour}")
     kind, alpha = PNG_COLOUR[colour]
-    chunks = set()
-    i = 8
+    chunks, exif = set(), None
+    i, data = 8, False
     while i + 8 <= len(b):
         size, tag = struct.unpack(">I4s", b[i:i + 8])
-        chunks.add(tag.decode("latin-1"))
-        if tag == b"IDAT":                       # metadata all precedes the data
-            break
+        data = data or tag == b"IDAT"
+        if not data:                             # colour and alpha precede the data
+            chunks.add(tag.decode("latin-1"))
+        if tag == b"eXIf" and exif is None:      # which some writers put after it
+            exif = b[i + 8:i + 8 + size]
         i += 12 + size
         if size > len(b):                        # truncated or lying length
             break
@@ -100,7 +142,8 @@ def _png(b: bytes) -> dict:
         alpha = True                             # indexed or keyed transparency
     return {"format": "PNG", "width": w, "height": h, "alpha": alpha,
             "colour": _profile(chunks & {"cICP", "iCCP", "sRGB", "cHRM", "gAMA"}),
-            "notes": [f"{kind}, {depth}-bit"]}
+            "notes": [f"{kind}, {depth}-bit"],
+            "orientation": exif_orientation(exif) if exif else None}
 
 
 def _profile(tags: set[str]) -> str:
@@ -205,7 +248,7 @@ def _entropy_end(raw: bytes, i: int) -> int:
 
 
 def _jpeg(b: bytes) -> dict:
-    size, colour, notes = None, "none declared", []
+    size, colour, notes, turn = None, "none declared", [], None
     for marker, _, _, body in jpeg_segments(b):
         if body is None or marker == 0xDA:
             continue
@@ -219,12 +262,14 @@ def _jpeg(b: bytes) -> dict:
                          else "baseline" if marker == 0xC0 else "sequential")
         elif marker == 0xE2 and body.startswith(b"ICC_PROFILE\x00"):
             colour = "ICC embedded"
-        elif marker == 0xE1 and body.startswith(b"Exif\x00\x00"):
+        elif marker == 0xE1 and body.startswith(EXIF_SIG):
             notes.append("Exif present")
+            if turn is None:                     # the first Exif is the one read
+                turn = exif_orientation(body)
     if size is None:
         raise Unreadable("JPEG with no frame header")
     return {"format": "JPEG", "width": size[0], "height": size[1], "alpha": False,
-            "colour": colour, "notes": notes}
+            "colour": colour, "notes": notes, "orientation": turn}
 
 
 # --- WebP --------------------------------------------------------------------
@@ -247,7 +292,8 @@ def _webp(b: bytes) -> dict:
         return {"format": "WebP", "width": w, "height": h,
                 "alpha": bool(flags & 0x10),
                 "colour": "ICC embedded" if flags & 0x20 else "none declared",
-                "notes": ["extended"] + (["animated"] if flags & 0x02 else [])}
+                "notes": ["extended"] + (["animated"] if flags & 0x02 else []),
+                "orientation": _webp_orientation(b) if flags & 0x08 else None}
     if tag == b"VP8L":
         if b[20] != 0x2F:
             raise Unreadable("WebP lossless frame with no signature byte")
@@ -265,6 +311,17 @@ def _webp(b: bytes) -> dict:
     raise Unreadable(f"WebP chunk {tag!r}")
 
 
+def _webp_orientation(b: bytes) -> int | None:
+    """The orientation in a VP8X file's EXIF chunk, which may follow the image."""
+    i = 12
+    while i + 8 <= len(b):
+        tag, size = b[i:i + 4], int.from_bytes(b[i + 4:i + 8], "little")
+        if tag == b"EXIF":
+            return exif_orientation(b[i + 8:i + 8 + size])
+        i += 8 + size + (size & 1)
+    return None
+
+
 # --- GIF ---------------------------------------------------------------------
 
 def _gif(b: bytes) -> dict:
@@ -276,27 +333,44 @@ def _gif(b: bytes) -> dict:
 
 
 def _gif_transparent(b: bytes) -> bool:
-    """Whether any graphic control extension sets its transparency flag.
+    """Whether the picture shows anything through it.
 
-    The extension's presence is not the answer: an animated GIF carries one per
-    frame for the delay alone. Walked block by block, because the colour tables
-    are raw bytes that can contain the extension's introducer by chance.
+    A graphic control extension's presence is not the answer: an animated GIF
+    carries one per frame for the delay alone. Nor is its transparency flag on
+    a later frame: an encoder marks unchanged pixels transparent so the frame
+    before shows through, and over a first frame that covers the whole canvas
+    opaquely, and is never cleared to the background (disposal 2) before the
+    last frame, that is still an opaque picture. Anything else that sets the
+    flag is counted, since telling more apart would mean decoding the pixels.
+    Walked block by block, because the colour tables are raw bytes that can
+    contain the extension's introducer by chance.
     """
+    W, H = struct.unpack("<HH", b[6:10])
+    frames = []                                  # (transparent, disposal, covers)
+    gce = (False, 0)
     i = 13 + ((3 << ((b[10] & 7) + 1)) if b[10] & 0x80 else 0)
     while i < len(b):
         if b[i] == 0x21 and i + 1 < len(b):                # extension
-            if b[i + 1] == 0xF9 and i + 3 < len(b) and b[i + 3] & 1:
-                return True
+            if b[i + 1] == 0xF9 and i + 3 < len(b):
+                gce = (bool(b[i + 3] & 1), (b[i + 3] >> 2) & 7)
             i += 2
         elif b[i] == 0x2C and i + 10 < len(b):             # image descriptor
+            x, y, w, h = struct.unpack("<HHHH", b[i + 1:i + 9])
+            frames.append((*gce, (x, y, w, h) == (0, 0, W, H)))
+            gce = (False, 0)
             packed = b[i + 9]
             i += 10 + ((3 << ((packed & 7) + 1)) if packed & 0x80 else 0) + 1
         else:                                              # trailer, or damage
-            return False
+            break
         while i < len(b) and b[i]:                         # data sub-blocks
             i += b[i] + 1
         i += 1
-    return False
+    if not frames:
+        return gce[0]
+    if frames[0][0]:
+        return True
+    kept = frames[0][2] and all(d != 2 for _, d, _ in frames[:-1])
+    return not kept and any(t for t, _, _ in frames)
 
 
 READERS = [(PNG_SIG, _png), (b"\xff\xd8\xff", _jpeg), (b"GIF8", _gif)]
@@ -333,6 +407,16 @@ def probe_bytes(raw: bytes, name: str = "<bytes>") -> dict:
     if w <= 0 or h <= 0:
         raise Unreadable(f"{path.name}: header states {w}x{h}")
     g = math.gcd(w, h)
+    # The size is what the file stores, and what a canvas or a strip is checked
+    # against. A viewer honouring Exif shows 5-8 turned a quarter, so a stored
+    # 3:2 is a 2:3 picture: a reviewer asking for the shape asked for, and
+    # reading only the stored size, would get a confident wrong answer.
+    turn = out.pop("orientation", None)
+    if turn in range(2, 9):
+        dw, dh = (h, w) if turn >= 5 else (w, h)
+        dg = math.gcd(dw, dh)
+        out.update(orientation=turn, displayed=f"{dw}x{dh}",
+                   displayed_ratio=f"{dw // dg}:{dh // dg}")
     out.update(path=str(path), bytes=len(raw),
                sha256=hashlib.sha256(raw).hexdigest()[:16],
                size=f"{w}x{h}", ratio=f"{w // g}:{h // g}",
@@ -570,9 +654,15 @@ def render(f: dict) -> str:
             f"colour: {f['colour']}")
     if f["notes"]:
         tail += f"   {', '.join(f['notes'])}"
+    if f.get("orientation"):
+        tail += (f"\n  Exif orientation {f['orientation']}: shown as "
+                 f"{f['displayed']} ({f['displayed_ratio']}), stored as {f['size']}")
     if f["breaks"]:
         tail += (f"\n  not a legal {CANVAS_GENERATOR} canvas: breaks "
                  + ", ".join(f["breaks"]))
+    if f.get("nearest_aspect"):
+        tail += (f"\n  {f['generator']} takes an aspect, not a canvas: nearest "
+                 f"of its aspects is {f['nearest_aspect']}")
     return head + tail
 
 
@@ -649,11 +739,26 @@ def main(argv: list[str] | None = None) -> int:
     if not a.files:
         p.print_usage(sys.stderr)
         return 2
+    # Asked about a file, --generator says whose rules it is judged by. An
+    # aspect generator has no canvas to break; a name nobody declared is an
+    # input error, as it is to --check-size, not a quiet answer for codex.
+    named = {n for n, g in GENERATORS.items() if isinstance(g, dict)}
+    if a.generator is not None and a.generator not in named:
+        print(f"{a.generator} is not a generator the registry lists: "
+              f"{sorted(named)}", file=sys.stderr)
+        return 2
+    # A name that is not valid UTF-8 is still a name to report, not a traceback.
+    with contextlib.suppress(AttributeError, ValueError):
+        sys.stdout.reconfigure(errors="backslashreplace")
 
     facts, bad = [], False
     for f in a.files:
         try:
             facts.append(probe(f))
+            if a.generator in ASPECT_GENERATORS:
+                facts[-1].update(breaks=[], generator=a.generator,
+                                 nearest_aspect=nearest_aspect(facts[-1]["ratio"],
+                                                               a.generator))
         except (Unreadable, OSError, struct.error) as e:
             bad = True
             print(f"{f}: {e}", file=sys.stderr)

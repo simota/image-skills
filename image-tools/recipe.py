@@ -30,6 +30,7 @@ while nobody is looking.
 from __future__ import annotations
 
 import argparse
+import errno
 import fcntl
 import os
 import shutil
@@ -168,13 +169,30 @@ def _split_input(spec: str) -> tuple[str, str]:
     return (spec[:cuts[0]], spec[cuts[0] + 1:]) if cuts else (spec, "")
 
 
+def project_root(path: Path) -> Path | None:
+    """The nearest directory above `path` holding `.git`: the root a recipe
+    committed with the file is read from, in whatever checkout it is read."""
+    for d in path.parents:
+        if (d / ".git").exists():
+            return d
+    return None
+
+
 def recorded(path) -> str:
     """A path as a recipe records it: as given, unless it climbs out of the
-    directory capture ran in, which no later reader shares — then absolute."""
+    directory capture ran in, or is absolute — neither of which a later reader
+    in another checkout shares. Then from the project root it lies in, or
+    absolute when it lies in none."""
     # Normalised only to ask the question: `link/../x` names what `link`
     # points beside, so the path as given is what is kept.
     climbs = Path(os.path.normpath(path)).parts[:1] == ("..",)
-    return os.path.abspath(path) if climbs else str(path)
+    if not climbs and not os.path.isabs(path):
+        return str(path)
+    if not climbs and ".." in Path(path).parts:  # the same question, absolute
+        return str(path)
+    full = Path(os.path.abspath(path))
+    root = project_root(full)
+    return str(full.relative_to(root)) if root else str(full)
 
 
 def capture(a: argparse.Namespace) -> int:
@@ -347,6 +365,14 @@ def _place(src: Path, image: bytes, dest: Path, recipe_text: str, replace: bool)
     another run beside it. Captures into one directory hold its lock while
     they place, so two replacing the same name cannot interleave their
     renames and pair one run's image with the other's recipe."""
+    # A file where a directory is wanted would surface from mkdir as
+    # FileExistsError, which reads as a capture racing this one for the name.
+    for d in (dest.parent, *dest.parent.parents):
+        if d.exists():
+            if not d.is_dir():
+                raise NotADirectoryError(errno.ENOTDIR, "is a file, not a directory",
+                                         str(d))
+            break
     dest.parent.mkdir(parents=True, exist_ok=True)
     lock = os.open(dest.parent, os.O_RDONLY)
     try:
@@ -492,9 +518,14 @@ def check_one(image: Path) -> list[str]:
         problems.append(f"{side}: output.placed is {placed}, beside {image}")
 
     try:
-        facts = imgfacts.probe(image)
+        raw = image.read_bytes()
+        facts = imgfacts.probe_bytes(raw, str(image))
     except (imgfacts.Unreadable, OSError) as e:
         return problems + [f"{image}: {e}"]
+    if not imgfacts.complete(raw):
+        # What capture refuses to place, a copy interrupted later produces.
+        problems.append(f"{image}: does not reach its end marker — cut short "
+                        "since it was captured")
     promised = SUFFIX_FORMAT.get(image.suffix.lower())
     if promised != facts["format"]:
         # What capture refuses to place, a later rename or conversion can
@@ -513,7 +544,18 @@ def _same_file(placed: str, image: Path, beside: Path) -> bool:
     target = image.resolve()
     p = Path(placed).expanduser()
     if p.is_absolute():
-        return p.resolve() == target
+        if p.resolve() == target:
+            return True
+        # Written on another machine, or before the checkout moved: the file
+        # must still sit where it sat within the project, which is the part of
+        # the path that travelled with it.
+        root = project_root(target)
+        if root is None and target.is_relative_to(Path.cwd().resolve()):
+            root = Path.cwd().resolve()
+        if root is None:
+            return False
+        rel = target.relative_to(root).parts
+        return p.parts[-len(rel):] == rel
     if (Path.cwd() / p).resolve() == target or (beside / p).resolve() == target:
         return True
     # Recorded relative to the directory `capture` ran in: the path's tail

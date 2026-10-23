@@ -33,6 +33,7 @@ downstream.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import struct
 import sys
@@ -72,7 +73,7 @@ def _is_jumbf(body: bytes) -> bool:
 # embedded thumbnail is on the list of what goes.
 JPEG_KEEP_APP = {0xE0: b"JFIF\x00",          # density
                  0xEE: b"Adobe"}               # colour transform
-EXIF_SIG = b"Exif\x00\x00"
+EXIF_SIG = imgfacts.EXIF_SIG
 JFIF_HEAD = 14                                # "JFIF\0", version, units, density, thumb w/h
 
 WEBP_STRUCTURE = {b"VP8 ", b"VP8L", b"VP8X", b"ALPH", b"ANIM", b"ANMF"}
@@ -85,42 +86,10 @@ class Refused(Exception):
     """A strip that would change the picture, not just what travels with it."""
 
 
-def _orientation(block: bytes) -> int | None:
-    """The Exif orientation tag, or None when the block does not state one.
-
-    The `Exif\x00\x00` prefix is optional here on purpose. A JPEG APP1 always
-    carries it, a PNG `eXIf` chunk holds bare TIFF, and WebP encoders differ —
-    so the caller hands over whatever the container held and this decides. An
-    earlier version had each caller prepend the prefix, which for the WebP
-    encoders that already write one produced `ExifExif\x00\x00...`, no
-    recognisable TIFF header, no orientation found, and a sideways picture
-    stripped without a word.
-    """
-    b = block[len(EXIF_SIG):] if block.startswith(EXIF_SIG) else block
-    if len(b) < 8 or b[:2] not in (b"II", b"MM"):
-        return None
-    end = "<" if b[:2] == b"II" else ">"
-    try:
-        off = struct.unpack(end + "I", b[4:8])[0]
-        count = struct.unpack(end + "H", b[off:off + 2])[0]
-        for i in range(count):
-            e = off + 2 + i * 12
-            tag, typ, n = struct.unpack(end + "HHI", b[e:e + 8])
-            # SHORT is what the standard says; LONG is what some writers use
-            # and what common readers still honour, so it is read too.
-            if tag == 0x0112 and typ == 3 and n == 1:
-                return struct.unpack(end + "H", b[e + 8:e + 10])[0]
-            if tag == 0x0112 and typ == 4 and n == 1:
-                return struct.unpack(end + "I", b[e + 8:e + 12])[0]
-    except (struct.error, IndexError):
-        return None
-    return None
-
-
 def _refuse_rotation(block: bytes, opt) -> None:
     """Refuse when the block turns the picture. Only 2-8 do: 1 is upright, and
     0 or anything past 8 is no orientation at all, which readers show upright."""
-    o = _orientation(block)
+    o = imgfacts.exif_orientation(block)
     if o in range(2, 9) and not opt.orientation_is_applied:
         raise Refused(f"Exif orientation is {o}, not upright. Rotate the "
                       "pixels first, then pass --orientation-is-applied")
@@ -514,7 +483,8 @@ def _umask() -> int:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("files", nargs="+", type=Path)
-    p.add_argument("--out", type=Path, help="one input only; default is a report")
+    p.add_argument("--out", help="the output file, for one input only; "
+                   "default is a report")
     p.add_argument("--in-place", action="store_true")
     p.add_argument("--drop-profile", action="store_true",
                    help="also remove the colour profile. Read the page first")
@@ -527,6 +497,16 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
     if a.out and (len(a.files) > 1 or a.in_place):
         p.error("--out takes one input and does not combine with --in-place")
+    # Path() drops a trailing slash, so `--out web/` would become a file named
+    # web, and an existing directory would fail only after the report said
+    # every block was removed.
+    if a.out is not None and (a.out.endswith(("/", os.sep)) or Path(a.out).is_dir()):
+        p.error(f"--out names the output file, not a directory: {a.out}")
+    a.out = Path(a.out) if a.out is not None else None
+    # A file name that is not valid UTF-8 is still a name to report, not a
+    # traceback; stderr already escapes it, and stdout is made to as well.
+    with contextlib.suppress(AttributeError, ValueError):
+        sys.stdout.reconfigure(errors="backslashreplace")
 
     failed = False
     for f in a.files:
@@ -537,24 +517,35 @@ def main(argv: list[str] | None = None) -> int:
             failed = True
             continue
         saved = before["bytes"] - len(out)
-        verb = "would remove" if not (a.out or a.in_place) else "removed"
+        dest = a.out or (f if a.in_place else None)
+        # A file with nothing to remove is not rewritten in place: delivering a
+        # file is no reason to rewrite it, and a read-only one stays readable.
+        same = a.in_place and out == before["raw"]
+        wrote = False
+        if dest and not same:
+            try:
+                _write_atomically(dest, out, expect=before["raw"] if a.in_place else None)
+                wrote = True
+            except OSError as e:
+                print(f"{f}: could not write {dest}: {e}", file=sys.stderr)
+                failed = True
+        # Said once the write is settled: a run that failed to write removed
+        # nothing, whatever it would have.
+        verb = "removed" if wrote else "would remove"
         print(f"{f}  {before['size']}  {before['bytes']:,} bytes")
         for d in dropped:
             print(f"  {verb} {d}")
         if not dropped:
             print("  nothing to remove")
-        print(f"  keeps: {before['colour']}, "
+        # Read off the result, like everything else here: --drop-profile
+        # leaves no profile to keep, whatever the input declared.
+        print(f"  keeps: {imgfacts.probe_bytes(out, str(f))['colour']}, "
               f"alpha {'yes' if before['alpha'] else 'no'}"
               + (f"   -{saved:,} bytes" if saved else ""))
-        dest = a.out or (f if a.in_place else None)
-        if dest:
-            try:
-                _write_atomically(dest, out, expect=before["raw"] if a.in_place else None)
-            except OSError as e:
-                print(f"{f}: could not write {dest}: {e}", file=sys.stderr)
-                failed = True
-                continue
+        if wrote:
             print(f"  wrote {dest}  {len(out):,} bytes")
+        elif same:
+            print(f"  left {dest} as it was")
     return 1 if failed else 0
 
 

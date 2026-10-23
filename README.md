@@ -114,9 +114,9 @@ deleted from the prose it reads.
 
 **Four tools, linked into the skills that can run them.**
 [`imgfacts.py`](image-tools/imgfacts.py) reads what is actually in a file —
-dimensions, format, bytes, alpha, whether a colour profile is declared, and
-whether a canvas is legal, or an aspect offered, for the generator that will run
-it. It is what makes `measured` cheap,
+dimensions, format, bytes, alpha, whether a colour profile is declared, the
+shape an Exif orientation turns the picture to on screen, and whether a canvas
+is legal, or which aspect is nearest, for the generator that will run it. It is what makes `measured` cheap,
 because a grade that costs effort gets skipped.
 [`recipe.py`](image-tools/recipe.py) captures a generated file out of whichever
 generator produced it and writes its recipe in the same move. Prefer the
@@ -155,7 +155,8 @@ with other hard links, or in a directory that refuses new files, is rewritten
 through its own inode so every name sees the result, with the original put
 back if that write fails part-way. In place, it writes only over the bytes it
 read: a file another process saved in the meantime is left as that process
-saved it, and the run says so. A run with neither `--out` nor `--in-place`
+saved it, and the run says so. A file with nothing to remove is left as it
+is, not rewritten in place. A run with neither `--out` nor `--in-place`
 writes nothing.
 
 **One parser per format, shared.** `strip.py` reads JPEG through the same marker

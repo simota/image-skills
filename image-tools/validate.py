@@ -108,6 +108,7 @@ def prose_links(text: str) -> list[str]:
     `![alt](hero.png)` is an example of the syntax rather than a link, with an
     optional title and `<...>` brackets taken off."""
     found, fence, fence_depth, para, para_depth = [], None, 0, [], 0
+    comment = False
 
     def flush():
         # A link counts when its `[` is prose; its text may hold a code span.
@@ -125,6 +126,13 @@ def prose_links(text: str) -> list[str]:
         m = _FENCE.match(line)
         if fence and depth < fence_depth:
             fence = None                           # its quote ended, and so did it
+        if comment:                                # an HTML comment block runs to
+            comment = "-->" not in line            # the line that closes it, and
+            continue                               # none of it is shown
+        if not fence and re.match(r"^ {0,3}<!--", line):
+            flush()
+            comment = "-->" not in line[line.index("<!--") + 4:]
+            continue
         if fence:
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
                     and not line[m.end():].strip():
@@ -197,10 +205,12 @@ def _fm(d: Path) -> dict:
 
 def sections(text: str) -> dict[str, str]:
     """Each H2's body, up to the next heading of level 1 or 2 — found the way
-    render.py finds them, so a heading quoted in a fence is text to both."""
+    render.py finds them, so a heading quoted in a fence is text to both.
+    A repeated heading is the first one, as it is to render.py: keeping the
+    last had the two disagree about where a delivered block belongs."""
     out, marks = {}, list(headings(text))
     for i, (_, end, level, title) in enumerate(marks):
-        if level == 2:
+        if level == 2 and title not in out:
             stop = marks[i + 1][0] if i + 1 < len(marks) else len(text)
             out[title] = text[end:stop].rstrip("\n")
     return out
@@ -255,7 +265,8 @@ def v4_playbook_orphans():
         if not pb_dir.exists():
             continue
         body = sections(read(d / "SKILL.md")).get("Decide first", "")
-        linked = _targets(LINK_RE.findall(body), d)
+        # Links a reader can follow: one in a code span or a comment is not.
+        linked = _targets(prose_links(body), d)
         for pb in sorted(pb_dir.rglob("*.md")):
             if pb.resolve() not in linked:
                 fail("V4", f"{pb.relative_to(ROOT)} is not linked from Decide first")
@@ -762,10 +773,11 @@ def v30_reference_orphans():
         if not ref_dir.exists():
             continue
         body = sections(read(d / "SKILL.md")).get("Decide first", "")
-        linked = _targets(LINK_RE.findall(body), d)
+        # Links a reader can follow: one in a code span or a comment is not.
+        linked = _targets(prose_links(body), d)
         for pb in sorted((d / "playbooks").rglob("*.md")) if (d / "playbooks").exists() else []:
             # A link is relative to its page; a backticked path to the skill.
-            linked |= _targets(LINK_RE.findall(read(pb)), pb.parent)
+            linked |= _targets(prose_links(read(pb)), pb.parent)
             linked |= _targets(TICK_PATH_RE.findall(read(pb)), d)
         for f in sorted(ref_dir.rglob("*.md")):
             if f.resolve() not in linked:
@@ -998,7 +1010,7 @@ def v36_finding_visuals():
             if form not in _norm(text):
                 fail("V36", f"{name} never names the {form!r} form")
         body = sections(read(SKILLS_ROOT / name / "SKILL.md")).get("Decide first", "")
-        if fv["playbook"] not in body:
+        if pb.resolve() not in _targets(prose_links(body), SKILLS_ROOT / name):
             fail("V36", f"{name}/SKILL.md does not reach {fv['playbook']} from "
                         "Decide first; a rule nothing links to is read on no launches")
 

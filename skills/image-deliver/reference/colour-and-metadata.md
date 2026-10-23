@@ -41,7 +41,8 @@ or dropped byte for byte, so nothing is re-encoded — and it re-reads its own
 output **in memory**, before touching the disk, refusing if the dimensions,
 format, alpha or profile moved. A run with neither `--out` nor `--in-place`
 writes nothing at all, which is what makes it usable on a directory you only
-have read access to.
+have read access to, and `--in-place` leaves a file with nothing to remove
+untouched.
 
 First inspect metadata against the publication/privacy policy. Do not rewrite
 a file merely because it is being delivered. When removal is needed, the tool

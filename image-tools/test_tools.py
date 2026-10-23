@@ -1572,6 +1572,218 @@ def test_edges_round_four(tmp: Path) -> None:
     truthy("render names markers in the wrong order as such", "order" in said)
 
 
+def gif_frames(w: int, h: int, frames: list[tuple[int | None, tuple]]) -> bytes:
+    """An animated GIF: each frame a graphic control byte (disposal << 2 |
+    transparent) or None for no extension, and the rectangle it covers."""
+    out = b"GIF89a" + struct.pack("<HH", w, h) + b"\x80\x00\x00" + b"\x00" * 6
+    for gce, (x, y, fw, fh) in frames:
+        if gce is not None:
+            out += b"\x21\xf9\x04" + bytes([gce]) + b"\x00\x00\x00\x00"
+        out += (b"\x2c" + struct.pack("<HHHH", x, y, fw, fh) + b"\x00"
+                + b"\x02" + b"\x02\x44\x01" + b"\x00")
+    return out + b"\x3b"
+
+
+def test_round_seven(tmp: Path) -> None:
+    """What a picture shows, read off the file; what a run did, said after it."""
+    import os
+    d = tmp / "r7"
+    d.mkdir()
+
+    # imgfacts: a turned picture is reported the way a viewer shows it.
+    def facts(name: str, raw: bytes) -> dict:
+        (d / name).write_bytes(raw)
+        return imgfacts.probe(d / name)
+    turned = facts("t.jpg", jpeg_with(1536, 1024, [(0xE1, b"Exif\x00\x00" + exif(6))]))
+    check("a JPEG turned a quarter is shown portrait",
+          (turned["size"], turned.get("orientation"), turned.get("displayed"),
+           turned.get("displayed_ratio")), ("1536x1024", 6, "1024x1536", "2:3"))
+    flipped = facts("f.jpg", jpeg_with(64, 32, [(0xE1, b"Exif\x00\x00" + exif(3))]))
+    check("a half turn keeps the shape but is still reported",
+          (flipped.get("orientation"), flipped.get("displayed")), (3, "64x32"))
+    upright = facts("u.jpg", jpeg_with(64, 32, [(0xE1, b"Exif\x00\x00" + exif(1))]))
+    check("an upright one says nothing extra", "orientation" in upright, False)
+    after_idat = png(64, 32) [:-12] + raw_chunk(b"eXIf", exif(8)) + png(64, 32)[-12:]
+    check("a PNG eXIf after the image data is read too",
+          facts("t.png", after_idat).get("displayed"), "32x64")
+    check("a WebP EXIF chunk is read", facts("t.webp", webp_with(
+        64, 32, 0x08, [(b"VP8L", b"\x2f" + b"\x00" * 4), (b"EXIF", exif(5))])).get("displayed"),
+        "32x64")
+    truthy("and the report says so", "shown as 1024x1536" in imgfacts.render(turned))
+    # Bytes past a file's own end are not its metadata (Codex review on #8).
+    check("an eXIf appended after IEND is not read",
+          "orientation" in facts("late.png", png(64, 32) + raw_chunk(b"eXIf", exif(6))), False)
+    in_riff = webp_with(64, 32, 0x08, [(b"VP8L", b"\x2f" + b"\x00" * 4)])
+    check("an EXIF chunk past the RIFF end is not read", "orientation" in facts(
+        "late.webp", in_riff + b"EXIF" + struct.pack("<I", 26) + exif(6)), False)
+
+    # imgfacts: a later frame's transparent index lets the frame before show.
+    whole = (0, 0, 8, 8)
+    check("an animation over a kept opaque first frame has no alpha",
+          facts("a.gif", gif_frames(8, 8, [(None, whole), (1 << 2 | 1, (2, 2, 4, 4)),
+                                           (1 << 2 | 1, whole)]))["alpha"], False)
+    check("a first frame cleared to the background shows through",
+          facts("b.gif", gif_frames(8, 8, [(2 << 2, whole), (1, whole)]))["alpha"], True)
+    check("a first frame that leaves part of the canvas bare shows through",
+          facts("c.gif", gif_frames(8, 8, [(None, (0, 0, 4, 4)), (1, whole)]))["alpha"], True)
+    check("a transparent first frame is transparent",
+          facts("e.gif", gif_frames(8, 8, [(1, whole)]))["alpha"], True)
+    check("an opaque full redraw after a clear makes the canvas opaque again",
+          facts("h.gif", gif_frames(8, 8, [(None, whole), (2 << 2, whole), (None, whole),
+                                           (1 << 2 | 1, (2, 2, 4, 4))]))["alpha"], False)
+    check("a clear followed by a keyed frame shows through",
+          facts("i.gif", gif_frames(8, 8, [(None, whole), (2 << 2, whole),
+                                           (1, whole)]))["alpha"], True)
+    check("a final frame's disposal is not the picture",
+          facts("g.gif", gif_frames(8, 8, [(None, whole), (2 << 2 | 1, whole)]))["alpha"],
+          False)
+
+    # imgfacts: --generator is honoured with files, and an unknown one refused.
+    jpg = d / "t.jpg"
+    with contextlib.redirect_stdout(io.StringIO()) as said:
+        check("imgfacts --generator agy on a file exits 0",
+              imgfacts.main(["--json", "--generator", "agy", str(jpg)]), 0)
+    got = json.loads(said.getvalue())[0]
+    check("and judges it by agy's aspects, not codex's canvas",
+          (got["breaks"], got.get("nearest_aspect")), ([], "3:2"))
+    with contextlib.redirect_stderr(io.StringIO()):
+        check("imgfacts --generator naming nobody exits 2",
+              imgfacts.main(["--generator", "bogus", str(jpg)]), 2)
+
+    # strip: the report reads the result, and a clean file is left alone.
+    icc = png(8, 8, extra=raw_chunk(b"iCCP", b"p\x00\x00" + zlib.compress(b"x"))
+              + raw_chunk(b"tEXt", b"Comment\x00made here"))
+    (d / "icc.png").write_bytes(icc)
+    with contextlib.redirect_stdout(io.StringIO()) as said:
+        check("strip --drop-profile exits 0", strip.main(
+            [str(d / "icc.png"), "--drop-profile", "--out", str(d / "icc-out.png")]), 0)
+    truthy("and does not claim to keep the profile it removed",
+           "keeps: none declared" in said.getvalue())
+    clean = d / "clean.png"
+    clean.write_bytes(png(8, 8))
+    os.utime(clean, (1_000_000_000, 1_000_000_000))
+    was = clean.stat()
+    with contextlib.redirect_stdout(io.StringIO()) as said:
+        check("strip --in-place on a clean file exits 0",
+              strip.main([str(clean), "--in-place"]), 0)
+    now = clean.stat()
+    check("and does not rewrite it", (now.st_ino, now.st_mtime), (was.st_ino, was.st_mtime))
+    truthy("and says so", "left" in said.getvalue() and "wrote" not in said.getvalue())
+    (d / "outdir").mkdir()
+    with contextlib.redirect_stderr(io.StringIO()):
+        check("strip --out naming a directory exits 2",
+              exits(lambda: strip.main([str(d / "icc.png"), "--out", str(d / "outdir")])), 2)
+        check("and one ending in a slash is not made a file",
+              exits(lambda: strip.main([str(d / "icc.png"), "--out", str(d / "web") + "/"])), 2)
+    truthy("so no file named web appears", not (d / "web").exists())
+    blocker = d / "blocker"
+    blocker.write_text("x")
+    with contextlib.redirect_stdout(io.StringIO()) as said, \
+            contextlib.redirect_stderr(io.StringIO()):
+        check("strip whose write fails exits 1", strip.main(
+            [str(d / "icc.png"), "--out", str(blocker / "o.png")]), 1)
+    truthy("and does not report the removal as done",
+           "would remove" in said.getvalue() and "  removed" not in said.getvalue())
+
+    # A name from a zip made elsewhere: not UTF-8, and still a name to report,
+    # under a stdout as strict as a UTF-8 desktop locale makes it.
+    odd = d / os.fsdecode(b"caf\xe9.png")
+    odd.write_bytes(png(8, 8))
+    strict = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="strict")
+    real = sys.stdout
+    sys.stdout = strict
+    try:
+        for tool, args in (("strip", [str(odd)]), ("imgfacts", [str(odd)])):
+            try:
+                check(f"{tool} reports a file whose name is not UTF-8",
+                      (strip if tool == "strip" else imgfacts).main(args), 0)
+            except UnicodeEncodeError:
+                failures.append(f"  {tool} crashed printing a name that is not UTF-8")
+    finally:
+        sys.stdout = real
+
+    # recipe: a recipe still names its file in another checkout.
+    proj = d / "proj"
+    (proj / ".git").mkdir(parents=True)
+    (proj / "sub").mkdir()
+    other = d / "brand"                      # another repository beside it
+    (other / ".git").mkdir(parents=True)
+    (other / "logo.png").write_bytes(png(8, 8))
+    here = os.getcwd()
+    os.chdir(proj / "sub")
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            check("a capture to an absolute path in the project it runs in",
+                  capture(d, "proj/assets/h.png", input=f"{other / 'logo.png'}:style"), 0)
+            check("and one written through ..", capture(
+                d, "proj/sub/../img/y.png"), 0)
+            check("and one into another repository", capture(d, "brand/x.png"), 0)
+    finally:
+        os.chdir(here)
+    side = recipe.sidecar_of(proj / "assets" / "h.png")
+    doc = yaml.safe_load(side.read_text(encoding="utf-8"))
+    check("is recorded from the project root", doc["output"]["placed"], "assets/h.png")
+    check("an input in another repository stays absolute, naming where it is",
+          doc["inputs"][0]["path"], str(other / "logo.png"))
+    check("a path through .. is recorded from the root too", yaml.safe_load(
+        recipe.sidecar_of(proj / "img" / "y.png").read_text(encoding="utf-8"))
+        ["output"]["placed"], "img/y.png")
+    check("a file placed in another repository is not named from its root",
+          yaml.safe_load(recipe.sidecar_of(other / "x.png").read_text(encoding="utf-8"))
+          ["output"]["placed"], str(other / "x.png"))
+    clone = d / "clone"
+    proj.rename(clone)
+    os.chdir(clone)
+    try:
+        check("so check passes it in a checkout somewhere else",
+              recipe.check_one(Path("assets/h.png")), [])
+        side = recipe.sidecar_of(clone / "assets" / "h.png")
+        text = side.read_text(encoding="utf-8")
+        side.write_text(text.replace("placed: assets/h.png",
+                                     f"placed: {proj}/assets/h.png"), encoding="utf-8")
+        check("and an absolute path an older capture wrote passes there too",
+              recipe.check_one(Path("assets/h.png")), [])
+        side.write_text(text.replace("placed: assets/h.png",
+                                     f"placed: {proj}/other/h.png"), encoding="utf-8")
+        truthy("while one naming another place in the project still fails",
+               any("output.placed" in x for x in recipe.check_one(Path("assets/h.png"))))
+        side.write_text(text, encoding="utf-8")
+        img = clone / "assets" / "h.png"
+        img.write_bytes(img.read_bytes()[:-12])
+        truthy("check reports a placed file cut short, as capture refuses one",
+               any("end marker" in x for x in recipe.check_one(Path("assets/h.png"))))
+    finally:
+        os.chdir(here)
+    plain = d / "plain"
+    plain.mkdir()
+    truthy("the temporary directory lies in no project",
+           recipe.project_root(plain) is None)
+    if recipe.project_root(plain) is None:   # under a repo, this proves nothing
+        (plain / "a").mkdir()
+        (plain / "b").mkdir()
+        with contextlib.redirect_stdout(io.StringIO()):
+            capture(plain, "a/pic.png")
+        for f in ("pic.png", "pic.png" + recipe.SIDECAR):
+            (plain / "b" / f).write_bytes((plain / "a" / f).read_bytes())
+        verdicts = []
+        for cwd, arg in ((plain / "b", "pic.png"), (plain, "b/pic.png"),
+                         (plain / "a", "../b/pic.png")):
+            os.chdir(cwd)
+            try:
+                verdicts.append(bool(recipe.check_one(Path(arg))))
+            finally:
+                os.chdir(here)
+        check("outside a project, a recipe copied beside another file fails "
+              "from every directory", verdicts, [True, True, True])
+    (d / "assets-file").write_text("x")
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        check("a capture under a path that is a file exits 2",
+              capture(d, "assets-file/h.png"), 2)
+    truthy("and says it is a file, not that a capture raced it",
+           "is a file" in err.getvalue() and "appeared" not in err.getvalue())
+
+
 def test_recipe_round_six(tmp: Path) -> None:
     """A recipe that names its files from where a later reader stands, and a
     generator credited for what it left rather than for where it lives."""
@@ -2538,6 +2750,7 @@ def main() -> int:
         test_strip_round_five(tmp)
         test_recipe_round_five(tmp)
         test_recipe_round_six(tmp)
+        test_round_seven(tmp)
         test_strip_accounts_for_every_byte(tmp)
         test_cli_surfaces(tmp)
         test_cli_bounds_and_render_sections(tmp)

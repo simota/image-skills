@@ -816,6 +816,13 @@ def _(r):
         "\nFor example:\n\n    [label](missing.md)\n\n## ")
 
 
+@quiet("an indented or fenced example inside a block quote is code too")
+def _(r):
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\n> For example:\n>\n>     [label](missing.md)\n\n"
+        "> ```md\n> [other](missing-too.md)\n> ```\n\n## ")
+
+
 @quiet("a code span runs across the lines of one block quote")
 def _(r):
     sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",

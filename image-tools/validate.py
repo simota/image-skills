@@ -97,6 +97,7 @@ _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 # a lone backtick in one list item cannot pair with one in the next.
 _LINK_BLOCK = re.compile(r"^ {0,3}(#{1,6}(\s|$)|[-*+]\s|\d+[.)]\s|\|)")
 _QUOTED = re.compile(r"^ {0,3}>")
+_QUOTE_PREFIX = re.compile(r"^(?: {0,3}> ?)+")
 
 
 def prose_links(text: str) -> list[str]:
@@ -112,7 +113,11 @@ def prose_links(text: str) -> list[str]:
         found.extend(m.group(1) for m in LINK_RE.finditer(joined)
                      if any(a <= m.start() < b for a, b in prose))
         para.clear()
-    for line in text.splitlines():
+    for whole in text.splitlines():
+        # Fences and indented code are judged inside any block-quote prefix:
+        # `>     [x](y.md)` is code in a quote, not a link.
+        q = _QUOTE_PREFIX.match(whole)
+        line = whole[q.end():] if q else whole
         m = _FENCE.match(line)
         if fence:
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
@@ -122,13 +127,16 @@ def prose_links(text: str) -> list[str]:
         if m and not (m.group(1)[0] == "`" and "`" in line[m.end():]):
             flush()
             fence = m.group(1)
-        elif not para and re.match(r"^( {4}|\t)", line):
+        elif re.match(r"^( {4}|\t)", line) and (
+                not para or (q and not _QUOTED.match(para[-1]))):
+            # Indented code opens a block, and cannot interrupt a paragraph:
+            # an indented line after one, even outside its quote, continues it.
             continue                               # indented code: an example
         elif line.strip():
             if _LINK_BLOCK.match(line) or (
-                    para and bool(_QUOTED.match(line)) != bool(_QUOTED.match(para[-1]))):
+                    para and bool(q) != bool(_QUOTED.match(para[-1]))):
                 flush()
-            para.append(line)
+            para.append(whole)
             if re.match(r"^ {0,3}#{1,6}(\s|$)", line):
                 flush()                            # a heading is one line long
         else:

@@ -135,6 +135,8 @@ def _png(b: bytes) -> dict:
             chunks.add(tag.decode("latin-1"))
         if tag == b"eXIf" and exif is None:      # which some writers put after it
             exif = b[i + 8:i + 8 + size]
+        if tag == b"IEND":                       # what follows is not the file's
+            break
         i += 12 + size
         if size > len(b):                        # truncated or lying length
             break
@@ -312,10 +314,15 @@ def _webp(b: bytes) -> dict:
 
 
 def _webp_orientation(b: bytes) -> int | None:
-    """The orientation in a VP8X file's EXIF chunk, which may follow the image."""
+    """The orientation in a VP8X file's EXIF chunk, which may follow the image.
+    Within the RIFF size: bytes past it are not the file's, to a reader or to
+    the stripper."""
+    end = min(len(b), 8 + int.from_bytes(b[4:8], "little"))
     i = 12
-    while i + 8 <= len(b):
+    while i + 8 <= end:
         tag, size = b[i:i + 4], int.from_bytes(b[i + 4:i + 8], "little")
+        if i + 8 + size > end:
+            break
         if tag == b"EXIF":
             return exif_orientation(b[i + 8:i + 8 + size])
         i += 8 + size + (size & 1)
@@ -338,10 +345,11 @@ def _gif_transparent(b: bytes) -> bool:
     A graphic control extension's presence is not the answer: an animated GIF
     carries one per frame for the delay alone. Nor is its transparency flag on
     a later frame: an encoder marks unchanged pixels transparent so the frame
-    before shows through, and over a first frame that covers the whole canvas
-    opaquely, and is never cleared to the background (disposal 2) before the
-    last frame, that is still an opaque picture. Anything else that sets the
-    flag is counted, since telling more apart would mean decoding the pixels.
+    before shows through, and over a canvas a whole opaque frame has filled,
+    with nothing cleared to the background (disposal 2) since, that is still an
+    opaque picture. So the frames are followed in the order a viewer draws
+    them. Anything else that sets the flag is counted, since telling more
+    apart would mean decoding the pixels.
     Walked block by block, because the colour tables are raw bytes that can
     contain the extension's introducer by chance.
     """
@@ -367,10 +375,22 @@ def _gif_transparent(b: bytes) -> bool:
         i += 1
     if not frames:
         return gce[0]
-    if frames[0][0]:
-        return True
-    kept = frames[0][2] and all(d != 2 for _, d, _ in frames[:-1])
-    return not kept and any(t for t, _, _ in frames)
+    if not any(keyed for keyed, _, _ in frames):
+        return False                             # no flag, nothing to see through
+    opaque = False                               # the canvas starts empty
+    for keyed, disposal, covers in frames:
+        before = opaque
+        if covers and not keyed:
+            opaque = True
+        # Otherwise unchanged: drawn over an opaque canvas, a partial or keyed
+        # frame leaves it opaque; over a bare one it cannot be shown to fill it.
+        if not opaque:
+            return True
+        if disposal == 2:                        # cleared before the next frame
+            opaque = False
+        elif disposal == 3:                      # put back as it was before
+            opaque = before
+    return False
 
 
 READERS = [(PNG_SIG, _png), (b"\xff\xd8\xff", _jpeg), (b"GIF8", _gif)]

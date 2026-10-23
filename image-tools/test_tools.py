@@ -1610,6 +1610,12 @@ def test_round_seven(tmp: Path) -> None:
         64, 32, 0x08, [(b"VP8L", b"\x2f" + b"\x00" * 4), (b"EXIF", exif(5))])).get("displayed"),
         "32x64")
     truthy("and the report says so", "shown as 1024x1536" in imgfacts.render(turned))
+    # Bytes past a file's own end are not its metadata (Codex review on #8).
+    check("an eXIf appended after IEND is not read",
+          "orientation" in facts("late.png", png(64, 32) + raw_chunk(b"eXIf", exif(6))), False)
+    in_riff = webp_with(64, 32, 0x08, [(b"VP8L", b"\x2f" + b"\x00" * 4)])
+    check("an EXIF chunk past the RIFF end is not read", "orientation" in facts(
+        "late.webp", in_riff + b"EXIF" + struct.pack("<I", 26) + exif(6)), False)
 
     # imgfacts: a later frame's transparent index lets the frame before show.
     whole = (0, 0, 8, 8)
@@ -1622,6 +1628,12 @@ def test_round_seven(tmp: Path) -> None:
           facts("c.gif", gif_frames(8, 8, [(None, (0, 0, 4, 4)), (1, whole)]))["alpha"], True)
     check("a transparent first frame is transparent",
           facts("e.gif", gif_frames(8, 8, [(1, whole)]))["alpha"], True)
+    check("an opaque full redraw after a clear makes the canvas opaque again",
+          facts("h.gif", gif_frames(8, 8, [(None, whole), (2 << 2, whole), (None, whole),
+                                           (1 << 2 | 1, (2, 2, 4, 4))]))["alpha"], False)
+    check("a clear followed by a keyed frame shows through",
+          facts("i.gif", gif_frames(8, 8, [(None, whole), (2 << 2, whole),
+                                           (1, whole)]))["alpha"], True)
     check("a final frame's disposal is not the picture",
           facts("g.gif", gif_frames(8, 8, [(None, whole), (2 << 2 | 1, whole)]))["alpha"],
           False)

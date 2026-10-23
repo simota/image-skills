@@ -904,6 +904,84 @@ def _(r):
         "\nThe forms are in [diagram forms](../reference/diagram-forms.md).\n\n## ")
 
 
+# --- round seven: rules that passed what they exist to catch ------------------
+
+@case("V14-oracle-blank", says="oracle")
+def _(r): sub(r / "image-registry/routes.yaml",
+              'oracle: "no open defect at severity major or above, and one full pass '
+              'over the image adds none"', 'oracle: ""')
+
+
+@case("V14-cycles-prose", says="max_cycles")
+def _(r): sub(r / "image-registry/routes.yaml", "max_cycles: 4 ",
+              "max_cycles: until it looks right ")
+
+
+@case("V17-undeclared", says="not declared")
+def _(r):
+    """A key retired from `delivered:` leaves its blocks frozen in every
+    SKILL.md, unrendered and unchecked, and their words read as the skill's own."""
+    sub(r / "image-registry/harness.yaml", '  surface: { section: "Done when" }\n', "")
+
+
+@case("V20-shared-word", says="'BLOCKED'")
+def _(r):
+    """BLOCKED is a status and a residual class; one row cannot define both."""
+    sub(r / f"{S}_image/CONTRACT.md",
+        "| `BLOCKED` | Could not proceed. Say what was tried and what stopped it |\n", "")
+
+
+@case("V20-mention", says="'T1'")
+def _(r):
+    """A word in a later cell of some row is a mention, not a definition."""
+    sub(r / f"{S}_image/SIZING.md",
+        "| `T1` | One skill owns it, but a `T0` condition fails |",
+        "| one skill owns it | `T1` | (moved) |")
+
+
+@case("V8-reference-link", says="gone-away.md")
+def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+              "\nSee [the old page][old].\n\n[old]: gone-away.md\n\n## ")
+
+
+@case("V8-empty-alt", says="gone-away.png")
+def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+              "\n![](gone-away.png)\n\n## ")
+
+
+@case("V37-capitalised", says="leans on codex")
+def _(r):
+    """A sentence that opens with the tool's name still leans on it."""
+    f = r / f"{S}image-deliver/reference/alt-text.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nThe defaults follow Codex's imagegen skill.\n",
+                 encoding="utf-8")
+
+
+@case("V38-trailing-stop", says="CRITICAL")
+def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+              "\nSeverity: CRITICAL | HIGH | LOW.\n\n## ")
+
+
+@case("V7-not-a-mapping", says="not a mapping")
+def _(r):
+    f = r / "image-registry/routes.yaml"
+    f.write_text(f.read_text(encoding="utf-8") + "\nquick: [image-prompt, image-generate]\n",
+                 encoding="utf-8")
+
+
+@case("V3-empty-stub", says="image-extra")
+def _(r):
+    """The first step of adding a skill; a traceback reported nothing at all."""
+    f = r / "image-registry/capabilities.yaml"
+    f.write_text(f.read_text(encoding="utf-8") + "\nimage-extra:\n", encoding="utf-8")
+
+
+@quiet("pixel arithmetic over a 20xx width is not a date")
+def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+              "\nOn a 12-column layout, 1920/12 gives 160 px columns, "
+              "and 2048/10 is about 205.\n\n## ")
+
+
 def main() -> int:
     code, baseline = run(ROOT)
     if code != 0:

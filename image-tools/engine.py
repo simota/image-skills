@@ -29,7 +29,8 @@ Engine quirks, re-checked by `make engines` rather than dated:
 * The prompt goes on stdin for codex and claude, never as an argument: a prompt
   that starts with `-` is read as a flag, and a long one overflows the argument
   list before the engine ever sees it.
-* `agy --print` returns an envelope; the validated object is `structured_output`.
+* `agy --print` returns an envelope; the validated object is `structured_output`,
+  and a `status` other than `SUCCESS` is a run that failed, whatever it holds.
 * `claude -p --json-schema` validates the object and returns it in the envelope's
   `structured_output`; `result` carries the same object as a string.
 """
@@ -294,11 +295,18 @@ def _ask(engine: str, prompt: str, schema: dict):
 
 def _envelope(engine: str, r: subprocess.CompletedProcess) -> dict:
     """The envelope claude and agy print, refused when it says the run failed:
-    a schema-shaped object beside `is_error` is a leftover, not an answer."""
+    a schema-shaped object beside `is_error` is a leftover, not an answer.
+    agy says it in `status` instead, and a stated status other than `SUCCESS`
+    is a run that did not finish: its `ERROR` describes the final message,
+    which is the answer here."""
     envelope = _parse(engine, r.stdout)
     if envelope.get("is_error"):
         raise EngineError(f"{engine} reported an error "
                           f"(subtype {envelope.get('subtype')!r}).\n{_tail(r)}")
+    if engine == "agy" and "status" in envelope and envelope["status"] != "SUCCESS":
+        raise EngineError(f"agy reported status {envelope.get('status')!r}"
+                          f"{': ' + str(envelope['error']) if envelope.get('error') else ''}"
+                          f".\n{_tail(r)}")
     return envelope
 
 

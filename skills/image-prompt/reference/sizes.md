@@ -78,7 +78,7 @@ listed against it, the check fails rather than passing quietly.
 # Aspects — the ratio path (agy)
 
 The other generator's `generate_image` takes `AspectRatio` and nothing else: no
-width, no height, no megapixel count. **The seven below are the whole size
+width, no height, no megapixel count. **The shapes below are the whole size
 surface**, and a shape not on the list is not a smaller request — it is a
 request that cannot be made.
 

@@ -14,7 +14,7 @@ anyone looked, and what has to be written down so the picture can be made again.
 
 The two do not take the same argument. One takes no size argument on its default
 path, and a pixel canvas subject to four constraints on its fallback CLI; the
-other takes an aspect ratio off a list of seven and no pixel count at all, and
+other takes an aspect ratio off a fixed list and no pixel count at all, and
 writes JPEG. **Which one ran is the first thing a recipe
 settles**, because half the fields beside an image mean something different
 depending on the answer.
@@ -171,7 +171,7 @@ skill's class grants a shell, so a missing one fails rather than passing as an
 oversight.
 
 **One declaration for the generators' numbers.** `generators` in the registry
-holds both — the four canvas constraints for one, the seven aspects for the
+holds both — the four canvas constraints for one, the list of aspects for the
 other, each tagged with the `control` that separates them. `imgfacts.py` decides
 legality from it, `image-prompt/reference/sizes.md` states both in prose for a
 reader, and `make figures` checks the prose against the registry — so the tools
@@ -288,12 +288,15 @@ implementation's own number is the version of that which looks fine in review.
 
 ```sh
 make link                       # into ~/.claude/skills, ~/.codex/skills, ~/.gemini/…
-make link CLAUDE_DIR=.claude/skills
+make link CLAUDE_DIR="$PWD/../my-project/.claude/skills"   # one project's skills
 ```
 
 Each `image-*` skill is linked individually, so a skills directory keeps
 whatever else it already carries, and a name already taken by a real directory
-is skipped rather than overwritten.
+is skipped rather than overwritten. A host directory is written to only when
+its parent exists, and a relative one is read from this checkout — so name a
+project's directory by its absolute path. Make splits its lists on spaces, so
+a host directory whose path holds one is not supported.
 
 ## The published overview
 

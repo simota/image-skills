@@ -72,8 +72,9 @@ SKILLS = [p.name for p in SKILL_DIRS]
 # Link text may be empty: `![](hero.png)` is an image with no alt, and a link.
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 # A reference definition, `[label]: target`: the target a `[text][label]` link
-# leads to. A footnote (`[^1]:`) is not one.
-REF_DEF_RE = re.compile(r" {0,3}\[(?!\^)[^\]]+\]:[ \t]*(\S+)")
+# leads to. A footnote (`[^1]:`) is not one. A `<...>` destination may hold
+# spaces and is taken whole; `link_target` removes the brackets.
+REF_DEF_RE = re.compile(r" {0,3}\[(?!\^)[^\]]+\]:[ \t]*(<[^<>\n]*>|\S+)")
 # A backticked token is a path if it contains a slash or names a file. Matching
 # only on the slash misses the bare sibling reference (`SIZING.md`), which is
 # the form that breaks: it resolves against the skill directory, not against

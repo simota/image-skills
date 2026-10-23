@@ -982,6 +982,13 @@ def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
               "and 2048/10 is about 205.\n\n## ")
 
 
+@quiet("a bracketed reference destination may hold a space")
+def _(r):
+    (r / f"{S}image-generate/playbooks/my notes.png").write_bytes(b"")
+    sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
+        "\nSee [the notes][n].\n\n[n]: <my notes.png>\n\n## ")
+
+
 def main() -> int:
     code, baseline = run(ROOT)
     if code != 0:

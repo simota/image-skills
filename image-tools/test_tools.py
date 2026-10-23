@@ -2121,6 +2121,7 @@ def test_engine_failures(tmp: Path) -> None:
     for bad in ({"type": 5}, {"type": {"x": 1}}, {"type": "objekt"},
                 {"type": "object", "properties": ["a"]},
                 {"type": "object", "required": "a"},
+                {"type": "object", "not": []}, {"additionalProperties": []},
                 {"type": "object", "properties": {"rows": {"type": "array",
                                                            "items": {"type": 7}}}}):
         sfile.write_text(json.dumps(bad), encoding="utf-8")

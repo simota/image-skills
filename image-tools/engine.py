@@ -198,6 +198,11 @@ def malformed(schema, where: str = "schema") -> list[str]:
                 wrong += malformed(v, f"{where}.{k}[{n}]")
     for k in _SCHEMA_ONE:
         v = schema.get(k)
+        if isinstance(v, list) and k != "items":
+            # Only `items` has a list form (positional, pre-2020); `not: []`
+            # is no schema at all, and an empty list would check nothing.
+            wrong.append(f"{where}.{k} is a list, and {k} takes one schema")
+            continue
         for n, sub in enumerate(v) if isinstance(v, list) else [(None, v)] if k in schema else []:
             wrong += malformed(sub, f"{where}.{k}" + ("" if n is None else f"[{n}]"))
     return wrong

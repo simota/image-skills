@@ -95,7 +95,9 @@ def _live_marker_offsets(text: str) -> list[int]:
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 # Lines that open a block of their own: a code span never runs across one, so
 # a lone backtick in one list item cannot pair with one in the next.
-_LINK_BLOCK = re.compile(r"^ {0,3}(#{1,6}(\s|$)|[-*+]\s|\d+[.)]\s|\|)")
+# A thematic break among them: it cannot be a lazy continuation either.
+_LINK_BLOCK = re.compile(r"^ {0,3}(#{1,6}(\s|$)|[-*+]\s|\d+[.)]\s|\||"
+                         r"(?P<rule>[-*_])[ \t]*((?P=rule)[ \t]*){2,}$)")
 _QUOTE_PREFIX = re.compile(r"^(?: {0,3}> ?)+")
 
 

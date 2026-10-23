@@ -837,6 +837,13 @@ def _(r):
         "\n> Press ` to toggle.\n> > See [guide](gone.md) and `x`.\n\n## ")
 
 
+@case("V8-thematic-break", says="links to missing gone.md")
+def _(r):
+    """A thematic break ends a quoted paragraph; it is no lazy continuation."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> Press ` to toggle.\n***\nSee [guide](gone.md) and `x`.\n\n## ")
+
+
 @quiet("a lazy continuation keeps a quoted code span whole")
 def _(r):
     sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",

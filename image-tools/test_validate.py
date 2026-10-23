@@ -816,6 +816,13 @@ def _(r):
         "\nFor example:\n\n    [label](missing.md)\n\n## ")
 
 
+@case("V8-quoted-fence", says="links to missing gone.md")
+def _(r):
+    """A fence left open inside a quote closes with the quote."""
+    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+        "\n> ```\n> example\n\nSee [guide](gone.md).\n\n## ")
+
+
 @quiet("an indented or fenced example inside a block quote is code too")
 def _(r):
     sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",

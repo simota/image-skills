@@ -233,9 +233,11 @@ rot_patterns:
   # screens divided into columns, and 2026/08 is a month
   - '\b(19|20)\d{2}-(0[1-9]|1[0-2])\b'
   - '\b20[0-3]\d/(0[1-9]|1[0-2])\b'
-  - '\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.? (19|20)\d{2}\b'
+  # A day may sit between month and year, as US dates put it: October 26, 2026.
+  - '\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.? (\d{1,2}(st|nd|rd|th)?,? )?(19|20)\d{2}\b'
   - '\bv\d+\.\d+(\.\d+)?\b'
-  - '\b(gpt-image|gpt|dall-e|imagen|gemini|sdxl|flux)[- ]?\d'
+  # Spelled as their makers spell them too: DALL·E 3, dalle-3, FLUX.1.
+  - '\b(gpt-image|gpt|dall[-·]?e|imagen|gemini|sdxl|flux)[-. ]?\d'
 
 # reference/ carries no line budget. It carries these headers instead, so a
 # reader can tell what a file claims and when anyone last checked it.

@@ -296,8 +296,8 @@ Each `image-*` skill is linked individually, so a skills directory keeps
 whatever else it already carries, and a name already taken by a real directory
 is skipped rather than overwritten. A host directory is written to only when
 its parent exists, and a relative one is read from this checkout — so name a
-project's directory by its absolute path. Make splits its lists on spaces, so
-a host directory whose path holds one is not supported.
+project's directory by its absolute path. A path with a space in it — a home
+like `/Users/Jo Smith` — is read whole.
 
 ## The published overview
 

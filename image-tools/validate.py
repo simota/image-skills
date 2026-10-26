@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -70,7 +71,11 @@ SKILLS_ROOT = ROOT / H["skills_dir"] if H.get("skills_dir") else ROOT
 SKILL_DIRS = sorted(p for p in SKILLS_ROOT.glob(f"{PREFIX}*") if (p / "SKILL.md").exists())
 SKILLS = [p.name for p in SKILL_DIRS]
 # Link text may be empty: `![](hero.png)` is an image with no alt, and a link.
-LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+# It may hold one level of brackets — a badge `[![alt](a.svg)](page.md)`, a
+# `ids[0]` — and both links of a badge count, so matches may overlap: text that
+# stopped at the first `]` left the outer target unread.
+# A link inside a link is not one: `[[a](x.md)](y.md)` links to x.md alone.
+LINK_RE = re.compile(r"(?=\[(?:[^\[\]]|!\[[^\]]*\]|\[[^\]]*\](?!\())*\]\(([^)]+)\))")
 # A reference definition, `[label]: target`: the target a `[text][label]` link
 # leads to. A footnote (`[^1]:`) is not one.
 REF_DEF_RE = re.compile(r" {0,3}\[(?!\^)([^\]]+)\]:[ \t]*(\S+)")
@@ -120,7 +125,24 @@ def _live_marker_offsets(text: str) -> list[int]:
             for m in MARKER_RE.finditer(text[a:b])]
 
 
-_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_FENCE = re.compile(r"^( *)(`{3,}|~{3,})")       # indent judged against the list
+# A list item, and where its content starts: a line indented to that column
+# belongs to the item, and only four more than that make it code.
+_LIST_ITEM = re.compile(r"^( *)([-*+]|(\d{1,9})[.)])( {1,4}(?=\S)|$)")
+_RULE = re.compile(r"^ {0,3}([-*_])[ \t]*(\1[ \t]*){2,}$")
+
+
+def _opens_item(flat: str, para: list, in_list: bool):
+    """The list item `flat` opens, or None. A thematic break is not one, and
+    outside a list an item interrupts a paragraph only when it has content and,
+    if ordered, starts at 1: `Title` over `-` is a heading, `para` over `2. x`
+    one paragraph."""
+    item = _LIST_ITEM.match(flat)
+    if not item or _RULE.match(flat):
+        return None
+    if para and not in_list and (not item.group(4) or (item.group(3) or "1").lstrip("0") != "1"):
+        return None
+    return item
 # Lines that open a block of their own: a code span never runs across one, so
 # a lone backtick in one list item cannot pair with one in the next.
 # A thematic break among them: it cannot be a lazy continuation either.
@@ -157,6 +179,7 @@ def _scan_links(text: str) -> tuple[list[str], list[tuple[str, str]], list[str]]
     labels reference links use — all outside fences, code and comments."""
     found, fence, fence_depth, para, para_depth = [], None, 0, [], 0
     comment, defs, uses = False, [], []
+    cols, list_depth, fence_col, bare = [], 0, 0, False
 
     def flush():
         # A link counts when its `[` is prose; its text may hold a code span.
@@ -185,29 +208,54 @@ def _scan_links(text: str) -> tuple[list[str], list[tuple[str, str]], list[str]]
         q = _QUOTE_PREFIX.match(whole)
         line = whole[q.end():] if q else whole
         depth = q.group(0).count(">") if q else 0
-        m = _FENCE.match(line)
+        flat = line.expandtabs(4)
+        indent = len(flat) - len(flat.lstrip(" "))
         if fence and depth < fence_depth:
             fence = None                           # its quote ended, and so did it
         if comment:                                # an HTML comment block runs to
             comment = "-->" not in line            # the line that closes it, and
             continue                               # none of it is shown
-        if not fence and re.match(r"^ {0,3}<!--", line):
+        m = _FENCE.match(flat)
+        if fence and line.strip() and indent < fence_col:
+            fence = None                           # its list item closed, and so did it
+        elif fence:
+            if m and len(m.group(1)) < fence_col + 4 and m.group(2)[0] == fence[0] \
+                    and len(m.group(2)) >= len(fence) and not flat[m.end():].strip():
+                fence = None
+            continue
+        # The content column of each open list item, innermost last. A line
+        # left of one, unless it continues a paragraph lazily, closes it.
+        if depth != list_depth:
+            cols, list_depth = [], depth           # a list does not cross quotes
+        if not line.strip() and bare and cols:
+            cols.pop()                             # an item that opened empty, then a
+        bare = False                               # blank line: it is over
+        if line.strip() and (not para or m or _LINK_BLOCK.match(line)):
+            while cols and indent < cols[-1]:
+                cols.pop()
+        base = cols[-1] if cols else 0
+        if indent >= base + 4:
+            m = None                               # past a fence's indent: code or content
+        if re.match(r"^ {0,3}<!--", line):
             flush()
             comment = "-->" not in line[line.index("<!--") + 4:]
             continue
-        if fence:
-            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
-                    and not line[m.end():].strip():
-                fence = None
-            continue
-        if m and not (m.group(1)[0] == "`" and "`" in line[m.end():]):
+        if m and not (m.group(2)[0] == "`" and "`" in flat[m.end():]):
             flush()
-            fence, fence_depth = m.group(1), depth
-        elif re.match(r"^( {4}|\t)", line) and (not para or depth > para_depth):
+            fence, fence_depth, fence_col = m.group(2), depth, base
+        elif line.strip() and indent >= base + 4 and (not para or depth > para_depth):
             # Indented code opens a block, and cannot interrupt a paragraph:
             # an indented line after one, even outside its quote, continues it.
+            # Inside a list item four spaces are its content, not code: a link
+            # in an item's second paragraph was taken for an example.
             continue                               # indented code: an example
         elif line.strip():
+            item = _opens_item(flat, para, bool(cols)) if indent < base + 4 else None
+            if item:
+                while cols and cols[-1] > indent:
+                    cols.pop()
+                cols.append(indent + len(item.group(2)) + max(len(item.group(4)), 1))
+                bare = not item.group(4)
             # A deeper quote opens a block: `> a` and `> > b` are two paragraphs,
             # and a backtick in one never pairs with the other. A shallower line
             # is a lazy continuation of the paragraph it follows, as CommonMark
@@ -234,6 +282,41 @@ def link_target(raw: str) -> str:
 
 def read(p: Path) -> str:
     return p.read_text(encoding="utf-8")
+
+
+def _git_visible() -> set[Path] | None:
+    """The files git would offer to commit — tracked, or untracked and not
+    ignored — or None outside a work tree (the pre-commit hook's export, an
+    unpacked tarball), where everything on disk is the corpus. A `.venv/` or
+    `node_modules/` beside the checkout failed the line budget, the set-name
+    rule and the link rule over files that were never this set's. A hook runs
+    with GIT_* set for the repository that called it; the question is about
+    ROOT, so it is asked without them.
+    Only when ROOT is the top of its own work tree: inside another repository
+    (an export under its ignored build/) the answer is that one's, and an
+    empty set there would have left those rules checking nothing.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    git = ["git", "-C", str(ROOT)]
+    try:
+        top = subprocess.run(git + ["rev-parse", "--show-toplevel"], capture_output=True,
+                             check=True, env=env).stdout
+        if Path(os.fsdecode(top.strip())).resolve() != ROOT.resolve():
+            return None
+        out = subprocess.run(git + ["ls-files", "-z", "-co", "--exclude-standard"],
+                             capture_output=True, check=True, env=env).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return {ROOT / os.fsdecode(p) for p in out.split(b"\0") if p}
+
+
+GIT_VISIBLE = _git_visible()
+
+
+def corpus_md(base: Path) -> list[Path]:
+    """Every markdown file under `base` that belongs to the corpus."""
+    return sorted(f for f in base.rglob("*.md") if ".git" not in f.parts
+                  and (GIT_VISIBLE is None or f in GIT_VISIBLE))
 
 
 class BadFrontmatter(ValueError):
@@ -361,8 +444,7 @@ def v6_budgets():
             fail("V6", f"{SHARED}/{f.name} is {n} lines (max {LIM['shared_file_lines']})")
     if total > LIM["shared_lines_total"]:
         fail("V6", f"{SHARED} totals {total} lines (max {LIM['shared_lines_total']})")
-    repo = sum(len(read(f).splitlines()) for f in ROOT.rglob("*.md")
-               if ".git" not in f.parts)
+    repo = sum(len(read(f).splitlines()) for f in corpus_md(ROOT))
     if repo > LIM["repo_md_lines_total"]:
         fail("V6", f"repo markdown totals {repo} lines (max {LIM['repo_md_lines_total']})")
 
@@ -380,13 +462,17 @@ def v7_routes_real():
 
 
 def v8_links():
-    for f in ROOT.rglob("*.md"):
-        if ".git" in f.parts:
-            continue
+    for f in corpus_md(ROOT):
         for target in prose_links(read(f)):
             if target.startswith(("http", "#", "mailto:")):
                 continue
-            if not (f.parent / target.split("#")[0]).exists():
+            if target.startswith("/"):
+                # Absolute: checked against this machine's disk, `/etc/hosts`
+                # passed and `/skills/...` failed, and an installed skill is
+                # read from wherever its host keeps it.
+                fail("V8", f"{f.relative_to(ROOT)} links to absolute {target}; "
+                           "a link is relative to the page")
+            elif not (f.parent / target.split("#")[0]).exists():
                 fail("V8", f"{f.relative_to(ROOT)} links to missing {target}")
 
 
@@ -715,8 +801,8 @@ def v21_verify_names_a_grade():
 
 
 def v22_markers_classified():
-    for f in ROOT.rglob("*.md"):
-        if ".git" in f.parts or f.parts[-2:-1] == ("delivered",):
+    for f in corpus_md(ROOT):
+        if f.parts[-2:-1] == ("delivered",):
             continue
         lines = read(f).splitlines()
         # Exempt only a marker quoted inside a code span — one that is being
@@ -726,7 +812,11 @@ def v22_markers_classified():
             text = "\n".join(para)
             for at in _live_marker_offsets(text):
                 i = first + text.count("\n", 0, at)
-                if not any(c in lines[i] for c in VOCAB["residual_classes"]):
+                # The class is what the marker says first (`<class> — <action>`):
+                # anywhere on the line, UNBLOCKED counted as BLOCKED.
+                after = text[at + len("#TODO(agent):"):]
+                if not re.match(rf"\s*({'|'.join(map(re.escape, VOCAB['residual_classes']))})(?![\w-])",
+                                after):
                     fail("V22", f"{f.relative_to(ROOT)}:{i + 1} marker carries no residual class")
 
 
@@ -764,9 +854,7 @@ def v23_labels():
         if label not in allowed:
             fail("V23", f"label_by_path gives {pat} the label {label!r}, which is "
                         f"not one of document_labels {allowed}")
-    for f in sorted(ROOT.rglob("*.md")):
-        if ".git" in f.parts:
-            continue
+    for f in corpus_md(ROOT):
         rel = str(f.relative_to(ROOT))
         want = None
         for pat, label in H["label_by_path"].items():
@@ -785,6 +873,11 @@ def v23_labels():
 
 
 def v24_rendered_tables():
+    # A missing table is reported, not raised: the traceback stopped every rule.
+    for doc in (SKILLS_ROOT / ROUTING_FILE, ROOT / "README.md"):
+        if not doc.is_file():
+            fail("V24", f"{doc.relative_to(ROOT)} does not exist; the skill table lives there")
+            return
     routing = read(SKILLS_ROOT / ROUTING_FILE)
     readme = read(ROOT / "README.md")
     for name in SKILLS:
@@ -868,6 +961,8 @@ def v28_namespace_agrees():
     for d in sorted(list(ROOT.iterdir()) + list(SKILLS_ROOT.iterdir() if SKILLS_ROOT != ROOT else [])):
         if not d.is_dir() or d.name in PLATFORM_DIRS:
             continue
+        if GIT_VISIBLE is not None and not any(d in f.parents for f in GIT_VISIBLE):
+            continue                               # ignored, or nothing git could commit
         if not (d.name.startswith(PREFIX) or d.name == SHARED):
             fail("V28", f"{d.name}/ carries no set name; a directory this set owns "
                         f"is {PREFIX}* or {SHARED}, so that copying it into a shared "
@@ -1234,9 +1329,7 @@ def v38_enumerations_declared():
     """
     declared = {w for words in VOCAB.values() for w in words}
     seen = 0
-    for f in sorted(SKILLS_ROOT.rglob("*.md")):
-        if ".git" in f.parts:
-            continue
+    for f in corpus_md(SKILLS_ROOT):
         fence = None                     # the opening run, while inside one
         for i, line in enumerate(read(f).splitlines(), 1):
             run = re.match(r" {0,3}(`{3,}|~{3,})", line)

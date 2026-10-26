@@ -247,10 +247,12 @@ def check_density() -> int:
         if label != f:
             fail(f"export-targets.md:{i}",
                  f"rung @{m.group(1)}x states a factor of {m.group(4)}")
-        want = (round(bw * f), round(bh * f))
-        if (ew, eh) != want:
+        # The page states no rounding rule, so half a pixel goes either way.
+        # round() sent it to the even side: 562.5 down, 563.5 up.
+        exact = (bw * f, bh * f)
+        if not all(abs(e - x) <= 0.5 for x, e in zip(exact, (ew, eh))):
             fail(f"export-targets.md:{i}",
-                 f"{bw}x{bh} x {f} is {want[0]}x{want[1]}, stated as {ew}x{eh}")
+                 f"{bw}x{bh} x {f} is {exact[0]:g}x{exact[1]:g}, stated as {ew}x{eh}")
         if ew * eh > widest[0] * widest[1]:
             widest = (ew, eh)
 

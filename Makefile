@@ -12,8 +12,9 @@ AGY_DIR    ?= $(HOME)/.gemini/antigravity-cli/skills
 # Every CLI reading a SKILL.md gets the same working tree. A host is only
 # written to when it is installed here, and its own home — the parent of the
 # skills directory — is what says so: judging by the skills directory itself
-# would skip a host that has one but has never been given a skill.
-HOST_DIRS  := $(CLAUDE_DIR) $(CODEX_DIR) $(AGY_DIR)
+# would skip a host that has one but has never been given a skill. Each is
+# quoted where it is looped over: a home with a space in it (/Users/Jo Smith)
+# once split into two words, and every link landed in /Users/Jo.
 
 .DEFAULT_GOAL := help
 .PHONY: help check validate test figures figures-test tools-test engines refute render hooks link unlink status
@@ -66,14 +67,16 @@ render:
 # file, and core.hooksPath may point somewhere else entirely.
 # A different pre-commit already there (a team's, under a shared hooksPath) is
 # left alone unless FORCE=1 says to replace it. An earlier version of this set's
-# own hook is recognised by its first comment and upgraded.
+# own hook is recognised by its first comment and upgraded. The old one is
+# removed, not written over: through a symlink, cp rewrote the file it pointed
+# at (a team's shared script) or refused outright when that was this repo's.
 hooks:
 	@hooks=$$(git rev-parse --git-path hooks) && mkdir -p "$$hooks" && \
 		if [ -e "$$hooks/pre-commit" ] && [ "$(FORCE)" != 1 ] \
 			&& ! grep -q "Budgets enforced by a mechanism" "$$hooks/pre-commit"; then \
 			echo "$$hooks/pre-commit exists and is not this set's; run: make hooks FORCE=1 to replace it"; exit 1; \
 		fi && \
-		cp image-tools/githooks/pre-commit "$$hooks/pre-commit" && \
+		rm -f "$$hooks/pre-commit" && cp image-tools/githooks/pre-commit "$$hooks/pre-commit" && \
 		chmod +x "$$hooks/pre-commit" && echo "pre-commit installed in $$hooks"
 
 # A skill is a directory holding a SKILL.md, under skills/ where the plugin
@@ -96,7 +99,7 @@ RETIRED = for target in "$$dir"/image-*; do \
 	done
 
 link:
-	@for dir in $(HOST_DIRS); do \
+	@for dir in "$(CLAUDE_DIR)" "$(CODEX_DIR)" "$(AGY_DIR)"; do \
 		if [ ! -d "$$(dirname "$$dir")" ]; then echo "skip $$dir (host not installed here)"; continue; fi; \
 		mkdir -p "$$dir"; \
 		echo "$$dir"; \
@@ -117,7 +120,7 @@ link:
 	done
 
 unlink:
-	@for dir in $(HOST_DIRS); do \
+	@for dir in "$(CLAUDE_DIR)" "$(CODEX_DIR)" "$(AGY_DIR)"; do \
 		[ -d "$$dir" ] || continue; \
 		echo "$$dir"; \
 		for path in $(SKILL_DIRS); do \
@@ -130,7 +133,7 @@ unlink:
 	done
 
 status:
-	@for dir in $(HOST_DIRS); do \
+	@for dir in "$(CLAUDE_DIR)" "$(CODEX_DIR)" "$(AGY_DIR)"; do \
 		echo "$$dir"; \
 		for path in $(SKILL_DIRS); do \
 			name=$$(basename "$$path"); target="$$dir/$$name"; \

@@ -1071,6 +1071,126 @@ def _(r):
     f.write_text(f.read_text(encoding="utf-8")
                  + "\n[exclusions]: playbooks/exclusions.md\n", encoding="utf-8")
 
+
+def _append(r, rel, text):
+    f = r / rel
+    f.write_text(f.read_text(encoding="utf-8") + text, encoding="utf-8")
+
+
+@case("V8-list-paragraph", says="links to missing gone.md")
+def _(r):
+    # Four spaces inside a list item are its second paragraph, not code.
+    _append(r, f"{S}image-review/playbooks/seeing.md",
+            "\n1. Open the file.\n\n    Then read [the catalogue](gone.md).\n")
+
+
+@case("V8-loose-nested-list", says="links to missing gone.md")
+def _(r):
+    _append(r, f"{S}image-review/playbooks/seeing.md", "\n- loose\n\n    - nested [z](gone.md)\n")
+
+
+@quiet("code indented past a list item's content, or fenced inside it, is an example")
+def _(r):
+    _append(r, f"{S}image-review/playbooks/seeing.md",
+            "\n- item\n\n        [c](missing.md)\n\n- item\n\n  ```\n  [d](missing.md)\n  ```\n"
+            "\nAfter the list.\n\n    [e](missing.md)\n")
+
+
+@case("V8-badge", says="links to missing docs/gone.md")
+def _(r): _append(r, "README.md", "\n[![overview](skills/_image/ROUTING.md)](docs/gone.md)\n")
+
+
+@case("V8-bracket-in-text", says="links to missing gone.md")
+def _(r): _append(r, "README.md", "\nRead [the `ids[0]` field](gone.md).\n")
+
+
+@case("V8-absolute", says="links to absolute /etc/hosts")
+def _(r): _append(r, "README.md", "\nSee [hosts](/etc/hosts).\n")
+
+
+@case("V24-routing-missing", says="does not exist")
+def _(r): (r / f"{S}_image/ROUTING.md").rename(r / f"{S}_image/ROUTES.md")
+
+
+@case("V22-class-inside-word", says="residual class")
+def _(r): _append(r, f"{S}image-prompt/playbooks/structure.md",
+                  "\n#" + "TODO(agent): pick the width — UNBLOCKED once review is in\n")
+
+
+@case("V25-us-date")
+def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# checked October 26, 2026 — ")
+
+
+@case("V25-dall-e-dot")
+def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# DALL·E 3 reads text worse — ")
+
+
+@case("V25-flux-dot")
+def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# on FLUX.1 — ")
+
+
+@quiet("a break, an underline, a comment or an item that cannot interrupt ends no list")
+def _(r):
+    # None of these opens a list item, so the four spaces after each are code
+    # (independent review on round 9: each was read as a list paragraph).
+    for opener in ("* * *", "Title\n-", "para\n2. x", "para\n-", "- a\n\n<!-- c -->"):
+        _append(r, f"{S}image-review/playbooks/seeing.md",
+                f"\n{opener}\n\n    [example](missing.md)\n")
+
+
+@quiet("a line left of a list item closes it, and four spaces after that are code")
+def _(r):
+    _append(r, f"{S}image-review/playbooks/seeing.md",
+            "\n   2. A deep item.\n\n    [example](missing.md)\n")
+
+
+@case("V8-fence-closed-by-its-item", says="links to missing gone.md")
+def _(r):
+    # An unclosed fence inside an item ends with the item: the line left of it
+    # is a paragraph again, and its link a link.
+    _append(r, f"{S}image-review/playbooks/seeing.md",
+            "\n- item\n  ```\n  code\nNext, [the catalogue](gone.md).\n")
+
+
+@quiet("an empty item in a quote, then a blank line outside it, is no traceback")
+def _(r): _append(r, f"{S}image-review/playbooks/seeing.md", "\n> -\n\nAfter the quote.\n")
+
+
+@quiet("a link inside a link is not one; the outer brackets are text")
+def _(r): _append(r, "README.md", "\n[see [the table](skills/_image/ROUTING.md) here](missing.md)\n")
+
+
+def _git_init(r):
+    subprocess.run(["git", "init", "-q", str(r)], check=True)
+
+
+@case("V8-inside-ignored-dir", says="links to missing gone.md")
+def _(r):
+    # Unpacked under another repository's ignored directory, git answers for
+    # that repository: its empty answer once left the link rule checking nothing.
+    _git_init(r.parent)
+    (r.parent / ".gitignore").write_text(f"{r.name}/\n", encoding="utf-8")
+    _append(r, "README.md", "\n[x](gone.md)\n")
+
+
+@quiet("what git ignores beside the checkout is not the corpus")
+def _(r):
+    # A virtualenv's docs, a package's README: thousands of lines, broken
+    # links and directories without the set name, none of them this set's.
+    _git_init(r)
+    for d in (".venv/lib/pkg", "node_modules/pkg"):
+        (r / d).mkdir(parents=True)
+        (r / d / "README.md").write_text("[x](gone.md)\n" + "line\n" * 5000, encoding="utf-8")
+    (r / ".git/info/exclude").write_text("node_modules/\n", encoding="utf-8")
+
+
+@case("V8-untracked", says="links to missing gone.md")
+def _(r):
+    # In a work tree, a file git would add is still the corpus.
+    _git_init(r)
+    (r / "notes.md").write_text("[x](gone.md)\n", encoding="utf-8")
+
+
 def main() -> int:
     code, baseline = run(ROOT)
     if code != 0:

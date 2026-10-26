@@ -60,6 +60,9 @@ CASES: list[tuple[str, str, str, str, str]] = [
      "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 768x512 | 1.5 | 1152x769 |"),
     ("check_density", "wrong", RUNGS,
      "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 375x667 | 1.5 | 564x1001 |"),
+    # 614.4 is not half a pixel: only an exact half may go either way
+    ("check_density", "wrong", RUNGS,
+     "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.2x` | 768x512 | 1.2 | 922x615 |"),
     ("check_density", "wrong", RUNGS,
      "Source must be at least: 2304x1536", "Source must be at least: 1536x1024"),
     # the label says one density and the factor computes another; the emitted

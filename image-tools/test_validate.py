@@ -1129,8 +1129,30 @@ def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# DALL·E 3 
 def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# on FLUX.1 — ")
 
 
+@quiet("a break, an underline, a comment or an item that cannot interrupt ends no list")
+def _(r):
+    # None of these opens a list item, so the four spaces after each are code
+    # (independent review on round 9: each was read as a list paragraph).
+    for opener in ("* * *", "Title\n-", "para\n2. x", "para\n-", "- a\n\n<!-- c -->"):
+        _append(r, f"{S}image-review/playbooks/seeing.md",
+                f"\n{opener}\n\n    [example](missing.md)\n")
+
+
+@quiet("a link inside a link is not one; the outer brackets are text")
+def _(r): _append(r, "README.md", "\n[see [the table](skills/_image/ROUTING.md) here](missing.md)\n")
+
+
 def _git_init(r):
     subprocess.run(["git", "init", "-q", str(r)], check=True)
+
+
+@case("V8-inside-ignored-dir", says="links to missing gone.md")
+def _(r):
+    # Unpacked under another repository's ignored directory, git answers for
+    # that repository: its empty answer once left the link rule checking nothing.
+    _git_init(r.parent)
+    (r.parent / ".gitignore").write_text(f"{r.name}/\n", encoding="utf-8")
+    _append(r, "README.md", "\n[x](gone.md)\n")
 
 
 @quiet("what git ignores beside the checkout is not the corpus")

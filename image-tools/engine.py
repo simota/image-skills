@@ -331,6 +331,7 @@ def _spawn(engine: str, argv: list[str], stdin: str | None = None
     with tempfile.TemporaryFile() as fout, tempfile.TemporaryFile() as ferr:
         p = _start(engine, argv, stdin is not None, fout, ferr)
         _wait(engine, p, sent)
+        _kill_group(p)                      # what it left running ends with it
         fout.seek(0)
         ferr.seek(0)
         out, err = fout.read(), ferr.read()
@@ -368,6 +369,17 @@ def _wait(engine: str, p: subprocess.Popen, sent: bytes | None) -> None:
         # interrupt here has to end the tree before it is passed on.
         _kill_tree(p)
         raise
+
+
+def _kill_group(p: subprocess.Popen) -> None:
+    """End whatever the engine left in its process group once it has exited:
+    the tree a timeout ends is not left behind by an answer either."""
+    import os
+    import signal
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except OSError:                          # nothing left in it
+        pass
 
 
 def _kill_tree(p: subprocess.Popen) -> None:

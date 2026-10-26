@@ -250,7 +250,7 @@ def check_density() -> int:
         # The page states no rounding rule, so half a pixel goes either way.
         # round() sent it to the even side: 562.5 down, 563.5 up.
         exact = (bw * f, bh * f)
-        if not all(math.floor(x) <= e <= math.ceil(x) for x, e in zip(exact, (ew, eh))):
+        if not all(abs(e - x) <= 0.5 for x, e in zip(exact, (ew, eh))):
             fail(f"export-targets.md:{i}",
                  f"{bw}x{bh} x {f} is {exact[0]:g}x{exact[1]:g}, stated as {ew}x{eh}")
         if ew * eh > widest[0] * widest[1]:

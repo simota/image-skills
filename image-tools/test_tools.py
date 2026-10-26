@@ -2311,9 +2311,9 @@ def test_engine_integrity(tmp: Path) -> None:
             with fake_engines(tmp, good):
                 check(f"{name}: an answer is kept when a helper outlives the engine",
                       answer(name), good)
-            if linger.exists():
-                with contextlib.suppress(OSError):
-                    os.kill(int(linger.read_text()), 9)
+            check(f"{name}: and the helper ends with it, as a timed-out one would",
+                  (linger.exists(), linger.exists() and alive(int(linger.read_text()))),
+                  (True, False))
     finally:
         engine.TIMEOUT = saved_timeout
         os.environ.pop("FAKE_LINGER")

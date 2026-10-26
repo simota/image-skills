@@ -74,7 +74,8 @@ SKILLS = [p.name for p in SKILL_DIRS]
 # It may hold one level of brackets — a badge `[![alt](a.svg)](page.md)`, a
 # `ids[0]` — and both links of a badge count, so matches may overlap: text that
 # stopped at the first `]` left the outer target unread.
-LINK_RE = re.compile(r"(?=\[(?:[^\[\]]|\[[^\]]*\])*\]\(([^)]+)\))")
+# A link inside a link is not one: `[[a](x.md)](y.md)` links to x.md alone.
+LINK_RE = re.compile(r"(?=\[(?:[^\[\]]|!\[[^\]]*\]|\[[^\]]*\](?!\())*\]\(([^)]+)\))")
 # A reference definition, `[label]: target`: the target a `[text][label]` link
 # leads to. A footnote (`[^1]:`) is not one.
 REF_DEF_RE = re.compile(r" {0,3}\[(?!\^)([^\]]+)\]:[ \t]*(\S+)")
@@ -127,7 +128,21 @@ def _live_marker_offsets(text: str) -> list[int]:
 _FENCE = re.compile(r"^( *)(`{3,}|~{3,})")       # indent judged against the list
 # A list item, and where its content starts: a line indented to that column
 # belongs to the item, and only four more than that make it code.
-_LIST_ITEM = re.compile(r"^( *)([-*+]|\d{1,9}[.)])( {1,4}(?=\S)|$)")
+_LIST_ITEM = re.compile(r"^( *)([-*+]|(\d{1,9})[.)])( {1,4}(?=\S)|$)")
+_RULE = re.compile(r"^ {0,3}([-*_])[ \t]*(\1[ \t]*){2,}$")
+
+
+def _opens_item(flat: str, para: list, in_list: bool):
+    """The list item `flat` opens, or None. A thematic break is not one, and
+    outside a list an item interrupts a paragraph only when it has content and,
+    if ordered, starts at 1: `Title` over `-` is a heading, `para` over `2. x`
+    one paragraph."""
+    item = _LIST_ITEM.match(flat)
+    if not item or _RULE.match(flat):
+        return None
+    if para and not in_list and (not item.group(4) or (item.group(3) or "1").lstrip("0") != "1"):
+        return None
+    return item
 # Lines that open a block of their own: a code span never runs across one, so
 # a lone backtick in one list item cannot pair with one in the next.
 # A thematic break among them: it cannot be a lazy continuation either.
@@ -207,6 +222,8 @@ def _scan_links(text: str) -> tuple[list[str], list[tuple[str, str]], list[str]]
             continue                               # none of it is shown
         if not fence and re.match(r"^ {0,3}<!--", line):
             flush()
+            if indent < list_col:
+                list_col = 0                       # left of the item: the list ended
             comment = "-->" not in line[line.index("<!--") + 4:]
             continue
         if fence:
@@ -226,9 +243,9 @@ def _scan_links(text: str) -> tuple[list[str], list[tuple[str, str]], list[str]]
             # in an item's second paragraph was taken for an example.
             continue                               # indented code: an example
         elif line.strip():
-            item = _LIST_ITEM.match(flat)
+            item = _opens_item(flat, para, list_col > 0)
             if item:
-                list_col = len(item.group(1)) + len(item.group(2)) + max(len(item.group(3)), 1)
+                list_col = len(item.group(1)) + len(item.group(2)) + max(len(item.group(4)), 1)
             elif indent < list_col and (not para or _LINK_BLOCK.match(line)):
                 list_col = 0                       # a block left of the item ended the list
             # A deeper quote opens a block: `> a` and `> > b` are two paragraphs,
@@ -266,12 +283,20 @@ def _git_visible() -> set[Path] | None:
     `node_modules/` beside the checkout failed the line budget, the set-name
     rule and the link rule over files that were never this set's. A hook runs
     with GIT_* set for the repository that called it; the question is about
-    ROOT, so it is asked without them."""
+    ROOT, so it is asked without them.
+    Only when ROOT is the top of its own work tree: inside another repository
+    (an export under its ignored build/) the answer is that one's, and an
+    empty set there would have left those rules checking nothing.
+    """
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    git = ["git", "-C", str(ROOT)]
     try:
-        out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "-co",
-                              "--exclude-standard"], capture_output=True, check=True,
-                             env=env).stdout
+        top = subprocess.run(git + ["rev-parse", "--show-toplevel"], capture_output=True,
+                             check=True, env=env).stdout
+        if Path(os.fsdecode(top.strip())).resolve() != ROOT.resolve():
+            return None
+        out = subprocess.run(git + ["ls-files", "-z", "-co", "--exclude-standard"],
+                             capture_output=True, check=True, env=env).stdout
     except (OSError, subprocess.CalledProcessError):
         return None
     return {ROOT / os.fsdecode(p) for p in out.split(b"\0") if p}

@@ -982,6 +982,72 @@ def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
               "and 2048/10 is about 205.\n\n## ")
 
 
+# Round 8. Each was seen failing (silent, a traceback, or a false alarm)
+# against the validator before the fix.
+
+@case("V9-unquoted", says="is read as int, not text")
+def _(r):
+    """YAML reads `16:9` as 969; every rule used to stop on a traceback."""
+    sub(r / "image-registry/capabilities.yaml",
+        "signals: [generation prompt, prompt wording,",
+        "signals: [generation prompt, prompt wording, 16:9,")
+
+
+@case("V4-unused-definition", says="exclusions.md is not linked from Decide first")
+def _(r):
+    """A definition nothing uses renders as nothing; it is not a link."""
+    f = r / f"{S}image-prompt/SKILL.md"
+    sub(f, "[exclusions](playbooks/exclusions.md) —", "exclusions —")
+    sub(f, "\n## Always", "\n[exclusions]: playbooks/exclusions.md\n\n## Always")
+
+
+@quiet("a reference link resolves against a definition anywhere in the page")
+def _(r):
+    f = r / f"{S}image-prompt/SKILL.md"
+    sub(f, "[exclusions](playbooks/exclusions.md) —", "[exclusions][ex] —")
+    f.write_text(f.read_text(encoding="utf-8") + "\n[ex]: playbooks/exclusions.md\n",
+                 encoding="utf-8")
+
+
+@case("V38-digits", says="T3")
+def _(r): sub(r / f"{S}_image/HANDOFF.md", "  terms: {}", "  tier: T1   # T0 | T1 | T3\n  terms: {}")
+
+
+@case("V14-stops-blank", says="has stops_at ''")
+def _(r): sub(r / "image-registry/routes.yaml",
+              'stops_at: "one verdict with each defect located', 'stops_at: ""\n  was: "')
+
+
+@case("V21-substring", says="names no evidence grade")
+def _(r): sub(r / f"{S}image-generate/SKILL.md",
+              "(`measured` mechanical facts,\nnot a visual inspection)",
+              "(mechanical facts;\na candidate left uninspected supports nothing)")
+
+
+@quiet("the set's own directories are not skills that do not exist")
+def _(r):
+    f = r / "README.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nThe validator lives in `image-tools`, the budgets in `image-registry`.\n",
+                 encoding="utf-8")
+
+
+@quiet("a backticked glob that matches, and a path with an anchor or a line")
+def _(r):
+    f = r / f"{S}image-prompt/reference/sizes.md"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nEvery `reference/*.md` page carries the four headers; the numbers"
+                   " are in `registry/harness.yaml#generators` and"
+                   " `registry/harness.yaml:120`.\n", encoding="utf-8")
+
+
+@case("V19-glob-matches-nothing", says="reference/*.txt")
+def _(r):
+    f = r / f"{S}image-prompt/reference/sizes.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee `reference/*.txt`.\n",
+                 encoding="utf-8")
+
+
 def main() -> int:
     code, baseline = run(ROOT)
     if code != 0:

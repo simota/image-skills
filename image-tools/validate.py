@@ -73,7 +73,15 @@ SKILLS = [p.name for p in SKILL_DIRS]
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 # A reference definition, `[label]: target`: the target a `[text][label]` link
 # leads to. A footnote (`[^1]:`) is not one.
-REF_DEF_RE = re.compile(r" {0,3}\[(?!\^)[^\]]+\]:[ \t]*(\S+)")
+REF_DEF_RE = re.compile(r" {0,3}\[(?!\^)([^\]]+)\]:[ \t]*(\S+)")
+# A use of one: `[text][label]`, `[label][]`, or `[label]` alone. A definition
+# line, an inline link and a footnote are not uses.
+REF_USE_RE = re.compile(r"\[([^\]]+)\]\[([^\]]*)\]|\[(?!\^)([^\]]+)\](?![\[(:])")
+
+
+def _label(raw: str) -> str:
+    """A reference label as CommonMark matches it: case and runs of space aside."""
+    return " ".join(raw.split()).casefold()
 # A backticked token is a path if it contains a slash or names a file. Matching
 # only on the slash misses the bare sibling reference (`SIZING.md`), which is
 # the form that breaks: it resolves against the skill directory, not against
@@ -125,9 +133,29 @@ _QUOTE_PREFIX = re.compile(r"^(?: {0,3}> ?)+")
 def prose_links(text: str) -> list[str]:
     """Link targets a reader can follow: outside fences and code spans, where
     `![alt](hero.png)` is an example of the syntax rather than a link, with an
-    optional title and `<...>` brackets taken off."""
+    optional title and `<...>` brackets taken off. Every reference definition
+    counts, used or not: a broken one is broken wherever it is used."""
+    inline, defs, _ = _scan_links(text)
+    return inline + [t for _, t in defs]
+
+
+def section_links(body: str, whole: str) -> list[str]:
+    """The links a reader can follow from one section of a page: its inline
+    links, and the definitions — anywhere in the page, as Markdown resolves
+    them — that a reference in the section uses. A definition sitting in the
+    section with nothing using it renders as nothing and leads nowhere."""
+    inline, _, uses = _scan_links(body)
+    defs: dict[str, str] = {}
+    for label, target in _scan_links(whole)[1]:
+        defs.setdefault(label, target)             # the first definition wins
+    return inline + [defs[u] for u in uses if u in defs]
+
+
+def _scan_links(text: str) -> tuple[list[str], list[tuple[str, str]], list[str]]:
+    """Inline link targets, reference definitions as (label, target), and the
+    labels reference links use — all outside fences, code and comments."""
     found, fence, fence_depth, para, para_depth = [], None, 0, [], 0
-    comment = False
+    comment, defs, uses = False, [], []
 
     def flush():
         # A link counts when its `[` is prose; its text may hold a code span.
@@ -137,12 +165,18 @@ def prose_links(text: str) -> list[str]:
                      if any(a <= m.start() < b for a, b in prose))
         # Reference definitions open a paragraph, one per line, and cannot
         # interrupt one: the leading run of them is where those links lead.
+        n = 0
         for whole in para:
             q = _QUOTE_PREFIX.match(whole)
             d = REF_DEF_RE.match(whole[q.end():] if q else whole)
             if not d:
                 break
-            found.append(d.group(1))
+            defs.append((_label(d.group(1)), link_target(d.group(2))))
+            n += 1
+        rest = "\n".join(para[n:])
+        uses.extend(_label(m.group(2) or m.group(1) or m.group(3))
+                    for m in REF_USE_RE.finditer(rest)
+                    if any(a <= m.start() < b for a, b in _prose_ranges(rest)))
         para.clear()
     for whole in text.splitlines():
         # Fences and indented code are judged inside any block-quote prefix:
@@ -187,7 +221,7 @@ def prose_links(text: str) -> list[str]:
         else:
             flush()
     flush()
-    return [link_target(t) for t in found]
+    return [link_target(t) for t in found], defs, uses
 
 
 def link_target(raw: str) -> str:
@@ -291,9 +325,10 @@ def v4_playbook_orphans():
         pb_dir = d / "playbooks"
         if not pb_dir.exists():
             continue
-        body = sections(read(d / "SKILL.md")).get("Decide first", "")
+        text = read(d / "SKILL.md")
+        body = sections(text).get("Decide first", "")
         # Links a reader can follow: one in a code span or a comment is not.
-        linked = _targets(prose_links(body), d)
+        linked = _targets(section_links(body, text), d)
         for pb in sorted(pb_dir.rglob("*.md")):
             if pb.resolve() not in linked:
                 fail("V4", f"{pb.relative_to(ROOT)} is not linked from Decide first")
@@ -358,6 +393,11 @@ def _norm(s: str) -> str:
     return unicodedata.normalize("NFKC", s).lower()
 
 
+def _text_signals(c: dict) -> list[str]:
+    """The signals that are text. V9 reports the rest, once."""
+    return [s for s in c.get("signals") or [] if isinstance(s, str)]
+
+
 def v9_signals():
     seen: dict[str, str] = {}
     for name, c in CAP.items():
@@ -365,6 +405,12 @@ def v9_signals():
         if not sigs:
             fail("V9", f"{name} declares no signals")
         for s in sigs:
+            if not isinstance(s, str):
+                # YAML reads `16:9` as the integer 969 and `yes` as true: a
+                # signal is matched as text, so an unquoted one matches nothing.
+                fail("V9", f"{name} signal {s!r} is read as {type(s).__name__}, not text; "
+                           "quote it")
+                continue
             k = _norm(s)
             if k in seen:
                 fail("V9", f"signal {s!r} claimed by both {seen[k]} and {name}")
@@ -372,7 +418,7 @@ def v9_signals():
 
 
 def v10_fixtures():
-    pairs = [(_norm(s), name) for name, c in CAP.items() for s in c.get("signals") or []]
+    pairs = [(_norm(s), name) for name, c in CAP.items() for s in _text_signals(c)]
     if not isinstance(FIX, list) or not FIX:
         fail("V10", "fixtures.yaml holds no list of fixtures; this check would be vacuous")
         return
@@ -445,6 +491,10 @@ def v14_patterns():
                             "stop is a positive whole number of cycles")
         if p == "report-only" and "stops_at" not in r:
             fail("V14", f"report-only route {name} is missing stops_at")
+        elif p == "report-only" and not (isinstance(r["stops_at"], str)
+                                         and r["stops_at"].strip()):
+            fail("V14", f"report-only route {name} has stops_at {r['stops_at']!r}; "
+                        "where the route stops is stated, not left blank")
 
 
 WRITING_TOOLS = {"Write", "Edit", "NotebookEdit"}
@@ -521,7 +571,7 @@ def v17_delivery():
 def v18_signals_in_description():
     for d in SKILL_DIRS:
         desc = _norm(_fm(d).get("description", ""))
-        for s in CAP.get(d.name, {}).get("signals", []):
+        for s in _text_signals(CAP.get(d.name, {})):
             if _norm(s) not in desc:
                 fail("V18", f"{d.name} signal {s!r} is not literal in its description; "
                             "the listing carries nothing else")
@@ -583,17 +633,26 @@ def _check_paths(f: Path, base: Path, label: str, at: str = "") -> None:
     for p in TICK_PATH_RE.findall(read(f)):
         if p.startswith(("http", "~", "/")) or " " in p or not _is_own_reference(p):
             continue
+        # `x.md#section` and `x.py:120` name a place in a file; the file is
+        # what has to exist. A glob has to match something.
+        path = re.sub(r"(#.*|:\d+(-\d+)?)$", "", p)
         if p.startswith(f"{SET}-tools/"):
             # The harness, named for maintainers; no skill reads it, but the
             # name still has to point at something that exists.
-            if not (ROOT / p).exists():
+            if not _resolves(ROOT, path):
                 fail("V19", f"{label} names {p}, which is not in the repository")
         elif ".." in p:
             fail("V19", f"{label} references {p!r}; paths are normalised lexically, "
                         "so `..` does not traverse the install symlink")
-        elif not (base / p).exists():
+        elif not _resolves(base, path):
             fail("V19", f"{label} references {p!r}, which does not resolve from a "
                         "skill directory")
+
+
+def _resolves(base: Path, path: str) -> bool:
+    if any(c in path for c in "*?["):
+        return next(base.glob(path), None) is not None
+    return bool(path) and (base / path).exists()
 
 
 # A definition, as against a mention: a table row or a heading that opens with
@@ -641,7 +700,8 @@ def strip_delivered(text: str) -> str:
 def v21_verify_names_a_grade():
     for d in SKILL_DIRS:
         body = strip_delivered(sections(read(d / "SKILL.md")).get("Verify with", ""))
-        if not any(g in body for g in VOCAB["evidence_levels"]):
+        # A whole word: "uninspected" names no grade.
+        if not any(re.search(rf"\b{re.escape(g)}\b", body) for g in VOCAB["evidence_levels"]):
             fail("V21", f"{d.name} Verify with names no evidence grade of its own; "
                         "the delivered block does not count")
 
@@ -729,7 +789,8 @@ def v24_rendered_tables():
             fail("V24", f"README.md has no table row for {name}")
     for doc, text in ((SKILLS_ROOT / ROUTING_FILE, routing), (ROOT / "README.md", readme)):
         for found in set(re.findall(rf"`({re.escape(PREFIX)}[a-z0-9]+(?:-[a-z0-9]+)*)`", text)):
-            if found not in SKILLS:
+            # The set's own directories share the prefix and are not skills.
+            if found not in SKILLS and not (ROOT / found).is_dir():
                 fail("V24", f"{doc.relative_to(ROOT)} names {found}, which does not exist")
 
 
@@ -828,9 +889,10 @@ def v30_reference_orphans():
         ref_dir = d / "reference"
         if not ref_dir.exists():
             continue
-        body = sections(read(d / "SKILL.md")).get("Decide first", "")
+        text = read(d / "SKILL.md")
+        body = sections(text).get("Decide first", "")
         # Links a reader can follow: one in a code span or a comment is not.
-        linked = _targets(prose_links(body), d)
+        linked = _targets(section_links(body, text), d)
         for pb in sorted((d / "playbooks").rglob("*.md")) if (d / "playbooks").exists() else []:
             # A link is relative to its page; a backticked path to the skill.
             linked |= _targets(prose_links(read(pb)), pb.parent)
@@ -1065,8 +1127,9 @@ def v36_finding_visuals():
         for form in fv["forms"]:
             if form not in _norm(text):
                 fail("V36", f"{name} never names the {form!r} form")
-        body = sections(read(SKILLS_ROOT / name / "SKILL.md")).get("Decide first", "")
-        if pb.resolve() not in _targets(prose_links(body), SKILLS_ROOT / name):
+        skill_md = read(SKILLS_ROOT / name / "SKILL.md")
+        body = sections(skill_md).get("Decide first", "")
+        if pb.resolve() not in _targets(section_links(body, skill_md), SKILLS_ROOT / name):
             fail("V36", f"{name}/SKILL.md does not reach {fv['playbook']} from "
                         "Decide first; a rule nothing links to is read on no launches")
 
@@ -1148,8 +1211,9 @@ def v37_source_pins_the_rot():
 # `KEY: A | B | C` in a schema, or a bare `A | B | C` on a line of its own —
 # upper-case words joined by pipes. Underscored and parenthesised forms are not
 # matched, so this is a floor.
-ENUM_RE = re.compile(r"(?:^|:\s*)((?:[A-Z][A-Z-]*(?: [A-Z][A-Z-]*)*)"
-                     r"(?:\s*\|\s*(?:[A-Z][A-Z-]*(?: [A-Z][A-Z-]*)*))+)[.,;:]?\s*(?:#.*)?$")
+# Digits after the first letter count: `T0 | T1 | T2` is a vocabulary too.
+ENUM_RE = re.compile(r"(?:^|:\s*)((?:[A-Z][A-Z0-9-]*(?: [A-Z][A-Z0-9-]*)*)"
+                     r"(?:\s*\|\s*(?:[A-Z][A-Z0-9-]*(?: [A-Z][A-Z0-9-]*)*))+)[.,;:]?\s*(?:#.*)?$")
 
 
 def v38_enumerations_declared():

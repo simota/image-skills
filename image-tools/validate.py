@@ -179,7 +179,7 @@ def _scan_links(text: str) -> tuple[list[str], list[tuple[str, str]], list[str]]
     labels reference links use — all outside fences, code and comments."""
     found, fence, fence_depth, para, para_depth = [], None, 0, [], 0
     comment, defs, uses = False, [], []
-    list_col, list_depth, fence_col = 0, 0, 0
+    cols, list_depth, fence_col, bare = [], 0, 0, False
 
     def flush():
         # A link counts when its `[` is prose; its text may hold a code span.
@@ -210,44 +210,52 @@ def _scan_links(text: str) -> tuple[list[str], list[tuple[str, str]], list[str]]
         depth = q.group(0).count(">") if q else 0
         flat = line.expandtabs(4)
         indent = len(flat) - len(flat.lstrip(" "))
-        if depth != list_depth:
-            list_col, list_depth = 0, depth            # a list does not cross quotes
-        m = _FENCE.match(flat)
-        if m and len(m.group(1)) >= (fence_col if fence else list_col) + 4:
-            m = None                                   # indented past a fence: code or content
         if fence and depth < fence_depth:
             fence = None                           # its quote ended, and so did it
         if comment:                                # an HTML comment block runs to
             comment = "-->" not in line            # the line that closes it, and
             continue                               # none of it is shown
-        if not fence and re.match(r"^ {0,3}<!--", line):
-            flush()
-            if indent < list_col:
-                list_col = 0                       # left of the item: the list ended
-            comment = "-->" not in line[line.index("<!--") + 4:]
-            continue
-        if fence:
-            if m and m.group(2)[0] == fence[0] and len(m.group(2)) >= len(fence) \
-                    and not flat[m.end():].strip():
+        m = _FENCE.match(flat)
+        if fence and line.strip() and indent < fence_col:
+            fence = None                           # its list item closed, and so did it
+        elif fence:
+            if m and len(m.group(1)) < fence_col + 4 and m.group(2)[0] == fence[0] \
+                    and len(m.group(2)) >= len(fence) and not flat[m.end():].strip():
                 fence = None
+            continue
+        # The content column of each open list item, innermost last. A line
+        # left of one, unless it continues a paragraph lazily, closes it.
+        if depth != list_depth:
+            cols, list_depth = [], depth           # a list does not cross quotes
+        if not line.strip() and bare:
+            cols.pop()                             # an item that opened empty, then a
+        bare = False                               # blank line: it is over
+        if line.strip() and (not para or m or _LINK_BLOCK.match(line)):
+            while cols and indent < cols[-1]:
+                cols.pop()
+        base = cols[-1] if cols else 0
+        if indent >= base + 4:
+            m = None                               # past a fence's indent: code or content
+        if re.match(r"^ {0,3}<!--", line):
+            flush()
+            comment = "-->" not in line[line.index("<!--") + 4:]
             continue
         if m and not (m.group(2)[0] == "`" and "`" in flat[m.end():]):
             flush()
-            if len(m.group(1)) < list_col:
-                list_col = 0                       # a fence left of the item ends the list
-            fence, fence_depth, fence_col = m.group(2), depth, list_col
-        elif line.strip() and indent >= list_col + 4 and (not para or depth > para_depth):
+            fence, fence_depth, fence_col = m.group(2), depth, base
+        elif line.strip() and indent >= base + 4 and (not para or depth > para_depth):
             # Indented code opens a block, and cannot interrupt a paragraph:
             # an indented line after one, even outside its quote, continues it.
             # Inside a list item four spaces are its content, not code: a link
             # in an item's second paragraph was taken for an example.
             continue                               # indented code: an example
         elif line.strip():
-            item = _opens_item(flat, para, list_col > 0)
+            item = _opens_item(flat, para, bool(cols)) if indent < base + 4 else None
             if item:
-                list_col = len(item.group(1)) + len(item.group(2)) + max(len(item.group(4)), 1)
-            elif indent < list_col and (not para or _LINK_BLOCK.match(line)):
-                list_col = 0                       # a block left of the item ended the list
+                while cols and cols[-1] > indent:
+                    cols.pop()
+                cols.append(indent + len(item.group(2)) + max(len(item.group(4)), 1))
+                bare = not item.group(4)
             # A deeper quote opens a block: `> a` and `> > b` are two paragraphs,
             # and a backtick in one never pairs with the other. A shallower line
             # is a lazy continuation of the paragraph it follows, as CommonMark

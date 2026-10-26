@@ -1138,6 +1138,20 @@ def _(r):
                 f"\n{opener}\n\n    [example](missing.md)\n")
 
 
+@quiet("a line left of a list item closes it, and four spaces after that are code")
+def _(r):
+    _append(r, f"{S}image-review/playbooks/seeing.md",
+            "\n   2. A deep item.\n\n    [example](missing.md)\n")
+
+
+@case("V8-fence-closed-by-its-item", says="links to missing gone.md")
+def _(r):
+    # An unclosed fence inside an item ends with the item: the line left of it
+    # is a paragraph again, and its link a link.
+    _append(r, f"{S}image-review/playbooks/seeing.md",
+            "\n- item\n  ```\n  code\nNext, [the catalogue](gone.md).\n")
+
+
 @quiet("a link inside a link is not one; the outer brackets are text")
 def _(r): _append(r, "README.md", "\n[see [the table](skills/_image/ROUTING.md) here](missing.md)\n")
 

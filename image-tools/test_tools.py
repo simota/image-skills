@@ -823,14 +823,17 @@ def test_malformed_input(tmp: Path) -> None:
     # introducer by chance, which a byte search mistook for one.
     head = (b"GIF89a" + struct.pack("<HH", 4, 4) + b"\x80\x00\x00"
             + b"\x21\xf9\x04\x01\x21\xf9")
-    frame = b"\x2c" + b"\x00" * 8 + b"\x00" + b"\x02\x02\x4c\x01\x00"
+    # The frame fills the 4x4 canvas: a 0x0 one leaves all of it bare.
+    frame = (b"\x2c" + struct.pack("<HHHH", 0, 0, 4, 4) + b"\x00"
+             + b"\x02\x02\x4c\x01\x00")
     gce = lambda flags: b"\x21\xf9\x04" + bytes([flags]) + b"\x00\x00\x00\x00"
     check("a GIF whose extension sets no transparency has no alpha",
           imgfacts.probe_bytes(head + gce(0) + frame + b"\x3b")["alpha"], False)
     check("one that sets it has alpha",
           imgfacts.probe_bytes(head + gce(1) + frame + b"\x3b")["alpha"], True)
-    check("and a later frame setting it counts",
-          imgfacts.probe_bytes(head + frame + gce(1) + frame + b"\x3b")["alpha"], True)
+    check("and a later frame setting it counts, over a cleared canvas",
+          imgfacts.probe_bytes(head + gce(2 << 2) + frame + gce(1) + frame
+                               + b"\x3b")["alpha"], True)
 
     for size in ("16x0", "0x16", "-16x16"):
         check(f"--check-size {size} is not a size",
@@ -1650,6 +1653,15 @@ def test_round_seven(tmp: Path) -> None:
     check("a clear followed by a keyed frame shows through",
           facts("i.gif", gif_frames(8, 8, [(None, whole), (2 << 2, whole),
                                            (1, whole)]))["alpha"], True)
+    # No frame setting the flag is not the answer: what no frame covers, or
+    # what a frame cleared, is bare (round 9).
+    check("a lone frame short of the canvas shows through, flag or not",
+          facts("j.gif", gif_frames(8, 8, [(None, (0, 0, 4, 4))]))["alpha"], True)
+    check("a cleared frame under an unflagged partial one shows through",
+          facts("k.gif", gif_frames(8, 8, [(2 << 2, whole), (None, (0, 0, 4, 4))]))["alpha"],
+          True)
+    check("a lone opaque frame filling the canvas has no alpha",
+          facts("l.gif", gif_frames(8, 8, [(None, whole)]))["alpha"], False)
     check("a final frame's disposal is not the picture",
           facts("g.gif", gif_frames(8, 8, [(None, whole), (2 << 2 | 1, whole)]))["alpha"],
           False)
@@ -1660,8 +1672,10 @@ def test_round_seven(tmp: Path) -> None:
         check("imgfacts --generator agy on a file exits 0",
               imgfacts.main(["--json", "--generator", "agy", str(jpg)]), 0)
     got = json.loads(said.getvalue())[0]
-    check("and judges it by agy's aspects, not codex's canvas",
-          (got["breaks"], got.get("nearest_aspect")), ([], "3:2"))
+    # t.jpg is stored 1536x1024 and turned by Exif: the aspect is the shape
+    # shown, which the same report states as 2:3 (round 9; it said 3:2).
+    check("and judges it by agy's aspects, not codex's canvas, as it is shown",
+          (got["breaks"], got.get("nearest_aspect")), ([], "2:3"))
     with contextlib.redirect_stderr(io.StringIO()):
         check("imgfacts --generator naming nobody exits 2",
               imgfacts.main(["--generator", "bogus", str(jpg)]), 2)

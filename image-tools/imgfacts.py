@@ -375,8 +375,8 @@ def _gif_transparent(b: bytes) -> bool:
         i += 1
     if not frames:
         return gce[0]
-    if not any(keyed for keyed, _, _ in frames):
-        return False                             # no flag, nothing to see through
+    # No flag is not the answer either: a frame short of the canvas, or one
+    # cleared away, leaves the canvas bare where nothing is drawn.
     opaque = False                               # the canvas starts empty
     for keyed, disposal, covers in frames:
         before = opaque
@@ -776,9 +776,11 @@ def main(argv: list[str] | None = None) -> int:
         try:
             facts.append(probe(f))
             if a.generator in ASPECT_GENERATORS:
+                # The shape a viewer shows, as the report beside it states:
+                # a stored 4:3 turned by Exif is a 3:4 picture.
+                shape = facts[-1].get("displayed_ratio", facts[-1]["ratio"])
                 facts[-1].update(breaks=[], generator=a.generator,
-                                 nearest_aspect=nearest_aspect(facts[-1]["ratio"],
-                                                               a.generator))
+                                 nearest_aspect=nearest_aspect(shape, a.generator))
         except (Unreadable, OSError, struct.error) as e:
             bad = True
             print(f"{f}: {e}", file=sys.stderr)

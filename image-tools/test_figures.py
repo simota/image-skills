@@ -59,6 +59,8 @@ CASES: list[tuple[str, str, str, str, str]] = [
     ("check_density", "wrong", RUNGS,
      "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 768x512 | 1.5 | 1152x769 |"),
     ("check_density", "wrong", RUNGS,
+     "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 375x667 | 1.5 | 564x1001 |"),
+    ("check_density", "wrong", RUNGS,
      "Source must be at least: 2304x1536", "Source must be at least: 1536x1024"),
     # the label says one density and the factor computes another; the emitted
     # size agrees with the factor, so only the label comparison can catch it
@@ -123,6 +125,9 @@ QUIET: list = [
      "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish"),
     (SIZES, "| Size | Breaks |\n|---|---|", "| Size | Breaks |\n|---|---"),
     (RUNGS, "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 768x512 | 1.5 | 1152x768"),
+    # half a pixel, rounded up on one edge and down on the other: the page
+    # names no rule, and round() accepted only the even neighbour
+    (RUNGS, "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 375x667 | 1.5 | 563x1000 |"),
     # the grid moved everywhere at once: the rejected row names the new number,
     # which a rule name written into the checker refused
     [(REG, "    edge_multiple: 16", "    edge_multiple: 8"),

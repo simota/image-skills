@@ -578,7 +578,7 @@ def illegal(w: int, h: int) -> set[str]:
     if max(w, h) > CANVAS["max_edge"]:
         broken.add("max edge")
     if w % CANVAS["edge_multiple"] or h % CANVAS["edge_multiple"]:
-        broken.add("multiple of 16")
+        broken.add(f"multiple of {CANVAS['edge_multiple']}")
     if max(w, h) / min(w, h) > CANVAS["max_ratio"]:
         broken.add("ratio")
     if not CANVAS["min_pixels"] <= w * h <= CANVAS["max_pixels"]:

@@ -25,6 +25,10 @@ number the registry already declares:
   aspect on it checked to be in lowest terms — `imgfacts.py --check-aspect`
   reduces what it is given before comparing, so an aspect listed as `16:10` and
   registered as `8:5` would be offered by the page and refused by the tool.
+* the aspect tolerance that page states for `--check-size`'s nearest legal
+  canvas, against the `ASPECT_TOLERANCE` that `imgfacts.py` actually searches
+  with. The tool's own tests bound the drift with a number of their own, on
+  purpose, so nothing else ties the page to the constant.
 
 Add a checker here whenever a reference page states a number that follows from
 another number on the same page.
@@ -60,7 +64,7 @@ def fail(where: str, msg: str) -> None:
 # constraint copied into this file is a second definition that drifts.
 CONSTRAINT_RE = {
     "max edge": re.compile(r"Maximum edge is (\d+)px or less"),
-    "multiple of 16": re.compile(r"Both edges are multiples of (\d+)"),
+    "edge multiple": re.compile(r"Both edges are multiples of (\d+)"),
     "ratio": re.compile(r"long-to-short ratio is (\d+):1 or less"),
     "total pixels": re.compile(
         r"Total pixels are between ([\d,]+) and ([\d,]+) inclusive"),
@@ -123,8 +127,8 @@ def _breaks(w: int, h: int, lim: dict) -> set[str]:
     broken = set()
     if max(w, h) > lim["max edge"][0]:
         broken.add("max edge")
-    if w % lim["multiple of 16"][0] or h % lim["multiple of 16"][0]:
-        broken.add("multiple of 16")
+    if w % lim["edge multiple"][0] or h % lim["edge multiple"][0]:
+        broken.add("edge multiple")
     if min(w, h) == 0 or max(w, h) / min(w, h) > lim["ratio"][0]:
         broken.add("ratio")
     lo, hi = lim["total pixels"]
@@ -187,9 +191,19 @@ def check_sizes() -> int:
 
     for i, m in rejected:
         w, h, named = int(m.group(1)), int(m.group(2)), m.group(3).strip()
+        # The page names the grid rule by its number, as imgfacts.py reports
+        # it; the number is the one the page states, not one written in here.
+        grid = re.fullmatch(r"multiple of (\d+)", named)
+        if grid:
+            if int(grid.group(1)) != lim["edge multiple"][0]:
+                fail(f"sizes.md:{i}", f"breaks {named!r}; the page states edges are "
+                                      f"multiples of {lim['edge multiple'][0]}")
+                continue
+            named = "edge multiple"
         if named not in CONSTRAINT_RE:
             fail(f"sizes.md:{i}", f"breaks {named!r}, which is not one of the "
-                                  f"four constraints {sorted(CONSTRAINT_RE)}")
+                                  f"four constraints {sorted(CONSTRAINT_RE)} (the "
+                                  "edge multiple is named `multiple of N`)")
             continue
         broken = _breaks(w, h, lim)
         if named not in broken:
@@ -320,7 +334,7 @@ def check_canvas() -> int:
         return 0
     canvas = gen["canvas"]
     stated = {"max edge": [canvas["max_edge"]],
-              "multiple of 16": [canvas["edge_multiple"]],
+              "edge multiple": [canvas["edge_multiple"]],
               "ratio": [canvas["max_ratio"]],
               "total pixels": [canvas["min_pixels"], canvas["max_pixels"]]}
     for name, want in stated.items():
@@ -330,11 +344,36 @@ def check_canvas() -> int:
     return len(stated)
 
 
+# Every statement of it, as for the constraints: a second sentence giving
+# another figure is a second definition.
+TOLERANCE_RE = re.compile(r"the tolerance is (\d+(?:\.\d+)?)%")
+
+
+def check_tolerance() -> int:
+    """The tolerance the page tells a reader is the one the tool searches with."""
+    page = SKILLS / "image-prompt/reference/sizes.md"
+    stated = [float(m.group(1)) for m in TOLERANCE_RE.finditer(page.read_text())]
+    if not stated:
+        fail("sizes.md", "the aspect tolerance of --check-size is no longer stated "
+                         "in a form this checker can read — it is checking nothing")
+        return 0
+    sys.path.insert(0, str(ROOT / "image-tools"))
+    sys.dont_write_bytecode = True
+    import imgfacts                                        # noqa: E402
+    used = imgfacts.ASPECT_TOLERANCE * 100
+    for pct in stated:
+        if not math.isclose(pct, used, rel_tol=1e-9):
+            fail("sizes.md", f"states the tolerance as {pct:g}%; imgfacts.py "
+                             f"searches with ASPECT_TOLERANCE = {used:g}%")
+    return len(stated)
+
+
 def main() -> int:
     sizes = check_sizes()
     rungs = check_density()
     canvas = check_canvas()
     aspects = check_aspects()
+    tolerance = check_tolerance()
     if failures:
         print(f"{len(failures)} mismatch(es):")
         print("\n".join(failures))
@@ -342,6 +381,7 @@ def main() -> int:
     print(f"figures green - {sizes} canvas sizes rechecked against their own "
           f"constraints, {canvas} of those constraints matched to the registry, "
           f"{aspects} aspects matched to it and reduced, "
+          f"{tolerance} aspect tolerance matched to imgfacts.py, "
           f"{rungs} density rungs recomputed")
     return 0
 

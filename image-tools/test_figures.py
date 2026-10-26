@@ -109,16 +109,25 @@ CASES: list[tuple[str, str, str, str, str]] = [
      "the tolerance is 0.5%", "the tolerance is 2%"),
     ("check_tolerance", "vacuous", SIZES,
      "the tolerance is 0.5%", "the tolerance is small"),
+    # the grid rule is named by its number, and the number is the page's
+    ("check_sizes", "wrong", SIZES,
+     "| `1000x1000` | multiple of 16 |", "| `1000x1000` | multiple of 8 |"),
 ]
 
 
 # Valid tables a check must still read: GFM makes the outer pipes optional, so
-# a row or a delimiter without its closing one is ordinary writing.
-QUIET: list[tuple[str, str, str]] = [
+# a row or a delimiter without its closing one is ordinary writing. A list of
+# edits is one consistent change made in several places at once.
+QUIET: list = [
     (SIZES, "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish |",
      "| `2048x2048` | 1:1 | 4.19 MP | square, print-ish"),
     (SIZES, "| Size | Breaks |\n|---|---|", "| Size | Breaks |\n|---|---"),
     (RUNGS, "| `@1.5x` | 768x512 | 1.5 | 1152x768 |", "| `@1.5x` | 768x512 | 1.5 | 1152x768"),
+    # the grid moved everywhere at once: the rejected row names the new number,
+    # which a rule name written into the checker refused
+    [(REG, "    edge_multiple: 16", "    edge_multiple: 8"),
+     (SIZES, "2. Both edges are multiples of 16", "2. Both edges are multiples of 8"),
+     (SIZES, "| `1000x1000` | multiple of 16 |", "| `1004x1004` | multiple of 8 |")],
 ]
 
 
@@ -155,17 +164,20 @@ def main() -> int:
                 silent.append(f"{i}:{checker}/{kind}")
                 print(f"  case {i} ({checker}, {kind}) did not fire\n{r.stdout}{r.stderr}")
 
-    for i, (page, old, new) in enumerate(QUIET, 1):
+    for i, entry in enumerate(QUIET, 1):
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / "repo"
             shutil.copytree(ROOT, copy, symlinks=True,
                             ignore=shutil.ignore_patterns(".git", "__pycache__"))
-            f = copy / page
-            text = f.read_text(encoding="utf-8")
-            if old not in text:
+            gone = False
+            for page, old, new in entry if isinstance(entry, list) else [entry]:
+                f = copy / page
+                text = f.read_text(encoding="utf-8")
+                gone = gone or old not in text
+                f.write_text(text.replace(old, new, 1), encoding="utf-8")
+            if gone:
                 silent.append(f"quiet {i}: fixture text gone")
                 continue
-            f.write_text(text.replace(old, new, 1), encoding="utf-8")
             r = run(copy)
             if r.returncode:
                 silent.append(f"quiet {i}")

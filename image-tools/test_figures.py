@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SIZES = "skills/image-prompt/reference/sizes.md"
 RUNGS = "skills/image-deliver/reference/export-targets.md"
 REG = "image-registry/harness.yaml"
+IMGFACTS = "image-tools/imgfacts.py"
 
 # (checker, kind, page, find, replace)
 CASES: list[tuple[str, str, str, str, str]] = [
@@ -100,6 +101,14 @@ CASES: list[tuple[str, str, str, str, str]] = [
     ("check_aspects", "vacuous", SIZES,
      "| `9:16` | tall, full-bleed on a phone |",
      "| tall as a phone | full-bleed |"),
+    # the page and the constant drift apart from either side; the tool's own
+    # tests bound the drift at 1%, so a change under that went unseen
+    ("check_tolerance", "wrong", IMGFACTS,
+     "ASPECT_TOLERANCE = 0.005", "ASPECT_TOLERANCE = 0.007"),
+    ("check_tolerance", "wrong", SIZES,
+     "the tolerance is 0.5%", "the tolerance is 2%"),
+    ("check_tolerance", "vacuous", SIZES,
+     "the tolerance is 0.5%", "the tolerance is small"),
 ]
 
 

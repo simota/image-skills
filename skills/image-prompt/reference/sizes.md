@@ -8,7 +8,8 @@ installed backing skill; the aspect list was re-read from the running tool on
 2026-08-24 and one 1:1 run measured. `make figures` recomputes every row below
 against those constraints, and checks both the four constraints and the aspect
 list against `registry/harness.yaml`, which is what `imgfacts.py` decides
-legality from — so the page, the tool and the build cannot disagree. What
+legality from, and the tolerance stated below against the one `imgfacts.py`
+searches with — so the page, the tool and the build cannot disagree. What
 nothing re-checks is either backing tool: both are a snapshot of one installed
 copy, and the models they belong to are named in `reference/control-surface.md`.
 

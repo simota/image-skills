@@ -25,6 +25,10 @@ number the registry already declares:
   aspect on it checked to be in lowest terms — `imgfacts.py --check-aspect`
   reduces what it is given before comparing, so an aspect listed as `16:10` and
   registered as `8:5` would be offered by the page and refused by the tool.
+* the aspect tolerance that page states for `--check-size`'s nearest legal
+  canvas, against the `ASPECT_TOLERANCE` that `imgfacts.py` actually searches
+  with. The tool's own tests bound the drift with a number of their own, on
+  purpose, so nothing else ties the page to the constant.
 
 Add a checker here whenever a reference page states a number that follows from
 another number on the same page.
@@ -330,11 +334,36 @@ def check_canvas() -> int:
     return len(stated)
 
 
+# Every statement of it, as for the constraints: a second sentence giving
+# another figure is a second definition.
+TOLERANCE_RE = re.compile(r"the tolerance is (\d+(?:\.\d+)?)%")
+
+
+def check_tolerance() -> int:
+    """The tolerance the page tells a reader is the one the tool searches with."""
+    page = SKILLS / "image-prompt/reference/sizes.md"
+    stated = [float(m.group(1)) for m in TOLERANCE_RE.finditer(page.read_text())]
+    if not stated:
+        fail("sizes.md", "the aspect tolerance of --check-size is no longer stated "
+                         "in a form this checker can read — it is checking nothing")
+        return 0
+    sys.path.insert(0, str(ROOT / "image-tools"))
+    sys.dont_write_bytecode = True
+    import imgfacts                                        # noqa: E402
+    used = imgfacts.ASPECT_TOLERANCE * 100
+    for pct in stated:
+        if not math.isclose(pct, used, rel_tol=1e-9):
+            fail("sizes.md", f"states the tolerance as {pct:g}%; imgfacts.py "
+                             f"searches with ASPECT_TOLERANCE = {used:g}%")
+    return len(stated)
+
+
 def main() -> int:
     sizes = check_sizes()
     rungs = check_density()
     canvas = check_canvas()
     aspects = check_aspects()
+    tolerance = check_tolerance()
     if failures:
         print(f"{len(failures)} mismatch(es):")
         print("\n".join(failures))
@@ -342,6 +371,7 @@ def main() -> int:
     print(f"figures green - {sizes} canvas sizes rechecked against their own "
           f"constraints, {canvas} of those constraints matched to the registry, "
           f"{aspects} aspects matched to it and reduced, "
+          f"{tolerance} aspect tolerance matched to imgfacts.py, "
           f"{rungs} density rungs recomputed")
     return 0
 

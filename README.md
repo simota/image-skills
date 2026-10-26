@@ -105,7 +105,8 @@ reference layer states from the reference layer itself — every listed canvas
 size put back through the four constraints the same page states, its ratio
 reduced and its megapixel figure recomputed, every size listed as *rejected*
 checked to still be rejected by the rule named against it, and every export rung
-recomputed from its own base and factor and matched to its `@Nx` label. The
+recomputed from its own base and factor and matched to its `@Nx` label — and
+the aspect tolerance the page states is matched to the one `imgfacts.py` uses. The
 deliberate errors that prove it can fail are not a claim in this file, and
 neither is how many there are — they are `image-tools/test_figures.py`, they run
 in `make check`, and some of them make the checks *vacuous* rather than wrong: a

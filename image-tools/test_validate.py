@@ -1048,6 +1048,29 @@ def _(r):
                  encoding="utf-8")
 
 
+
+@quiet("a `**` inside a name is read as a shell reads it, not as a traceback")
+def _(r):
+    # Python 3.11's pathlib raised on it, and every rule after V19 went unrun.
+    f = r / f"{S}image-prompt/reference/sizes.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee `reference/**.md`.\n",
+                 encoding="utf-8")
+
+
+@case("V19-glob-starred-name-unmatched", says="reference/**.txt")
+def _(r):
+    f = r / f"{S}image-prompt/reference/sizes.md"
+    f.write_text(f.read_text(encoding="utf-8") + "\nSee `reference/**.txt`.\n",
+                 encoding="utf-8")
+
+
+@quiet("a shortcut reference link followed by a colon is a link")
+def _(r):
+    f = r / f"{S}image-prompt/SKILL.md"
+    sub(f, "[exclusions](playbooks/exclusions.md) —", "[exclusions]: what to avoid —")
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\n[exclusions]: playbooks/exclusions.md\n", encoding="utf-8")
+
 def main() -> int:
     code, baseline = run(ROOT)
     if code != 0:

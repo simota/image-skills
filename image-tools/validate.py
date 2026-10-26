@@ -74,9 +74,10 @@ LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 # A reference definition, `[label]: target`: the target a `[text][label]` link
 # leads to. A footnote (`[^1]:`) is not one.
 REF_DEF_RE = re.compile(r" {0,3}\[(?!\^)([^\]]+)\]:[ \t]*(\S+)")
-# A use of one: `[text][label]`, `[label][]`, or `[label]` alone. A definition
-# line, an inline link and a footnote are not uses.
-REF_USE_RE = re.compile(r"\[([^\]]+)\]\[([^\]]*)\]|\[(?!\^)([^\]]+)\](?![\[(:])")
+# A use of one: `[text][label]`, `[label][]`, or `[label]` alone — followed by
+# a colon too, since a definition only opens a paragraph and those lines are
+# taken off before uses are looked for. An inline link and a footnote are not uses.
+REF_USE_RE = re.compile(r"\[([^\]]+)\]\[([^\]]*)\]|\[(?!\^)([^\]]+)\](?![\[(])")
 
 
 def _label(raw: str) -> str:
@@ -651,7 +652,14 @@ def _check_paths(f: Path, base: Path, label: str, at: str = "") -> None:
 
 def _resolves(base: Path, path: str) -> bool:
     if any(c in path for c in "*?["):
-        return next(base.glob(path), None) is not None
+        # `**` inside a name (`**.md`) is `*` to a shell; Python 3.11's pathlib
+        # refuses it and 3.13's takes it, so it is made one reading before asking.
+        path = "/".join(part if part == "**" else re.sub(r"\*+", "*", part)
+                        for part in path.split("/"))
+        try:
+            return next(base.glob(path), None) is not None
+        except ValueError:                   # a pattern pathlib still refuses
+            return False                     # resolves to nothing
     return bool(path) and (base / path).exists()
 
 

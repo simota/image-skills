@@ -227,7 +227,7 @@ def _scan_links(text: str) -> tuple[list[str], list[tuple[str, str]], list[str]]
         # left of one, unless it continues a paragraph lazily, closes it.
         if depth != list_depth:
             cols, list_depth = [], depth           # a list does not cross quotes
-        if not line.strip() and bare:
+        if not line.strip() and bare and cols:
             cols.pop()                             # an item that opened empty, then a
         bare = False                               # blank line: it is over
         if line.strip() and (not para or m or _LINK_BLOCK.match(line)):

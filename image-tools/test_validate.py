@@ -1152,6 +1152,10 @@ def _(r):
             "\n- item\n  ```\n  code\nNext, [the catalogue](gone.md).\n")
 
 
+@quiet("an empty item in a quote, then a blank line outside it, is no traceback")
+def _(r): _append(r, f"{S}image-review/playbooks/seeing.md", "\n> -\n\nAfter the quote.\n")
+
+
 @quiet("a link inside a link is not one; the outer brackets are text")
 def _(r): _append(r, "README.md", "\n[see [the table](skills/_image/ROUTING.md) here](missing.md)\n")
 

@@ -308,6 +308,14 @@ def capture(a: argparse.Namespace) -> int:
         print(f"{src} does not reach its end marker — still being written, or "
               "cut short; nothing was written", file=sys.stderr)
         return 2
+    # An argument that is not UTF-8 arrives as lone surrogates and was written
+    # as `"caf\uDCE9"`: not the text sent, and not Unicode another reader
+    # accepts. --prompt-file already refused the same bytes.
+    for flag, value in (("--prompt", a.prompt), ("--excluded", a.excluded),
+                        ("--asked", a.asked), ("--model", a.model), ("--engine", a.engine)):
+        if value is not None and not utf8(value):
+            print(f"{flag} is not UTF-8 text; nothing was written", file=sys.stderr)
+            return 2
     if blank(prompt):
         print("the prompt is blank; the prompt is the asset", file=sys.stderr)
         return 2
@@ -458,6 +466,14 @@ def _umask() -> int:
 
 # --- check -------------------------------------------------------------------
 
+def utf8(s: str) -> bool:
+    try:
+        s.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def check_one(image: Path) -> list[str]:
     side = sidecar_of(image)
     try:
@@ -487,6 +503,14 @@ def check_one(image: Path) -> list[str]:
     for f in ("size", "output"):
         if f in doc and not isinstance(doc[f], dict):
             problems.append(f"{side}: {f} must be a mapping, not {doc[f]!r}")
+    # Text a recipe holds is Unicode: a lone surrogate is bytes that were not.
+    texts = {f: doc.get(f) for f in ("prompt", "engine", "model", "excluded")}
+    if isinstance(doc.get("size"), dict):
+        texts["size.asked"] = doc["size"].get("asked")
+    for f, v in texts.items():
+        if isinstance(v, str) and not utf8(v):
+            problems.append(f"{side}: {f} holds text that is not Unicode — "
+                            "bytes that were not UTF-8 when it was captured")
     # Present is not the same as said: each field holds what it is for.
     for f in ("engine", "model", "excluded"):
         if f in doc and doc[f] not in (None, "", {}) and not (

@@ -394,6 +394,21 @@ def test_recipe(tmp: Path) -> None:
                any("non-empty text" in p for p in recipe.check_one(tmp / "hero.png")))
     side.write_text(good)
 
+    # A recipe written before capture refused them (round 9): "\uDCE9" in a
+    # YAML double-quoted scalar loads, and is not Unicode.
+    for field in ("prompt", "size.asked"):
+        doc = yaml.safe_load(good)
+        if field == "prompt":
+            doc["prompt"] = "PLACEHOLDER"
+        else:
+            doc["size"]["asked"] = "PLACEHOLDER"
+        side.write_text(yaml.safe_dump(doc, sort_keys=False)
+                        .replace("PLACEHOLDER", '"caf\\uDCE9"'))
+        truthy(f"a {field} holding a lone surrogate is reported",
+               any(f"{field} holds text that is not Unicode" in p
+                   for p in recipe.check_one(tmp / "hero.png")))
+    side.write_text(good)
+
     # an image with no recipe is not silently fine
     (tmp / "orphan.png").write_bytes(png(16, 16))
     truthy("an image with no recipe is reported",
@@ -484,6 +499,15 @@ def test_recipe_hardening(tmp: Path) -> None:
     check("a prompt file that is not UTF-8 is refused",
           cap("--to", str(d / "a.png"), "--generator", "codex",
               "--prompt-file", str(d / "latin1.txt")), 2)
+    # The same bytes as an argument arrive as lone surrogates (round 9): they
+    # were written as "caf\uDCE9" and check passed them.
+    latin1 = os.fsdecode(b"caf\xe9")
+    for flag in ("--prompt", "--excluded", "--model"):
+        extra = () if flag == "--prompt" else ("--prompt", PROMPT)
+        to = d / f"u{flag}.png"                # its own: a refusal to overwrite is also 2
+        check(f"{flag} that is not UTF-8 is refused like the file",
+              cap("--to", str(to), "--generator", "codex", *extra, flag, latin1), 2)
+        check(f"and nothing was placed for {flag}", to.exists(), False)
     check("a blank prompt is refused at capture, not left for check",
           cap("--to", str(d / "a.png"), "--generator", "codex", "--prompt", "   "), 2)
     (d / "bom.txt").write_bytes(b"\xef\xbb\xbf\n")

@@ -980,6 +980,9 @@ if os.environ.get("FAKE_SPAWN"):                   # a tree that outlives a kill
     p = subprocess.Popen(["sleep", "30"])          # the direct child alone
     open(os.environ["FAKE_SPAWN"], "w").write(str(p.pid))
     import time; time.sleep(30)
+if os.environ.get("FAKE_LINGER"):                  # a helper left running, holding
+    p = subprocess.Popen(["sleep", "30"])          # stdout and stderr open
+    open(os.environ["FAKE_LINGER"], "w").write(str(p.pid))
 answer = os.environ["FAKE_ANSWER"]
 if os.environ.get("FAKE_STDERR_BYTES"):            # a log that is not UTF-8
     sys.stderr.buffer.write(b"progress \\xff\\xfe\\n"); sys.stderr.flush()
@@ -2290,6 +2293,30 @@ def test_engine_integrity(tmp: Path) -> None:
     if pidfile.exists():
         check("and the engine's whole process tree is gone, not just its parent",
               alive(int(pidfile.read_text())), False)
+
+    # An engine that answered and exited answered, whatever it left running
+    # with its output still open (round 9: the answer was lost at the timeout).
+    def answer(name):
+        try:
+            return engine.run(name, "p", refute.SCHEMA)
+        except engine.EngineError as e:
+            return f"EngineError: {e}"
+
+    linger = tmp / "linger.pid"
+    os.environ["FAKE_LINGER"] = str(linger)
+    saved_timeout, engine.TIMEOUT = engine.TIMEOUT, 5
+    try:
+        for name in engine.ENGINES["runs_on"]:
+            linger.unlink(missing_ok=True)
+            with fake_engines(tmp, good):
+                check(f"{name}: an answer is kept when a helper outlives the engine",
+                      answer(name), good)
+            if linger.exists():
+                with contextlib.suppress(OSError):
+                    os.kill(int(linger.read_text()), 9)
+    finally:
+        engine.TIMEOUT = saved_timeout
+        os.environ.pop("FAKE_LINGER")
 
     # Ctrl-C reaches Python, not the engine's own session: the tree must still go.
     # agy, because its prompt is an argument: the fake reads no stdin first.

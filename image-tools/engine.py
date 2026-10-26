@@ -318,21 +318,45 @@ def _spawn(engine: str, argv: list[str], stdin: str | None = None
     Bytes in and out, decoded here: the answer as strict UTF-8, whatever the
     locale says, and the log leniently — a progress line in another encoding
     is no reason to throw away the answer printed beside it. An engine that
-    exits non-zero did not answer, whatever it printed."""
+    exits non-zero did not answer, whatever it printed.
+
+    Its output goes to files, not pipes: the answer is in once the engine has
+    exited. A helper it left running (a server it started) held a pipe open,
+    and a reader waiting for the pipe to close threw the answer away at the
+    timeout."""
     try:
         sent = stdin.encode("utf-8") if stdin is not None else None
     except UnicodeError as e:
         raise EngineError(f"{engine} could not be sent the prompt: {e}") from None
+    with tempfile.TemporaryFile() as fout, tempfile.TemporaryFile() as ferr:
+        p = _start(engine, argv, stdin is not None, fout, ferr)
+        _wait(engine, p, sent)
+        fout.seek(0)
+        ferr.seek(0)
+        out, err = fout.read(), ferr.read()
+    r = subprocess.CompletedProcess(argv, p.returncode, None, err.decode("utf-8", "replace"))
     try:
-        p = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin is not None
-                             else subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, start_new_session=True)
+        r.stdout = out.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise EngineError(f"{engine} printed output that is not UTF-8: {e}\n{_tail(r)}") from None
+    if r.returncode != 0:
+        raise EngineError(f"{engine} exited {r.returncode}.\n{_tail(r)}")
+    return r
+
+
+def _start(engine: str, argv: list[str], piped: bool, fout, ferr) -> subprocess.Popen:
+    try:
+        return subprocess.Popen(argv, stdin=subprocess.PIPE if piped else subprocess.DEVNULL,
+                                stdout=fout, stderr=ferr, start_new_session=True)
     except FileNotFoundError:
         raise EngineError(f"{engine} is not on PATH") from None
     except (OSError, ValueError) as e:       # an argument list too long, a NUL
         raise EngineError(f"{engine} could not be started: {e}") from None
+
+
+def _wait(engine: str, p: subprocess.Popen, sent: bytes | None) -> None:
     try:
-        out, err = p.communicate(input=sent, timeout=TIMEOUT)
+        p.communicate(input=sent, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         _kill_tree(p)
         raise EngineError(f"{engine} did not answer within {TIMEOUT}s") from None
@@ -344,14 +368,6 @@ def _spawn(engine: str, argv: list[str], stdin: str | None = None
         # interrupt here has to end the tree before it is passed on.
         _kill_tree(p)
         raise
-    r = subprocess.CompletedProcess(argv, p.returncode, None, err.decode("utf-8", "replace"))
-    try:
-        r.stdout = out.decode("utf-8")
-    except UnicodeDecodeError as e:
-        raise EngineError(f"{engine} printed output that is not UTF-8: {e}\n{_tail(r)}") from None
-    if r.returncode != 0:
-        raise EngineError(f"{engine} exited {r.returncode}.\n{_tail(r)}")
-    return r
 
 
 def _kill_tree(p: subprocess.Popen) -> None:

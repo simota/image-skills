@@ -17,15 +17,16 @@ AGY_DIR    ?= $(HOME)/.gemini/antigravity-cli/skills
 # once split into two words, and every link landed in /Users/Jo.
 
 .DEFAULT_GOAL := help
-.PHONY: help check validate test figures figures-test tools-test engines refute render hooks link unlink status
+.PHONY: help check validate test figures figures-test tools-test catalog-test engines refute render hooks link unlink status
 
 help:
-	@echo "make check        validate + test + figures + figures-test + tools-test (what CI runs)"
+	@echo "make check        validate + test + figures + figures-test + tools-test + catalog-test (what CI runs)"
 	@echo "make validate     static rules over the corpus"
 	@echo "make test         prove every rule still fires"
 	@echo "make figures      recompute the numbers the reference layer states"
 	@echo "make figures-test prove every figure check still fires"
 	@echo "make tools-test   prove imgfacts and recipe read what is there"
+	@echo "make catalog-test prove catalogs match the files and preserve their sources"
 	@echo "make refute CLAIMS=f.json RUNNING=claude   put each claim to the engines that did not make it"
 	@echo "make engines  ask each checker engine for one object; reports what is unreachable"
 	@echo "make render    write the delivered blocks back into every SKILL.md"
@@ -34,7 +35,7 @@ help:
 	@echo "make unlink    remove those symlinks"
 	@echo "make status    show what is linked"
 
-check: validate test figures figures-test tools-test
+check: validate test figures figures-test tools-test catalog-test
 
 validate:
 	@python3 image-tools/validate.py
@@ -50,6 +51,9 @@ figures-test:
 
 tools-test:
 	@python3 image-tools/test_tools.py
+
+catalog-test:
+	@python3 image-tools/test_catalog.py
 
 engines:
 	@python3 image-tools/engine.py --selftest

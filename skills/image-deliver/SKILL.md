@@ -1,6 +1,6 @@
 ---
 name: image-deliver
-description: "Getting a picture into the project: file format, srcset, compression budget, colour profile, file naming, and where the file lands. Use once the image is chosen."
+description: "Getting a picture into the project: file format, srcset, compression budget, colour profile, file naming, where the file lands, and an asset catalog. Use once the image is chosen."
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 <!-- image:contract -->
@@ -8,10 +8,10 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ## Owns
 
 The distance between a chosen picture and a file the project can use — format,
-the sizes the surface needs, compression, colour, name, placement, and the text
+the sizes the surface needs, compression, colour, name, placement, catalog, and text
 that stands in for it when it does not load. It changes files, never pictures.
 
-Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
+Phases: `TARGET → EXPORT → NAME → PLACE → DESCRIBE → CATALOG`.
 
 ## Before starting
 
@@ -64,6 +64,7 @@ Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
 | Colour looks wrong once it is in the page | [colour-and-metadata](reference/colour-and-metadata.md) — profile, stripping, and what must not be stripped |
 | Writing the text that replaces the image | [alt-text](reference/alt-text.md) — what it is for decides what it says |
 | Checking emitted files and provenance | [imgfacts](imgfacts.py) for file properties, visual viewing for pixels, and [recipe](recipe.py) checks only retained generated candidates, not unrelated photographs |
+| Delivering or updating an image set | [asset-catalog](reference/asset-catalog.md) — run [catalog](catalog.py) after placement and link the HTML catalog; emit JSON when a consumer needs it |
 | The chosen picture is smaller than the surface needs | Do not upscale it here. Hand it back — a resample is a change to the picture |
 | A claim here would be expensive to get wrong | [refute](refute.py) — put it to the engines that did not make it, asked to break it rather than to agree. Unrefuted is n engines finding nothing, never proof |
 | No convention exists in the project | Emit one format and one naming rule, write both down, and say it is now the precedent |
@@ -83,6 +84,8 @@ Phases: `TARGET → RESIZE → ENCODE → NAME → PLACE → DESCRIBE`.
 - Always: preserve the source under the project's authorized retention policy
   (artifact storage, LFS, or repository); a git copy is not mandatory
 - Always: state the compression budget and what each file actually came in at
+- Always: generate or refresh the asset catalog from the final files, following
+  project access policy; link recipes without copying their prompts into the catalog
 - Always: get permission first before replacing an image already referenced,
   before deleting an original, and before adding a format the project's build
   does not already handle
@@ -125,9 +128,9 @@ to make sure it resolves.
 
 ## Done when
 
-Every file is opened and measured, the naming follows the project's convention,
-the source is kept, each reference resolves, the recipe travels with the asset,
-and every known use has a context-specific alt decision or reason it needs none.
+Every file is opened and measured, naming follows the project, the source is kept,
+each reference resolves, recipes remain accessible, and the asset catalog is current.
+Every known use has a context-specific alt decision or reason it needs none.
 <!-- deliver:surface -->
 - **Say what the moment needs.** Start: one line naming what will be made and what is
   excluded. Mid-run: write to the reader when the plan changes — a run that keeps missing the

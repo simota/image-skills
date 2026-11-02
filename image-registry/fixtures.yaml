@@ -51,3 +51,5 @@
   expect: image-direction
 - ask: "decide the file naming for the exported set"
   expect: image-deliver
+- ask: "generate an asset catalog for the delivered images"
+  expect: image-deliver

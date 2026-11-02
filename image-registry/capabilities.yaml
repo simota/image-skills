@@ -68,11 +68,11 @@ image-review:
 
 image-deliver:
   class: full
-  does: [format, responsive-sizes, naming, compression, colour-profile, placement, alt-text]
+  does: [format, responsive-sizes, naming, compression, colour-profile, placement, alt-text, asset-catalog]
   not:
     - what: "improving the picture before it is exported"
       go: image-refine
     - what: "how many pixels the model should be asked for"
       go: image-prompt
   signals: [file format, srcset, compression budget, colour profile, file naming,
-            where the file lands]
+            where the file lands, asset catalog]

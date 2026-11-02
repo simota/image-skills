@@ -28,7 +28,7 @@ depending on the answer.
 | [`image-generate`](skills/image-generate/SKILL.md) | Running it, what it cost, which candidate survives | Images and recipes |
 | [`image-refine`](skills/image-refine/SKILL.md) | Changing a picture that already exists | Images and recipes |
 | [`image-review`](skills/image-review/SKILL.md) | Whether the result is usable, and what is wrong with it | Nothing. Report-only |
-| [`image-deliver`](skills/image-deliver/SKILL.md) | Getting the chosen file into the project | Files and their placement |
+| [`image-deliver`](skills/image-deliver/SKILL.md) | Getting the chosen file into the project | Files, their placement, and an asset catalog |
 
 ## The idea the set is built on
 
@@ -113,7 +113,7 @@ in `make check`, and some of them make the checks *vacuous* rather than wrong: a
 row rewritten out of a computable shape, a table header renamed, a constraint
 deleted from the prose it reads.
 
-**Four tools, linked into the skills that can run them.**
+**Five tools, linked into the skills that can run them.**
 [`imgfacts.py`](image-tools/imgfacts.py) reads what is actually in a file —
 dimensions, format, bytes, alpha, whether a colour profile is declared, the
 shape an Exif orientation turns the picture to on screen, and whether a canvas
@@ -138,7 +138,11 @@ its schema, from an engine that exited non-zero or reported an error, or in
 text that is not UTF-8, is no answer, a claim refuted or contested exits 3, one that not
 every refuter could read exits 1, and unrefuted is never proof.
 
-None of the three file tools needs an image library: they read and edit headers rather than
+[`catalog.py`](image-tools/catalog.py) inventories delivered images as HTML with
+previews or JSON, measuring file properties and linking recipes without copying
+prompts. The delivery skill refreshes it after placement and links it in the report.
+
+None of the four file tools needs an image library: they read and edit headers rather than
 decoding pixels, so there is nothing to install beyond the PyYAML the harness
 already requires, and nothing is ever re-encoded. A tool that needed a build step
 before it could say how wide a file is would not get run.
@@ -229,7 +233,7 @@ image-skills/
 ├── README.md
 ├── Makefile
 ├── image-registry/             # budgets, boundaries, routes, delivered blocks
-├── image-tools/                # imgfacts · recipe · strip · refute · engine · render
+├── image-tools/                # imgfacts · recipe · strip · catalog · refute · engine · render
 │                               # · validate · figures · tests
 └── skills/                     # everything the CLI reads
     ├── _image/                 # contracts in force on every run
@@ -245,12 +249,27 @@ image-skills/
         └── reference/          # what goes stale. No line budget, dated instead
 ```
 
+## Generating an asset catalog
+
+Run from the project root, using the path to this checkout's tool:
+
+```sh
+python3 image-tools/catalog.py --dir assets --out .agents/asset-catalog.html
+python3 image-tools/catalog.py --dir assets --out .agents/asset-catalog.json --format json
+```
+
+Open HTML locally; its relative links reference the original PNG, JPEG, WebP and
+GIF files. Nothing is copied or published. Add `--replace` to refresh a confirmed
+catalog destination. See the [catalog guide](skills/image-deliver/reference/asset-catalog.md)
+for access policy, provenance, unsupported formats and failure handling.
+
 ## Working on it
 
 ```sh
 make check      # the rules, the figures, the tools, and proof each still fires
 make render     # after editing anything in image-registry/delivered/
 make hooks      # run the rules on every commit, against what is staged
+make catalog-test  # measured catalogs, safe links, and preserved source files
 ```
 
 The hook checks the index, not the working tree: the commit is what is staged,

@@ -25,8 +25,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SIZES = "skills/image-prompt/reference/sizes.md"
-RUNGS = "skills/image-deliver/reference/export-targets.md"
+SIZES = "skills/image-generate/reference/sizes.md"
+RUNGS = "skills/image-generate/reference/export-targets.md"
 REG = "image-registry/harness.yaml"
 IMGFACTS = "image-tools/imgfacts.py"
 

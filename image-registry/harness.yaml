@@ -24,10 +24,10 @@ limits:
                               # the sixth axis: what the run says at the end. The
                               # raises before it (120 -> 128 -> 140) were the same
                               # move for a smaller block. Measured own-content max
-                              # in this set: 76 lines, in image-direction and image-review
+                              # in this set: 76 lines, in image-review
   description_chars: 200      # the listing truncates past this
   playbook_lines: 300
-  playbooks_per_skill: 8
+  playbooks_per_skill: 15      # image-generate: five phase pages and the ten they route to
   shared_file_lines: 115   # raised for the sixth axis. REPORT.md is the densest of the
                               # six — four moments, the order at the end, the ceiling and the
                               # proportion rule — and 100 was the figure from when there were
@@ -41,7 +41,7 @@ limits:
                               # RECIPE.md has no sibling, and the
                               # `budget` a paid generator forces adds a field to
                               # SIZING and HANDOFF that the other sets never spend
-  skills_max: 8               # 6 in use, 2 spare
+  skills_max: 8               # 2 in use: one makes, one judges
   routes_max: 12
   route_stages_max: 6
   repo_md_lines_total: 4200   # V6 measures it on every run; two spare skills would add ~1000
@@ -100,7 +100,7 @@ refutation:
     or the named defect is not present at the location cited
 
 # The generators this set can run, and the one place their numbers are written.
-# `image-prompt/reference/sizes.md` states the canvas and aspect rules in prose
+# `image-generate/reference/sizes.md` states the canvas and aspect rules in prose
 # for a reader; `image-tools/figures_check.py` checks that prose against this
 # block, and `image-tools/imgfacts.py` decides legality from it. One declaration,
 # so the pages cannot drift from the tool.
@@ -159,9 +159,9 @@ generators:
 linked_tools:
   refute.py: all
   imgfacts.py: all
-  recipe.py: [image-generate, image-refine, image-deliver]
-  strip.py: [image-deliver]
-  catalog.py: [image-deliver]
+  recipe.py: [image-generate]
+  strip.py: [image-generate]
+  catalog.py: [image-generate]
 
 # A finding a reader has to reassemble in their head is a finding that gets
 # skimmed, and a skimmed report did not happen. This is the one place the
@@ -188,14 +188,15 @@ finding_visuals:
   # What keeps a diagram a finding rather than an illustration.
   floor: [labelled, derived, bounded]
 
-# Which `does:` verbs in capabilities.yaml make a skill a changer of pixels, an
-# editor of an existing picture, a reviewer, or a deliverer. V39 orders routes by
-# these, and fails if a verb listed here is no longer one any skill does.
-completion_roles:
-  changes: [invocation, region-edit]
-  edits: [region-edit]
-  reviews: [verdict]
-  delivers: [placement]
+# One skill makes and one judges, so a chain of skill names cannot say whether a
+# stage changed pixels or only placed a file. Each route therefore names the
+# phase each of its stages runs, and V39 orders routes by these. `does` is the
+# verb in capabilities.yaml a skill must hold to run that phase.
+route_phases:
+  make:    { does: invocation,  changes: true }
+  edit:    { does: region-edit, changes: true, edits: true }
+  judge:   { does: verdict,     reviews: true }
+  deliver: { does: placement,   delivers: true }
 
 vocabulary:
   recipe_fields: [engine, model, prompt, excluded, size, inputs, output, IRREPRODUCIBLE]
@@ -295,8 +296,7 @@ signature:
   name: recipe
   contract: RECIPE.md
   vocabulary: recipe_fields
-  required_of: [image-direction, image-prompt, image-generate, image-refine,
-                image-review, image-deliver]
+  required_of: [image-generate, image-review]
   own_word: IRREPRODUCIBLE
 
 delivered:

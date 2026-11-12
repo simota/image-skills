@@ -50,7 +50,7 @@ Not seen: <crops not checked, members not opened, sizes not viewed>
 - { what: "alt text is unwritten", class: UNSPECIFIED, marker: "docs/assets/README.md", written: false }
 
 swept, 1 marker / 1 in open; 7 decisions / 6 graded
-next: the human, for the UNSPECIFIED alt text; then image-refine for findings
+next: the human, for the UNSPECIFIED alt text; then image-generate for findings
 1–2; finding 3 is a note
 ```
 

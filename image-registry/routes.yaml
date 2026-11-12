@@ -6,54 +6,49 @@
 
 illustrate:
   pattern: linear
-  when: "a picture is needed and nothing about it is decided yet"
-  chain: [image-direction, image-prompt, image-generate, image-review, image-deliver]
-  gate: "the brief names what the image is judged against before any prompt is written"
+  when: "a picture is needed for use or publication, alone or as one of a set"
+  chain: [image-generate, image-review, image-generate]
+  phases: [make, judge, deliver]
+  gate: "the brief names what the image is judged against before any prompt is written; review the actual candidate for its intended use, and a set member by member and together, before delivery"
 
 one-off:
   pattern: linear
   when: "the look is settled; only an exploratory candidate is wanted, not an asset ready to use"
-  chain: [image-prompt, image-generate]
+  chain: [image-generate]
+  phases: [make]
   gate: "the look or brief is named; report a candidate, never a production usability verdict"
-
-one-off-ship:
-  pattern: linear
-  when: "the look is settled and one image is needed for use or publication"
-  chain: [image-prompt, image-generate, image-review, image-deliver]
-  gate: "review the actual candidate for its intended use before delivery; text, people and brand constraints follow that use"
-
-asset-set:
-  pattern: linear
-  when: "a family of images that must read as one set"
-  chain: [image-direction, image-prompt, image-generate, image-review, image-deliver]
-  gate: "name the set constraints first; review every retained member and the set together before delivery"
 
 repair:
   pattern: linear
   when: "a picture that exists is wrong in a way someone can point at"
-  chain: [image-review, image-refine, image-review]
+  chain: [image-review, image-generate, image-review]
+  phases: [judge, edit, judge]
   gate: "locate findings before changing; the final review checks their removal and any new drift"
 
 restyle:
   pattern: linear
   when: "the content is right and the look is not"
-  chain: [image-direction, image-refine, image-review]
+  chain: [image-generate, image-review]
+  phases: [edit, judge]
 
 ship-existing:
   pattern: linear
   when: "the picture is already approved for the intended use and only delivery remains"
-  chain: [image-deliver]
+  chain: [image-generate]
+  phases: [deliver]
 
 look-check:
   pattern: report-only
   when: "is this image usable, and what is wrong with it"
   chain: [image-review]
+  phases: [judge]
   stops_at: "one verdict with each defect located, ranked, and attributed to a cause. Nothing is regenerated"
 
 refine-to-brief:
   pattern: loop
   when: "iterate a candidate until it meets the brief or the budget stops it"
-  chain: [image-refine, image-review]
+  chain: [image-generate, image-review]
+  phases: [edit, judge]
   oracle: "no open defect at severity major or above, and one full pass over the image adds none"
   checker: other-engine       # resolved at run time to one that is not running this
   max_cycles: 4               # hard bound, not a target; stop sooner on success or budget

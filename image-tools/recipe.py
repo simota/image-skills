@@ -24,7 +24,7 @@ it; one held by neither needs `--generator`, because recording the default would
 put a command nobody ran into `engine`.
 
 It never overwrites: an existing destination is a sibling version decision for a
-person to make (`image-deliver/playbooks/naming.md`), not something a tool does
+person to make (`image-generate/playbooks/naming.md`), not something a tool does
 while nobody is looking.
 """
 from __future__ import annotations

@@ -1,8 +1,8 @@
 # image-skills
 
-Six agent skills covering image work — deciding what a picture must say,
-asking a generator for it, judging what comes back, and getting the file into a
-project — plus the contracts they share and the budgets that keep the set from
+Two agent skills covering image work — one decides what a picture must say,
+asks a generator for it, changes it and gets the file into a project; the other
+judges what comes back — plus the contracts they share and the budgets that keep the set from
 growing into something nobody can route through.
 
 **None of them generate pixels themselves.** The generation is one of two
@@ -23,12 +23,8 @@ depending on the answer.
 
 | Skill | Owns | Produces |
 |---|---|---|
-| [`image-direction`](skills/image-direction/SKILL.md) | What the picture must say, and what it looks like saying it | A brief |
-| [`image-prompt`](skills/image-prompt/SKILL.md) | The request the generator actually receives | A prompt record |
-| [`image-generate`](skills/image-generate/SKILL.md) | Running it, what it cost, which candidate survives | Images and recipes |
-| [`image-refine`](skills/image-refine/SKILL.md) | Changing a picture that already exists | Images and recipes |
+| [`image-generate`](skills/image-generate/SKILL.md) | Making a picture and changing one: the brief, the request, the run and its keeper, the edit, the file in the project | Briefs, prompt records, images, recipes, files and an asset catalog |
 | [`image-review`](skills/image-review/SKILL.md) | Whether the result is usable, and what is wrong with it | Nothing. Report-only |
-| [`image-deliver`](skills/image-deliver/SKILL.md) | Getting the chosen file into the project | Files, their placement, and an asset catalog |
 
 ## The idea the set is built on
 
@@ -80,7 +76,7 @@ lists those words per skill. A rule checks the two agree.
 
 **Boundaries live in one file.** That same registry carries `not:` — what a
 skill does not do and where that work goes instead. Descriptions never name a
-neighbour. If they did, adding a seventh skill would mean editing the other six,
+neighbour. If they did, adding a third skill would mean editing the other two,
 and a description would spend its 200-character listing budget advertising a
 competitor.
 
@@ -178,7 +174,7 @@ oversight.
 **One declaration for the generators' numbers.** `generators` in the registry
 holds both — the four canvas constraints for one, the list of aspects for the
 other, each tagged with the `control` that separates them. `imgfacts.py` decides
-legality from it, `image-prompt/reference/sizes.md` states both in prose for a
+legality from it, `image-generate/reference/sizes.md` states both in prose for a
 reader, and `make figures` checks the prose against the registry — so the tools
 and the page cannot quietly disagree. Adding a third generator is a registry
 edit; the tools resolve which is which by `control`. A second canvas generator
@@ -260,7 +256,7 @@ python3 image-tools/catalog.py --dir assets --out .agents/asset-catalog.json --f
 
 Open HTML locally; its relative links reference the original PNG, JPEG, WebP and
 GIF files. Nothing is copied or published. Add `--replace` to refresh a confirmed
-catalog destination. See the [catalog guide](skills/image-deliver/reference/asset-catalog.md)
+catalog destination. See the [catalog guide](skills/image-generate/reference/asset-catalog.md)
 for access policy, provenance, unsupported formats and failure handling.
 
 ## Working on it

@@ -1383,35 +1383,55 @@ def _enumerations(line: str, fenced: bool = False) -> list[str]:
 
 def v39_post_change_review():
     """Selection is not acceptance: edited results and generated deliveries
-    need a review after the last pixel-changing stage. A prompt/generate
-    candidate-only route remains valid. This checks ordering, not visual quality
-    or a model's interpretation of a request or route condition.
+    need a review after the last pixel-changing stage. A make-only candidate
+    route remains valid. One skill makes and one judges, so a chain of skill
+    names cannot say which stage changed pixels: each route names the phase
+    each of its stages runs, and the order is checked on those. This checks
+    ordering, not visual quality or a model's interpretation of a request or
+    route condition.
     """
-    roles = H.get("completion_roles") or {}
+    phases = H.get("route_phases") or {}
 
-    def holding(role: str) -> set[str]:
-        verbs = set(roles.get(role) or [])
-        return {n for n, c in CAP.items() if verbs & set(c.get("does") or [])}
+    def holding(flag: str) -> set[str]:
+        return {p for p, spec in phases.items()
+                if isinstance(spec, dict) and spec.get(flag) is True}
 
-    changers, editors = holding("changes"), holding("edits")
-    reviewers, deliverers = holding("reviews"), holding("delivers")
-    # Every declared verb must still be one some skill does: a verb renamed in
-    # capabilities.yaml would otherwise drop out of its role without a word.
+    changing, editing = holding("changes"), holding("edits")
+    reviewing, delivering = holding("reviews"), holding("delivers")
+    # Every phase's verb must still be one some skill does: a verb renamed in
+    # capabilities.yaml would otherwise leave a phase no skill can run.
     done = {v for c in CAP.values() for v in c.get("does") or []}
-    for role, verbs in roles.items():
-        for v in verbs or []:
-            if v not in done:
-                fail("V39", f"completion role {role} names {v!r}, which no skill does")
-    if not all((changers, editors, reviewers, deliverers)):
-        fail("V39", "completion roles are missing; this check would be vacuous")
+    for p, spec in phases.items():
+        verb = spec.get("does") if isinstance(spec, dict) else None
+        if verb not in done:
+            fail("V39", f"route phase {p} names {verb!r}, which no skill does")
+    if not all((changing, editing, reviewing, delivering)):
+        fail("V39", "route phases are missing; this check would be vacuous")
         return
     for name, route in ROUTES.items():
         chain = route.get("chain") or []
-        changes = [i for i, stage in enumerate(chain) if stage in changers]
-        delivers = [i for i, stage in enumerate(chain) if stage in deliverers]
-        if not changes or not (delivers or any(s in editors for s in chain)):
+        ph = route.get("phases")
+        if not (isinstance(ph, list) and len(ph) == len(chain)):
+            fail("V39", f"route {name} needs one phase per stage; skill names "
+                        "alone do not say which stage changed pixels")
             continue
-        reviews = [i for i, stage in enumerate(chain) if stage in reviewers]
+        known = True
+        for stage, p in zip(chain, ph):
+            spec = phases.get(p) if isinstance(p, str) else None
+            if not isinstance(spec, dict):
+                fail("V39", f"route {name} runs phase {p!r}, not in route_phases")
+                known = False
+            elif spec.get("does") not in (CAP.get(stage, {}).get("does") or []):
+                fail("V39", f"route {name} gives phase {p} to {stage}, which "
+                            f"does not do {spec.get('does')}")
+                known = False
+        if not known:
+            continue
+        changes = [i for i, p in enumerate(ph) if p in changing]
+        delivers = [i for i, p in enumerate(ph) if p in delivering]
+        if not changes or not (delivers or any(p in editing for p in ph)):
+            continue
+        reviews = [i for i, p in enumerate(ph) if p in reviewing]
         last_change = max(changes)
         boundary = min(delivers) if delivers else len(chain)
         if not any(last_change < i < boundary for i in reviews):

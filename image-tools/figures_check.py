@@ -10,11 +10,11 @@ into a wrong one breaks the build instead of ageing quietly.
 Four things are checked, and each is arithmetic a page already states or a
 number the registry already declares:
 
-* `image-prompt/reference/sizes.md` — every size listed as legal is put back
+* `image-generate/reference/sizes.md` — every size listed as legal is put back
   through the four constraints that page states, and its stated ratio and
   megapixel figure are recomputed. Every size listed as rejected must still be
   rejected, by the rule named against it and not merely by some other rule.
-* `image-deliver/reference/export-targets.md` — every density rung is recomputed
+* `image-generate/reference/export-targets.md` — every density rung is recomputed
   from its own stated base and factor, its `@Nx` label is checked to be that
   factor, and the stated source floor is checked against the largest rung.
 * the same four constraints, as prose on that page against the canvas generator's
@@ -140,7 +140,7 @@ def _breaks(w: int, h: int, lim: dict) -> set[str]:
 def check_sizes() -> int:
     """Legal rows must satisfy every constraint and state the right ratio and
     megapixels; rejected rows must break exactly the rule named against them."""
-    page = SKILLS / "image-prompt/reference/sizes.md"
+    page = SKILLS / "image-generate/reference/sizes.md"
     text = page.read_text()
     lim = _limits(text)
     if not lim:
@@ -223,7 +223,7 @@ FLOOR = re.compile(r"Source must be at least:\s*(\d+)x(\d+)")
 def check_density() -> int:
     """Every rung is its own stated base times its own stated factor, and the
     stated source floor is the largest rung."""
-    page = SKILLS / "image-deliver/reference/export-targets.md"
+    page = SKILLS / "image-generate/reference/export-targets.md"
     text = page.read_text()
     raw = table_rows(text, RUNG_HEAD)
     if not raw:
@@ -295,7 +295,7 @@ def check_aspects() -> int:
     name, gen = _only("aspect")
     if not gen:
         return 0
-    page = SKILLS / "image-prompt/reference/sizes.md"
+    page = SKILLS / "image-generate/reference/sizes.md"
     raw = table_rows(page.read_text(), ASPECT_HEAD)
     if not raw:
         fail("sizes.md", f"no aspect table found; the only size lever {name} has "
@@ -327,7 +327,7 @@ def check_canvas() -> int:
     two are separate definitions, and the tool would keep answering correctly
     while the page told somebody otherwise.
     """
-    page = SKILLS / "image-prompt/reference/sizes.md"
+    page = SKILLS / "image-generate/reference/sizes.md"
     lim = _limits(page.read_text())
     if not lim:
         return 0
@@ -353,7 +353,7 @@ TOLERANCE_RE = re.compile(r"the tolerance is (\d+(?:\.\d+)?)%")
 
 def check_tolerance() -> int:
     """The tolerance the page tells a reader is the one the tool searches with."""
-    page = SKILLS / "image-prompt/reference/sizes.md"
+    page = SKILLS / "image-generate/reference/sizes.md"
     stated = [float(m.group(1)) for m in TOLERANCE_RE.finditer(page.read_text())]
     if not stated:
         fail("sizes.md", "the aspect tolerance of --check-size is no longer stated "

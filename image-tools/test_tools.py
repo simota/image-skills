@@ -1112,9 +1112,9 @@ def test_make_unlink(tmp: Path) -> None:
                               capture_output=True, text=True).stdout
     make("link")
     (host / "image-foreign").symlink_to("/elsewhere/skills/image-foreign")
-    (repo / "skills" / "image-refine").rename(repo / "skills" / "image-retouch")
+    (repo / "skills" / "image-review").rename(repo / "skills" / "image-retouch")
     truthy("status names the link a renamed skill left behind",
-           "retired  image-refine" in make("status"))
+           "retired  image-review" in make("status"))
     (host / "image-generate-pinned").symlink_to(repo / "skills" / "image-generate")
     truthy("a second name for a live skill is not called retired",
            "image-generate-pinned" not in make("status"))
@@ -1156,7 +1156,7 @@ def test_precommit_hook(tmp: Path) -> None:
         return subprocess.run(["sh", str(hook)], cwd=repo, env=env,
                               capture_output=True, text=True).returncode == 0
 
-    target = repo / "skills" / "image-prompt" / "playbooks" / "structure.md"
+    target = repo / "skills" / "image-generate" / "playbooks" / "structure.md"
     good = target.read_text(encoding="utf-8")
     broken = good + "\n#" + "TODO(agent): no class here\n"
     check("the hook passes a clean index", hook_passes(), True)
@@ -1174,7 +1174,7 @@ def test_precommit_hook(tmp: Path) -> None:
     git("sparse-checkout", "disable")
     # Intent-to-add is in the index and not in the commit; exported from the
     # index it became an empty, unlabelled playbook nothing links to.
-    draft = repo / "skills" / "image-prompt" / "playbooks" / "draft.md"
+    draft = repo / "skills" / "image-generate" / "playbooks" / "draft.md"
     draft.write_text("half a thought\n", encoding="utf-8")
     git("add", "-N", str(draft))
     check("an intent-to-add file outside the commit does not fail it", hook_passes(), True)

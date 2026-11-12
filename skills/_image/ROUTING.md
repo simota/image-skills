@@ -14,21 +14,17 @@ neighbours. The table below is a reading of that file, not a second copy.
 
 | Skill | Owns | Writes? |
 |---|---|---|
-| `image-direction` | What the picture must say, and what it should look like saying it | A brief |
-| `image-prompt` | The request the generator actually receives | A prompt record |
-| `image-generate` | Running it, what it cost, and which candidate survives | Images and recipes |
-| `image-refine` | Changing an image that already exists | Images and recipes |
+| `image-generate` | Making a picture and changing one: the brief, the request, the run and its keeper, the edit, the file in the project | Briefs, prompt records, images, recipes, files and their placement |
 | `image-review` | Whether the result is usable, and what is wrong with it | Nothing. Report-only |
-| `image-deliver` | Getting the chosen file into the project in the form it needs | Files and their placement |
 
 **None of these decide what the product is.** A picture making a claim about a
 real person, product, or organisation is the human's (`_image/VALUES.md` §6).
 
-**Who decides a value.** Three skills produce pixel dimensions, so one rule
-settles it: *the skill that decides a value owns it until it is named*, and
-**`image-deliver` owns any size that exists because of where the file goes**. A
-size chosen to give the model room to work is `image-prompt`'s; the same number
-chosen because a container is that wide is `image-deliver`'s.
+**Who decides a value.** Three phases of `image-generate` produce pixel
+dimensions, so one rule settles it: *the phase that decides a value owns it until
+it is named*, and **DELIVER owns any size that exists because of where the file
+goes**. A size chosen to give the model room to work is PROMPT's; the same number
+chosen because a container is that wide is DELIVER's.
 
 ## Disambiguation
 
@@ -37,13 +33,10 @@ goes. These rows say *how to tell which case you are in*.
 
 | Both plausible | Decided by |
 |---|---|
-| direction vs prompt | Is what the picture should be settled? Unsettled → direction. Settled, needs wording → prompt |
-| prompt vs generate | Is the question about the words or about the run? Words → prompt. How many, what it costs, which one → generate |
-| generate vs refine | Does an image exist that is worth starting from? No → generate. Yes → refine |
-| refine vs review | **review judges, refine changes.** A run that both judged and fixed cannot say which it did first |
-| review vs direction | Does a picture exist? Exists → review. Being decided → direction. An off-brief finding, whatever the verdict, is review handing it back to direction |
-| refine vs deliver | Is the problem in the picture or in the file? Picture → refine. Format, size, placement → deliver |
-| anything vs review | review never produces the replacement. It says what is wrong and hands the fix to the owner |
+| generate vs review | **review judges, generate changes.** A run that both judged and fixed cannot say which it did first |
+| which phase of generate | The earliest decision still open: what the picture is → DIRECT; its wording → PROMPT; the run → RUN; a picture worth starting from exists → REFINE; the problem is in the file, not the picture → DELIVER |
+| review vs the DIRECT phase | Does a picture exist? Exists → review. Being decided → DIRECT. An off-brief finding, whatever the verdict, is review handing it back |
+| anything vs review | review never produces the replacement. It says what is wrong and hands the fix to `image-generate` |
 
 ## Chains
 
@@ -51,7 +44,9 @@ The chains that recur are in `registry/routes.yaml`, with their control
 structure rather than as prose: which stages, in what order, and what has to
 hold before the next one starts.
 
-A chain of names expresses linear work only. Where a stage repeats until a
+A chain of two skill names cannot say what a stage did, so each route also
+names the phase each stage runs (`make`, `edit`, `judge`, `deliver`). A chain
+expresses linear work only. Where a stage repeats until a
 condition holds — `refine-to-brief` is the one that does — the entry carries the
 stopping condition, the judge, and a hard cycle limit. **The judge is never the
 engine that produced the image.** Without those three, "until it looks right"
@@ -69,7 +64,7 @@ has no stopping rule, and every cycle is paid for.
   at this" does not authorise a regeneration, and nor does finding something wrong
 - **A chain wanting a seventh stage is mis-scoped.** Split the request instead
 - **Candidate selection is not approval.** The one-off fast path stops at a
-  candidate; use or publication goes through one-off-ship. A repaired or restyled
+  candidate; use or publication goes through illustrate. A repaired or restyled
   result is reviewed after the last change, and a set is checked member by member
   and together. Already approved assets can go straight to delivery
 - Stages run in order. Two skills changing the same image concurrently produces

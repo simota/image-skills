@@ -29,7 +29,7 @@ work**, and move up only after it has failed.
 ## Rung 4 does not inherit approval
 
 A re-prompt returns a *different picture*. No exact regeneration is confirmed (a
-snapshot, recorded in image-prompt's control-surface reference), so "regenerate
+snapshot, recorded in the control-surface reference), so "regenerate
 with the hand fixed" means "generate again and hope". Everything approved about
 the previous candidate is back in play, and the new candidate needs reviewing
 from scratch.

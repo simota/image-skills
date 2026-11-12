@@ -1,1 +1,0 @@
-../../image-tools/imgfacts.py

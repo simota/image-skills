@@ -1,30 +1,30 @@
 ---
 name: image-generate
-description: "Turning a settled prompt into files: run the generation, how many candidates, a batch of candidates, the recipe retained candidates need, and pick the keeper. Use when pixels must exist."
+description: "Making a picture and placing it in the project: art style, image brief, generation prompt, seed, run the generation, edit a region, upscale, file format, srcset. Use when pixels must exist or change."
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 <!-- image:contract -->
 
 ## Owns
 
-The paid part. It invokes the generator, decides how many attempts the question
-is worth, records what each run was, opens what comes back, and names the one
-that survives. Selection removes obvious failures and compares candidates; it
-is not the usability verdict. It does not write the prompt or place the file.
+Everything that makes a picture or changes one, from a look nobody has settled
+to a file the project references: the brief, the request the generator
+receives, the paid run and its keeper, the edit to a picture that exists, and
+the export. It never decides whether the result is usable — that verdict
+belongs to a reader who did not make it.
 
-Phases: `BUDGET → INVOKE → CAPTURE → OPEN → SELECT`.
+Phases: `DIRECT → PROMPT → RUN → REFINE → DELIVER`. **Enter at the earliest
+phase whose decision is still open, and stop at the last one asked for.**
 
 ## Before starting
 
+- **Name the phase you enter and the one you stop at.** A request for a
+  candidate stops at RUN; a request for a file in the project reaches DELIVER
 - **Know the budget.** Generation and generative refinement share spend,
-  including failed/refused attempts with unknown billing. The brief carries a
-  `budget`; a run without one is a run with no end
-- **Say what this batch would answer.** A batch launched because the last batch
-  disappointed is a batch with no question
-- **Check the size is legal before spending anything**, against the generator
-  that will run it. One rejects an invalid canvas; the other has no pixel lever
-  at all and refuses a shape off its list. A round trip spent on the wrong
-  question teaches nothing
+  including failed/refused attempts with unknown billing. A run without a
+  `budget` is a run with no end
+- **Open the phase's page before acting in it.** Each carries its own checks,
+  rules and done condition; this page only routes
 <!-- deliver:sizing -->
 - **Size it before anything else**, first match wins. `T0` — one skill owns it,
   reversible, one image or one value, the question fits in one sentence: answer
@@ -59,17 +59,14 @@ Phases: `BUDGET → INVOKE → CAPTURE → OPEN → SELECT`.
 
 | Situation | How to proceed |
 |---|---|
-| Deciding how many candidates to run | [batching](playbooks/batching.md) — one for a settled prompt, a spread only while the direction is still moving |
-| Choosing between what came back | [selection](playbooks/selection.md) — against the brief's axes, in a fixed order, before any of them is admired |
+| The look is not settled — subject, mood, art style, what a reference gives | [direct](playbooks/direct.md), with [subject-and-frame](playbooks/subject-and-frame.md) and [reference-reading](playbooks/reference-reading.md) |
+| The picture is decided and needs wording, exclusions, a canvas or variants | [prompt](playbooks/prompt.md), with [structure](playbooks/structure.md) and [exclusions](playbooks/exclusions.md) |
+| A settled prompt must become files | [run](playbooks/run.md), with [batching](playbooks/batching.md) and [selection](playbooks/selection.md) |
+| A picture exists and is close but wrong | [refine](playbooks/refine.md), with [locate-then-change](playbooks/locate-then-change.md) and [edit-ladder](playbooks/edit-ladder.md) |
+| A reviewed picture must land in the project | [deliver](playbooks/deliver.md), with [format-choice](playbooks/format-choice.md) and [naming](playbooks/naming.md) |
+| The picture changed after its last review, and delivery is next | Stop. Selection is not approval: `image-review` reads it first, and an approval never carries over to a regenerated or edited picture |
 | Two generators are installed and neither was named | Ask. They take different size arguments and one writes JPEG — the choice is the user's, and the recipe records which one ran |
-| Invoking the pixel-size generator | [codex-imagen](reference/codex-imagen.md) — the two modes, what each takes, and where the file lands |
-| Invoking the aspect-ratio generator | [agy-imagen](reference/agy-imagen.md) — the four parameters, the JPEG it writes, and the error it reports over a file that exists |
-| Retaining a generated candidate | [recipe](recipe.py) `capture --from <returned-file> --generator <actual-generator>` — bind provenance to this run, not merely the newest cached file |
-| Writing down what a run was | [recipe-sidecar](reference/recipe-sidecar.md) — the seven fields, and the form they travel in |
-| The generator refused | Report `BLOCKED`; record the attempt/outcome and known or unknown charge. With no file, there is no image recipe |
-| The file came back a different size than asked | Expected on the default path — it takes no size argument. Record both numbers and hand the resize to the stage that owns files |
 | A claim here would be expensive to get wrong | [refute](refute.py) — put it to the engines that did not make it, asked to break it rather than to agree. Unrefuted is n engines finding nothing, never proof |
-| Nothing in the batch is close | Stop. Two failed batches on one prompt is a prompt problem or a brief problem, and another batch will not find out which |
 <!-- deliver:values -->
 - Ties break by `_image/VALUES.md`, read top to bottom: looking over assuming ·
   the brief over the best picture · one image well over four nearly · the
@@ -81,29 +78,28 @@ Phases: `BUDGET → INVOKE → CAPTURE → OPEN → SELECT`.
 
 ## Always / Never
 
-- Always: view pixels before describing or comparing a candidate visually.
-  A technical discard may use file facts, but must not masquerade as a visual check
-- Always: read the dimensions and the format off the file that came back, not
-  off the request — one generator writes JPEG and no flag changes that
-- Always: capture the sent request at invocation; persist a recipe for each
-  retained candidate. Memory cannot restore it; mark that loss `IRREPRODUCIBLE`
-- Always: get permission first before a batch that exceeds the stated budget
-- Never: report a candidate as matching the prompt on the strength of the prompt
-- Never: leave a file the project will reference sitting only in the generator's
-  own output directory
-- Never: quietly reword past a refusal
-- Never: keep generating because none of them is quite right — say what the next
-  run would answer, and if there is no answer there is no run
+- Always: view pixels before describing, comparing or exporting a picture. File
+  facts from [imgfacts](imgfacts.py) are `measured` mechanics, never a visual check
+- Always: capture the sent request at invocation and keep a recipe for each
+  retained candidate and each generative edit. Memory cannot restore it; mark
+  that loss `IRREPRODUCIBLE`
+- Always: get permission first before a batch over the stated budget, a real
+  person, brand or living artist in the picture, or replacing a file already
+  referenced
+- Never: report a picture as matching the prompt on the strength of the prompt
+- Never: quietly reword past a refusal, or keep generating with no question the
+  next run would answer
+- Never: deliver a picture that changed since `image-review` last read it
 
 ## Verify with
 
-Open the pixels of every candidate described or compared. Separately read its
-dimensions and format with [imgfacts](imgfacts.py) (`measured` mechanical facts,
-not a visual inspection). An unopened candidate supports no visual claim.
+Open the pixels of every picture described, compared or written, and read its
+dimensions and format off the file (`measured`), not off the request. The
+phase's page says what else it owes.
 
-- **The keeper is named with the axis that decided it**, not with an adjective
-- **Spend is reported**: runs made, runs of budget, and what the next one would
-  have been for
+- **Each phase entered reports its own done condition**, and a phase skipped is
+  named with why it was already settled
+- **Spend is reported**: runs made, runs of budget, what the next one was for
 <!-- deliver:report -->
 - **Grade every claim**: `measured` names the measurement method or a located,
   repeatable visual observation, not aesthetic certainty. `inspected` is reasoned
@@ -125,9 +121,9 @@ not a visual inspection). An unopened candidate supports no visual claim.
 
 ## Done when
 
-Compared candidates were viewed, retained candidates have recipes with measured
-on-disk sizes, the keeper is named against an axis, and all attempts/refusals are
-accounted for. This completes selection, not a production usability verdict.
+The last phase asked for has met the done condition on its page, every retained
+candidate has a recipe with measured on-disk sizes, attempts and refusals are
+accounted for, and nothing was delivered unreviewed after its last change.
 <!-- deliver:surface -->
 - **Say what the moment needs.** Start: one line naming what will be made and what is
   excluded. Mid-run: write to the reader when the plan changes — a run that keeps missing the

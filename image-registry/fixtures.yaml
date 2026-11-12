@@ -5,51 +5,35 @@
 # will be misrouted".
 
 - ask: "we need a hero picture and nobody has decided the art style"
-  expect: image-direction
-- ask: "settle the subject and mood before anyone generates anything"
-  expect: image-direction
-- ask: "here is a visual reference, work out what to take from it"
-  expect: image-direction
+  expect: image-generate
+- ask: "write the image brief before anyone generates anything"
+  expect: image-generate
 - ask: "write the generation prompt for the banner"
-  expect: image-prompt
-- ask: "the prompt wording keeps giving me the wrong thing"
-  expect: image-prompt
-- ask: "what aspect ratio should I ask for"
-  expect: image-prompt
+  expect: image-generate
 - ask: "run the generation and give me something to look at"
   expect: image-generate
-- ask: "how many candidates should we pay for"
+- ask: "edit a region, the hand is broken"
   expect: image-generate
-- ask: "generate a batch of candidates and pick the keeper"
+- ask: "upscale it for the print version"
   expect: image-generate
-- ask: "this is close but wrong, the hand is broken"
-  expect: image-refine
-- ask: "remove an object from the background"
-  expect: image-refine
-- ask: "extend the canvas so it works as a wide banner"
-  expect: image-refine
+- ask: "what file format should this ship as"
+  expect: image-generate
+- ask: "generate the srcset sizes and put the file where it lands"
+  expect: image-generate
 - ask: "is this usable or not"
   expect: image-review
 - ask: "check it for artefacts before we ship it"
   expect: image-review
 - ask: "the text in the image is garbled, give me a ranked verdict"
   expect: image-review
-- ask: "what file format and compression budget should this ship as"
-  expect: image-deliver
-- ask: "generate the srcset sizes and put the file where it lands"
-  expect: image-deliver
-- ask: "the colour profile is wrong when it renders in the browser"
-  expect: image-deliver
 # A control request must reach its constraints, not imply the control exists.
 - ask: "reuse the same seed"
-  expect: image-prompt
+  expect: image-generate
 - ask: "seed 1234で作って"
-  expect: image-prompt
-# Neighbours that must keep winning. The set's signals all sit near the word
-# "image", so the boundaries that share a noun are pinned from both sides.
-- ask: "regenerate it, the composition intent was never met"
-  expect: image-direction
-- ask: "decide the file naming for the exported set"
-  expect: image-deliver
-- ask: "generate an asset catalog for the delivered images"
-  expect: image-deliver
+  expect: image-generate
+# Neighbours that must keep winning. Making and judging share their nouns, so
+# the boundary is pinned from the judging side: the longer signal is the verdict.
+- ask: "check the upscale for artefacts"
+  expect: image-review
+- ask: "is this file format usable or not"
+  expect: image-review

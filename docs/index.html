@@ -158,14 +158,14 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
 <header class="mast">
   <p class="eyebrow"><a href="../agent-toolkit/" style="color:inherit">Agent Skills</a> / image set</p>
   <h1>Image<span class="sub">What should this picture say, and did the one that came back say it?</span></h1>
-  <p class="lede">Six skills over image work — deciding what a picture must say, wording the request a generator receives, running it, changing what comes back, judging whether it is usable, and getting the file into a project. None of them generate pixels: that is Codex&amp;rsquo;s own &lt;code&gt;imagegen&lt;/code&gt; skill, and this is the discipline around it.</p>
+  <p class="lede">Two skills over image work — one decides what a picture must say, words the request a generator receives, runs it, changes what comes back and gets the file into a project; the other judges whether it is usable. Neither generates pixels: that is Codex&amp;rsquo;s own &lt;code&gt;imagegen&lt;/code&gt; skill, and this is the discipline around it.</p>
   <div class="facts">
-    <div class="fact"><b>6</b><span>skills</span></div>
-    <div class="fact"><b>9</b><span>routes</span></div>
-    <div class="fact"><b>13</b><span>playbooks</span></div>
-    <div class="fact"><b>15</b><span>reference</span></div>
+    <div class="fact"><b>2</b><span>skills</span></div>
+    <div class="fact"><b>7</b><span>routes</span></div>
+    <div class="fact"><b>18</b><span>playbooks</span></div>
+    <div class="fact"><b>16</b><span>reference</span></div>
     <div class="fact"><b>39</b><span>static rules</span></div>
-    <div class="fact"><b>1,110</b><span>listing chars</span></div>
+    <div class="fact"><b>392</b><span>listing chars</span></div>
   </div>
 </header>
 
@@ -182,7 +182,7 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
   
   <figure>
     <div class="scroll">
-    <svg viewBox="0 0 1180 220" role="img" aria-label="Three loading stages. The listing carries 6 names and descriptions on every turn; a chosen SKILL.md is read in full; playbooks and reference files load only when the situation calls for them.">
+    <svg viewBox="0 0 1180 220" role="img" aria-label="Three loading stages. The listing carries 2 names and descriptions on every turn; a chosen SKILL.md is read in full; playbooks and reference files load only when the situation calls for them.">
       <text x="30" y="34" font-family="'JetBrains Mono',monospace" font-size="10"
             fill="currentColor" opacity=".55" letter-spacing=".04em">what the engine is holding, and when</text>
       
@@ -194,9 +194,9 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <text x="48" y="108" font-family="'JetBrains Mono',monospace" font-size="10"
             fill="currentColor" opacity=".6">every skill, every turn</text>
       <text x="48" y="136" font-family="Archivo,sans-serif" font-weight="700"
-            font-size="17" fill="currentColor">6 names + descriptions</text>
+            font-size="17" fill="currentColor">2 names + descriptions</text>
       <text x="48" y="156" font-family="'JetBrains Mono',monospace" font-size="10.5"
-            fill="currentColor" opacity=".6">1,110 characters</text>
+            fill="currentColor" opacity=".6">392 characters</text>
       <text x="48" y="180" font-family="Archivo,sans-serif" font-size="11.5"
             fill="currentColor" opacity=".72">selection happens here, and on nothing else</text>
       <rect x="420" y="60" width="330" height="132" rx="1" fill="none"
@@ -220,7 +220,7 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <text x="828" y="108" font-family="'JetBrains Mono',monospace" font-size="10"
             fill="currentColor" opacity=".6">only when the situation calls</text>
       <text x="828" y="136" font-family="Archivo,sans-serif" font-weight="700"
-            font-size="17" fill="currentColor">13 playbooks · 15 reference</text>
+            font-size="17" fill="currentColor">18 playbooks · 16 reference</text>
       <text x="828" y="156" font-family="'JetBrains Mono',monospace" font-size="10.5"
             fill="currentColor" opacity=".6">budgeted / unbudgeted</text>
       <text x="828" y="180" font-family="Archivo,sans-serif" font-size="11.5"
@@ -240,7 +240,7 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
 </section>
 
 <section id="skills">
-  <h2><span class="num">02</span>The 6 skills</h2>
+  <h2><span class="num">02</span>The 2 skills</h2>
   <p class="sec-note">Each owns one kind of work and states it in its own <em>Owns</em> section.
     The tags under it are the facets recorded in
     <code>image-registry/capabilities.yaml</code>, which is also what the fixtures route
@@ -248,42 +248,12 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
   <div class="sk">
   <article class="card">
     <div class="card-id">
-      <span class="k">image-direction</span>
-      <span class="tag b">doc-write</span>
-    </div>
-    <div class="card-body">
-      <p>What the picture is for, what it must say, and what it should look like saying it. It produces a brief a generator can be aimed at and a reviewer can judge against — never the wording that gets sent, and never a picture.</p>
-      <ul class="rows"><li>subject</li><li>mood</li><li>art-style</li><li>reference-analysis</li><li>composition-intent</li><li>brief</li></ul>
-    </div>
-  </article>
-  <article class="card">
-    <div class="card-id">
-      <span class="k">image-prompt</span>
-      <span class="tag b">doc-write</span>
-    </div>
-    <div class="card-body">
-      <p>The request the generator actually receives — its structure, its exclusions, the canvas it asks for, and the set of variants that differ on purpose. It decides what is said, never whether the picture behind it was worth asking for.</p>
-      <ul class="rows"><li>prompt-structure</li><li>exclusions</li><li>aspect</li><li>variants</li><li>control-surface</li><li>prompt-record</li></ul>
-    </div>
-  </article>
-  <article class="card">
-    <div class="card-id">
       <span class="k">image-generate</span>
       <span class="tag b">full</span>
     </div>
     <div class="card-body">
-      <p>The paid part. It invokes the generator, decides how many attempts the question is worth, records what each run was, opens what comes back, and names the one that survives. Selection removes obvious failures and compares candidates; it is not the usability verdict. It does not write the prompt or place the file.</p>
-      <ul class="rows"><li>invocation</li><li>candidate-count</li><li>batching</li><li>recipe-capture</li><li>selection</li><li>cost</li></ul>
-    </div>
-  </article>
-  <article class="card">
-    <div class="card-id">
-      <span class="k">image-refine</span>
-      <span class="tag b">full</span>
-    </div>
-    <div class="card-body">
-      <p>Everything done to a picture after one exists — a targeted edit, a reworked prompt, an extension, an upscale — and the discipline that keeps an iteration from drifting into a different picture. It does not decide whether the result is good enough; that judgement belongs to a reader who did not make the change.</p>
-      <ul class="rows"><li>regeneration</li><li>region-edit</li><li>object-removal</li><li>outpainting</li><li>upscale</li><li>iteration</li></ul>
+      <p>Everything that makes a picture or changes one, from a look nobody has settled to a file the project references: the brief, the request the generator receives, the paid run and its keeper, the edit to a picture that exists, and the export. It never decides whether the result is usable — that verdict belongs to a reader who did not make it.</p>
+      <ul class="rows"><li>brief</li><li>prompt-structure</li><li>exclusions</li><li>invocation</li><li>candidate-count</li><li>recipe-capture</li><li>selection</li><li>region-edit</li><li>upscale</li><li>format</li><li>naming</li><li>placement</li><li>alt-text</li><li>asset-catalog</li></ul>
     </div>
   </article>
   <article class="card">
@@ -294,16 +264,6 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
     <div class="card-body">
       <p>Looking at a picture and saying what is wrong with it, where, how badly, and whether it can ship. <strong>It writes nothing.</strong> That is the guarantee that makes it worth having: a stage that both judged and fixed cannot say which it did first.</p>
       <ul class="rows"><li>artefact-detection</li><li>anatomy-and-text</li><li>off-brief-drift</li><li>severity-ranking</li><li>verdict</li></ul>
-    </div>
-  </article>
-  <article class="card">
-    <div class="card-id">
-      <span class="k">image-deliver</span>
-      <span class="tag b">full</span>
-    </div>
-    <div class="card-body">
-      <p>The distance between a chosen picture and a file the project can use — format, the sizes the surface needs, compression, colour, name, placement, and the text that stands in for it when it does not load. It changes files, never pictures.</p>
-      <ul class="rows"><li>format</li><li>responsive-sizes</li><li>naming</li><li>compression</li><li>colour-profile</li><li>placement</li><li>alt-text</li></ul>
     </div>
   </article></div>
 </section>
@@ -316,34 +276,12 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
   <div class="tw"><table>
     <thead><tr><th>Skill</th><th>Does not do</th><th>Goes to</th></tr></thead>
     <tbody>
-      <tr><td><code>image-direction</code></td><td>wording the request the model actually receives</td>
-      <td><code>image-prompt</code></td></tr>
-      <tr><td><code>image-direction</code></td><td>judging a picture that already exists</td>
+      <tr><td><code>image-generate</code></td><td>deciding whether a picture is usable, or good enough to stop changing</td>
       <td><code>image-review</code></td></tr>
-      <tr><td><code>image-direction</code></td><td>changing the look of an image already generated</td>
-      <td><code>image-refine</code></td></tr>
-      <tr><td><code>image-prompt</code></td><td>deciding what the picture should say in the first place</td>
-      <td><code>image-direction</code></td></tr>
-      <tr><td><code>image-prompt</code></td><td>running the prompt and keeping the result</td>
-      <td><code>image-generate</code></td></tr>
-      <tr><td><code>image-generate</code></td><td>writing the text that gets sent</td>
-      <td><code>image-prompt</code></td></tr>
-      <tr><td><code>image-generate</code></td><td>changing a candidate that came back close</td>
-      <td><code>image-refine</code></td></tr>
-      <tr><td><code>image-generate</code></td><td>putting the chosen file into the project</td>
-      <td><code>image-deliver</code></td></tr>
-      <tr><td><code>image-refine</code></td><td>deciding whether the result is good enough to stop</td>
-      <td><code>image-review</code></td></tr>
-      <tr><td><code>image-refine</code></td><td>the first generation of an image that does not exist yet</td>
-      <td><code>image-generate</code></td></tr>
       <tr><td><code>image-review</code></td><td>producing the corrected image</td>
-      <td><code>image-refine</code></td></tr>
+      <td><code>image-generate</code></td></tr>
       <tr><td><code>image-review</code></td><td>deciding the aesthetic the picture was aiming at</td>
-      <td><code>image-direction</code></td></tr>
-      <tr><td><code>image-deliver</code></td><td>improving the picture before it is exported</td>
-      <td><code>image-refine</code></td></tr>
-      <tr><td><code>image-deliver</code></td><td>how many pixels the model should be asked for</td>
-      <td><code>image-prompt</code></td></tr></tbody>
+      <td><code>image-generate</code></td></tr></tbody>
   </table></div>
 </section>
 
@@ -357,31 +295,25 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
     <thead><tr><th>Route</th><th>Pattern</th><th>When</th><th>Chain</th><th>Condition</th></tr></thead>
     <tbody>
       <tr><td><code>illustrate</code></td><td><span class="tag c">linear</span></td>
-      <td>a picture is needed and nothing about it is decided yet</td><td class="chain">image-direction <b>&rarr;</b> image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-review <b>&rarr;</b> image-deliver</td>
-      <td><b>gate</b> &middot; the brief names what the image is judged against before any prompt is written</td></tr>
+      <td>a picture is needed for use or publication, alone or as one of a set</td><td class="chain">image-generate <b>&rarr;</b> image-review <b>&rarr;</b> image-generate</td>
+      <td><b>gate</b> &middot; the brief names what the image is judged against before any prompt is written; review the actual candidate for its intended use, and a set member by member and together, before delivery</td></tr>
       <tr><td><code>one-off</code></td><td><span class="tag c">linear</span></td>
-      <td>the look is settled; only an exploratory candidate is wanted, not an asset ready to use</td><td class="chain">image-prompt <b>&rarr;</b> image-generate</td>
+      <td>the look is settled; only an exploratory candidate is wanted, not an asset ready to use</td><td class="chain">image-generate</td>
       <td><b>gate</b> &middot; the look or brief is named; report a candidate, never a production usability verdict</td></tr>
-      <tr><td><code>one-off-ship</code></td><td><span class="tag c">linear</span></td>
-      <td>the look is settled and one image is needed for use or publication</td><td class="chain">image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-review <b>&rarr;</b> image-deliver</td>
-      <td><b>gate</b> &middot; review the actual candidate for its intended use before delivery; text, people and brand constraints follow that use</td></tr>
-      <tr><td><code>asset-set</code></td><td><span class="tag c">linear</span></td>
-      <td>a family of images that must read as one set</td><td class="chain">image-direction <b>&rarr;</b> image-prompt <b>&rarr;</b> image-generate <b>&rarr;</b> image-review <b>&rarr;</b> image-deliver</td>
-      <td><b>gate</b> &middot; name the set constraints first; review every retained member and the set together before delivery</td></tr>
       <tr><td><code>repair</code></td><td><span class="tag c">linear</span></td>
-      <td>a picture that exists is wrong in a way someone can point at</td><td class="chain">image-review <b>&rarr;</b> image-refine <b>&rarr;</b> image-review</td>
+      <td>a picture that exists is wrong in a way someone can point at</td><td class="chain">image-review <b>&rarr;</b> image-generate <b>&rarr;</b> image-review</td>
       <td><b>gate</b> &middot; locate findings before changing; the final review checks their removal and any new drift</td></tr>
       <tr><td><code>restyle</code></td><td><span class="tag c">linear</span></td>
-      <td>the content is right and the look is not</td><td class="chain">image-direction <b>&rarr;</b> image-refine <b>&rarr;</b> image-review</td>
+      <td>the content is right and the look is not</td><td class="chain">image-generate <b>&rarr;</b> image-review</td>
       <td>&mdash;</td></tr>
       <tr><td><code>ship-existing</code></td><td><span class="tag c">linear</span></td>
-      <td>the picture is already approved for the intended use and only delivery remains</td><td class="chain">image-deliver</td>
+      <td>the picture is already approved for the intended use and only delivery remains</td><td class="chain">image-generate</td>
       <td>&mdash;</td></tr>
       <tr><td><code>look-check</code></td><td><span class="tag c">report-only</span></td>
       <td>is this image usable, and what is wrong with it</td><td class="chain">image-review</td>
       <td><b>stops at</b> &middot; one verdict with each defect located, ranked, and attributed to a cause. Nothing is regenerated</td></tr>
       <tr><td><code>refine-to-brief</code></td><td><span class="tag c">loop</span></td>
-      <td>iterate a candidate until it meets the brief or the budget stops it</td><td class="chain">image-refine <b>&rarr;</b> image-review</td>
+      <td>iterate a candidate until it meets the brief or the budget stops it</td><td class="chain">image-generate <b>&rarr;</b> image-review</td>
       <td><b>gate</b> &middot; inherit all generation/edit attempts and spend; a new defect does not reset this loop or its budget</td></tr></tbody>
   </table></div>
 </section>
@@ -398,8 +330,8 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <ul class="rows"><li>engine</li><li>model</li><li>prompt</li><li>excluded</li><li>size</li><li>inputs</li><li>output</li><li>IRREPRODUCIBLE</li></ul>
     </div>
     <div class="panel no">
-      <h3>Owed by 6 of 6</h3>
-      <ul class="rows"><li>image-direction</li><li>image-prompt</li><li>image-generate</li><li>image-refine</li><li>image-review</li><li>image-deliver</li></ul>
+      <h3>Owed by 2 of 2</h3>
+      <ul class="rows"><li>image-generate</li><li>image-review</li></ul>
       <p style="margin:14px 0 0;color:var(--muted);font-size:13.5px">A rule states the mechanism
         inside every skill through a delivered block. A skill that <em>owes</em> it must also name
         its own half in its own words &mdash; a rule stated everywhere and owned nowhere is a
@@ -445,10 +377,10 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <td class="num-c">1</td></tr>
       <tr><td><code>doc-write</code></td><td><code>Read, Grep, Glob, Bash, Write</code></td>
       <td>yes</td>
-      <td class="num-c">2</td></tr>
+      <td class="num-c">0</td></tr>
       <tr><td><code>full</code></td><td><code>Read, Grep, Glob, Bash, Write, Edit</code></td>
       <td>yes</td>
-      <td class="num-c">3</td></tr></tbody>
+      <td class="num-c">1</td></tr></tbody>
   </table></div>
 </section>
 
@@ -466,7 +398,7 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
       <tr><td><code>skill_md_lines</code></td><td class="num-c">152</td></tr>
       <tr><td><code>description_chars</code></td><td class="num-c">200</td></tr>
       <tr><td><code>playbook_lines</code></td><td class="num-c">300</td></tr>
-      <tr><td><code>playbooks_per_skill</code></td><td class="num-c">8</td></tr>
+      <tr><td><code>playbooks_per_skill</code></td><td class="num-c">15</td></tr>
       <tr><td><code>shared_file_lines</code></td><td class="num-c">115</td></tr>
       <tr><td><code>shared_lines_total</code></td><td class="num-c">620</td></tr>
       <tr><td><code>skills_max</code></td><td class="num-c">8</td></tr>
@@ -478,10 +410,10 @@ a:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
     <div class="panel">
       <h3>Measured now</h3>
       <div class="tw" style="border:0;background:transparent"><table style="min-width:0"><tbody>
-        <tr><td>skills</td><td class="num-c">6 / 8</td></tr>
-        <tr><td>routes</td><td class="num-c">9 / 12</td></tr>
-        <tr><td>shared contract lines</td><td class="num-c">620 / 620</td></tr>
-        <tr><td>repository markdown</td><td class="num-c">4,046 / 4,200</td></tr>
+        <tr><td>skills</td><td class="num-c">2 / 8</td></tr>
+        <tr><td>routes</td><td class="num-c">7 / 12</td></tr>
+        <tr><td>shared contract lines</td><td class="num-c">615 / 620</td></tr>
+        <tr><td>repository markdown</td><td class="num-c">3,919 / 4,200</td></tr>
         <tr><td>static rules</td><td class="num-c">39</td></tr>
       </tbody></table></div>
       <p style="margin:14px 0 0;color:var(--muted);font-size:13.5px">Adding a rule means adding a
@@ -518,8 +450,8 @@ make hooks                      # run the rules on every commit</pre>
 </section>
 
 <footer>
-  <p>image-skills &middot; 6 skills &middot; 39 static rules
-     &middot; 4,046 lines of markdown.<br>
+  <p>image-skills &middot; 2 skills &middot; 39 static rules
+     &middot; 3,919 lines of markdown.<br>
      Every figure on this page is read off the repository by <code>tools/pages.py</code> in
      <code>agent-toolkit</code>. None of them are typed by hand, and a stale page fails a
      check rather than sitting there looking current.</p>

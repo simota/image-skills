@@ -55,12 +55,12 @@ def case(rule, says: str | None = None):
 
 
 @case("V1")
-def _(r): sub(r / f"{S}image-prompt/SKILL.md", "## Owns", "## Owns\n" + "x\n" * 200)
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "## Owns", "## Owns\n" + "x\n" * 200)
 
 
 @case("V2")
-def _(r): sub(r / f"{S}image-prompt/SKILL.md", "Writing the generation prompt",
-              "Not for image-generate. Writing the generation prompt")
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "Making a picture",
+              "Not for image-review. Making a picture")
 
 
 @case("V3")
@@ -68,11 +68,11 @@ def _(r): (r / f"{S}image-ghost").mkdir(); (r / f"{S}image-ghost/SKILL.md").writ
 
 
 @case("V4")
-def _(r): (r / f"{S}image-prompt/playbooks/orphan.md").write_text("<!-- image:guidance -->\n")
+def _(r): (r / f"{S}image-generate/playbooks/orphan.md").write_text("<!-- image:guidance -->\n")
 
 
 @case("V5")
-def _(r): (r / f"{S}image-prompt/playbooks/structure.md").write_text("y\n" * 400)
+def _(r): (r / f"{S}image-generate/playbooks/structure.md").write_text("y\n" * 400)
 
 
 @case("V6")
@@ -80,7 +80,7 @@ def _(r): sub(r / f"{S}_image/VALUES.md", "## 1. Looking", "z\n" * 200 + "## 1. 
 
 
 @case("V7")
-def _(r): sub(r / "image-registry/routes.yaml", "chain: [image-review, image-refine, image-review]",
+def _(r): sub(r / "image-registry/routes.yaml", "chain: [image-review, image-generate, image-review]",
               "chain: [image-review, image-nonexistent, image-review]")
 
 
@@ -89,23 +89,23 @@ def _(r): sub(r / "README.md", "](skills/_image/ROUTING.md)", "](skills/_image/G
 
 
 @case("V9")
-def _(r): sub(r / "image-registry/capabilities.yaml", "signals: [generation prompt, prompt wording",
-              "signals: [artefacts, prompt wording")
+def _(r): sub(r / "image-registry/capabilities.yaml", "signals: [art style, image brief",
+              "signals: [artefacts, image brief")
 
 
 @case("V10")
 def _(r): sub(r / "image-registry/fixtures.yaml",
               '- ask: "is this usable or not"\n  expect: image-review',
-              '- ask: "is this usable or not"\n  expect: image-deliver')
+              '- ask: "is this usable or not"\n  expect: image-generate')
 
 
 @case("V11")
 def _(r):
     import shutil
-    for i in range(4):
+    for i in range(7):
         d = r / f"{S}image-extra{i}"
         d.mkdir()
-        shutil.copy(r / f"{S}image-prompt/SKILL.md", d / "SKILL.md")
+        shutil.copy(r / f"{S}image-generate/SKILL.md", d / "SKILL.md")
 
 
 @case("V12")
@@ -115,7 +115,7 @@ def _(r): (r / f"{S}rogue").mkdir(); (r / f"{S}rogue/SKILL.md").write_text("x")
 @case("V13")
 def _(r):
     t = (r / "image-registry/routes.yaml").read_text(encoding="utf-8")
-    t += "".join(f"\nfiller{i}:\n  pattern: linear\n  when: x\n  chain: [image-prompt]\n"
+    t += "".join(f"\nfiller{i}:\n  pattern: linear\n  when: x\n  chain: [image-generate]\n"
                  for i in range(20))
     (r / "image-registry/routes.yaml").write_text(t, encoding="utf-8")
 
@@ -130,19 +130,19 @@ def _(r): sub(r / f"{S}image-review/SKILL.md", "allowed-tools: Read, Grep, Glob,
 
 
 @case("V16")
-def _(r): sub(r / f"{S}image-prompt/SKILL.md", "## Done when", "## Finished when")
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "## Done when", "## Finished when")
 
 
 @case("V17")
-def _(r): sub(r / f"{S}image-prompt/SKILL.md", "- **Grade every claim**", "- **Grade some claims**")
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "- **Grade every claim**", "- **Grade some claims**")
 
 
 @case("V18")
-def _(r): sub(r / f"{S}image-prompt/SKILL.md", "prompt wording", "prompt phrasing")
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "generation prompt", "generation phrasing")
 
 
 @case("V19")
-def _(r): sub(r / f"{S}image-prompt/SKILL.md", "`_image/SIZING.md`", "`../_image/SIZING.md`")
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "`_image/SIZING.md`", "`../_image/SIZING.md`")
 
 
 @case("V19-shared")
@@ -157,7 +157,7 @@ def _(r):
 
 @case("V21")
 def _(r):
-    f = r / f"{S}image-prompt/SKILL.md"
+    f = r / f"{S}image-generate/SKILL.md"
     body = f.read_text(encoding="utf-8")
     head, rest = body.split("## Verify with\n", 1)
     keep, tail = rest.split("<!-- deliver:report -->", 1)
@@ -168,7 +168,7 @@ def _(r):
 
 
 @case("V22")
-def _(r): sub(r / f"{S}image-prompt/SKILL.md", "## Done when",
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "## Done when",
               "## Done when\n\n#" + "TODO(agent): tidy this up later\n")
 
 
@@ -177,22 +177,22 @@ def _(r): sub(r / f"{S}_image/VALUES.md", "<!-- image:contract -->", "<!-- image
 
 
 @case("V24")
-def _(r): sub(r / f"{S}_image/ROUTING.md", "`image-refine`", "`image-fix`")
+def _(r): sub(r / f"{S}_image/ROUTING.md", "`image-generate`", "`image-fix`")
 
 
 @case("V25")
-def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# pinned at v2.14.0 — ")
+def _(r): sub(r / f"{S}image-generate/playbooks/structure.md", "# ", "# pinned at v2.14.0 — ")
 
 
 @case("V26")
-def _(r): sub(r / "image-registry/capabilities.yaml", "      go: image-refine",
+def _(r): sub(r / "image-registry/capabilities.yaml", "      go: image-review",
               "      go: image-fix")
 
 
 @case("V27")
 def _(r):
-    (r / f"{S}image-prompt/_image").unlink()
-    (r / f"{S}image-prompt/_image").symlink_to("../_gone")
+    (r / f"{S}image-generate/_image").unlink()
+    (r / f"{S}image-generate/_image").symlink_to("../_gone")
 
 
 @case("V28")
@@ -205,12 +205,12 @@ def _(r): (r / "registry").mkdir()
 
 @case("V29")
 def _(r):
-    f = r / f"{S}image-prompt/reference/sizes.md"
+    f = r / f"{S}image-generate/reference/sizes.md"
     f.write_text(f.read_text(encoding="utf-8").replace("Verified:", "Checked:"), encoding="utf-8")
 
 
 @case("V30")
-def _(r): (r / f"{S}image-prompt/reference/orphan.md").write_text(
+def _(r): (r / f"{S}image-generate/reference/orphan.md").write_text(
     "<!-- image:deferred -->\n# Orphan\n\nPurpose: x\nRead when: y\n"
     "Verified: 2026-08-23 — no automated check\n")
 
@@ -297,8 +297,8 @@ def _(r): sub(r / "image-registry/harness.yaml", "linked_tools:", "unlinked_tool
 
 
 @case("V35")
-def _(r): sub(r / f"{S}image-prompt/SKILL.md",
-              "states `IRREPRODUCIBLE` when", "states exact regeneration is unavailable when")
+def _(r): sub(r / f"{S}image-generate/SKILL.md",
+              "that loss `IRREPRODUCIBLE`", "that loss unrecoverable")
 
 
 @case("V36")
@@ -325,7 +325,7 @@ def _(r): sub(r / "image-registry/harness.yaml", "finding_visuals:", "unused_vis
 
 
 @case("V38")
-def _(r): sub(r / f"{S}image-prompt/playbooks/exclusions.md", "<!-- image:guidance -->\n",
+def _(r): sub(r / f"{S}image-generate/playbooks/exclusions.md", "<!-- image:guidance -->\n",
               "<!-- image:guidance -->\nverdict: KEEP | DROP\n")
 
 
@@ -356,55 +356,63 @@ def _(r):
 def _(r): sub(r / "image-registry/harness.yaml", "source_authorities:", "unused_authorities:")
 
 
+ILLUSTRATE = "chain: [image-generate, image-review, image-generate]\n  phases: [make, judge, deliver]"
+
+
 @case("V39")
 def _(r):
     sub(r / "image-registry/routes.yaml",
-        "chain: [image-review, image-refine, image-review]",
-        "chain: [image-review, image-refine]")
-
-
-@case("V39-set")
-def _(r):
-    import yaml
-    f = r / "image-registry/routes.yaml"
-    routes = yaml.safe_load(f.read_text())
-    routes["asset-set"]["chain"].remove("image-review")
-    f.write_text(yaml.safe_dump(routes, sort_keys=False))
+        "chain: [image-review, image-generate, image-review]\n  phases: [judge, edit, judge]",
+        "chain: [image-review, image-generate]\n  phases: [judge, edit]")
 
 
 @case("V39-ship")
 def _(r):
-    sub(r / "image-registry/routes.yaml",
-        "chain: [image-prompt, image-generate, image-review, image-deliver]",
-        "chain: [image-prompt, image-generate, image-deliver]")
+    sub(r / "image-registry/routes.yaml", ILLUSTRATE,
+        "chain: [image-generate, image-generate]\n  phases: [make, deliver]")
 
 
 @case("V39-restyle")
 def _(r):
     sub(r / "image-registry/routes.yaml",
-        "chain: [image-direction, image-refine, image-review]",
-        "chain: [image-direction, image-refine]")
+        "chain: [image-generate, image-review]\n  phases: [edit, judge]",
+        "chain: [image-generate]\n  phases: [edit]")
 
 
 @case("V39-before-change")
 def _(r):
-    sub(r / "image-registry/routes.yaml",
-        "chain: [image-prompt, image-generate, image-review, image-deliver]",
-        "chain: [image-prompt, image-review, image-generate, image-deliver]")
+    sub(r / "image-registry/routes.yaml", ILLUSTRATE,
+        "chain: [image-review, image-generate, image-generate]\n  phases: [judge, make, deliver]")
 
 
 @case("V39-after-delivery")
 def _(r):
-    sub(r / "image-registry/routes.yaml",
-        "chain: [image-prompt, image-generate, image-review, image-deliver]",
-        "chain: [image-prompt, image-generate, image-deliver, image-review]")
+    sub(r / "image-registry/routes.yaml", ILLUSTRATE,
+        "chain: [image-generate, image-generate, image-review]\n  phases: [make, deliver, judge]")
 
 
-@case("V39-vacuous")
+@case("V39-unphased", says="one phase per stage")
 def _(r):
-    sub(r / "image-registry/capabilities.yaml",
-        "off-brief-drift, severity-ranking, verdict]",
-        "off-brief-drift, severity-ranking]")
+    sub(r / "image-registry/routes.yaml", ILLUSTRATE,
+        "chain: [image-generate, image-review, image-generate]")
+
+
+@case("V39-unknown-phase", says="not in route_phases")
+def _(r):
+    sub(r / "image-registry/routes.yaml", "phases: [make, judge, deliver]",
+        "phases: [make, admire, deliver]")
+
+
+@case("V39-wrong-owner", says="which does not do")
+def _(r):
+    sub(r / "image-registry/routes.yaml", "phases: [make, judge, deliver]",
+        "phases: [make, edit, deliver]")
+
+
+@case("V39-vacuous", says="vacuous")
+def _(r):
+    sub(r / "image-registry/harness.yaml",
+        "judge:   { does: verdict,     reviews: true }", "judge:   { does: verdict }")
 
 
 @case("V10-empty", says="vacuous")
@@ -414,21 +422,21 @@ def _(r): (r / "image-registry/fixtures.yaml").write_text("{}\n", encoding="utf-
 @case("V13-stages", says="stages")
 def _(r):
     sub(r / "image-registry/routes.yaml",
-        "chain: [image-direction, image-prompt, image-generate, image-review, image-deliver]",
-        "chain: [image-direction, image-prompt, image-generate, image-review, "
-        "image-refine, image-review, image-deliver]")
+        "chain: [image-generate, image-review, image-generate]",
+        "chain: [image-generate, image-review, image-generate, image-review, "
+        "image-generate, image-review, image-generate]")
 
 
 @case("V19-reference", says="does not resolve")
 def _(r):
-    f = r / f"{S}image-prompt/reference/sizes.md"
+    f = r / f"{S}image-generate/reference/sizes.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nSee `_image/NOPE.md`.\n",
                  encoding="utf-8")
 
 
 @case("V22-code-on-line", says="residual class")
 def _(r):
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\n#" + "TODO(agent): tidy `this` up later\n", encoding="utf-8")
 
@@ -444,7 +452,7 @@ def _(r):
 
 @case("V27-nested", says="outside the repo")
 def _(r):
-    (r / f"{S}image-prompt/playbooks/leak.md").symlink_to("/etc/hostname")
+    (r / f"{S}image-generate/playbooks/leak.md").symlink_to("/etc/hostname")
 
 
 @case("V38-comment", says="MAYBE")
@@ -454,14 +462,14 @@ def _(r):
 
 @case("V39-verb", says="no skill does")
 def _(r):
-    sub(r / "image-registry/harness.yaml", "reviews: [verdict]", "reviews: [verdict, judgement]")
+    sub(r / "image-registry/harness.yaml", "judge:   { does: verdict,", "judge:   { does: judgement,")
 
 
 @case("V1-folded", says="description is")
 def _(r):
     # A folded scalar is how a long description gets written, and a line
     # parser reads it as the two characters `>-` — always under the limit.
-    f = r / f"{S}image-prompt/SKILL.md"
+    f = r / f"{S}image-generate/SKILL.md"
     t = f.read_text(encoding="utf-8")
     start = t.index("description:")
     end = t.index("\n", start)
@@ -471,7 +479,7 @@ def _(r):
 
 @case("V1-yaml", says="frontmatter")
 def _(r):
-    sub(r / f"{S}image-prompt/SKILL.md", "name: image-prompt", "name: [image-prompt")
+    sub(r / f"{S}image-generate/SKILL.md", "name: image-generate", "name: [image-generate")
 
 
 @case("V24-hyphen", says="image-colour-grade")
@@ -487,10 +495,10 @@ def _(r):
     # `seedling` — so a fixture that only matches that way matches nothing.
     import yaml as _y
     caps = _y.safe_load((r / "image-registry/capabilities.yaml").read_text())
-    sig = next(s for s in caps["image-refine"]["signals"] if " " not in s)
+    sig = next(s for s in caps["image-generate"]["signals"] if " " not in s)
     f = r / "image-registry/fixtures.yaml"
     f.write_text(f.read_text(encoding="utf-8")
-                 + f"\n- ask: \"x{sig}y\"\n  expect: image-refine\n",
+                 + f"\n- ask: \"x{sig}y\"\n  expect: image-generate\n",
                  encoding="utf-8")
 
 
@@ -504,14 +512,14 @@ def _(r):
 def _(r):
     # The text between two code spans is not code, whichever backtick a
     # pattern happens to start from.
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nRun `make check` #"
                  "TODO(agent): fix the walker `later`\n", encoding="utf-8")
 
 
 @case("V19-nested", says="does not resolve")
 def _(r):
-    sub_dir = r / f"{S}image-prompt/reference/deeper"
+    sub_dir = r / f"{S}image-generate/reference/deeper"
     sub_dir.mkdir()
     (sub_dir / "x.md").write_text("<!-- image:deferred -->\nSee `playbooks/nope.md`.\n",
                                   encoding="utf-8")
@@ -519,21 +527,21 @@ def _(r):
 
 @case("V19-harness-path", says="image-tools/nope.py")
 def _(r):
-    f = r / f"{S}image-prompt/reference/sizes.md"
+    f = r / f"{S}image-generate/reference/sizes.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nSee `image-tools/nope.py`.\n",
                  encoding="utf-8")
 
 
 @case("V2-capitalised", says="'rather than'")
-def _(r): sub(r / f"{S}image-deliver/SKILL.md", "Use once the image is chosen.",
-              "Rather than polishing, use once the image is chosen.")
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "Use when pixels must exist or change.",
+              "Rather than polishing, use when pixels must exist or change.")
 
 
 @case("V7-misspelt-chain", says="has no chain")
 def _(r):
     f = r / "image-registry/routes.yaml"
     f.write_text(f.read_text(encoding="utf-8") + "\nshortcut:\n  pattern: linear\n"
-                 "  when: x\n  chian: [image-generate, image-deliver]\n", encoding="utf-8")
+                 "  when: x\n  chian: [image-generate, image-review]\n", encoding="utf-8")
 
 
 @case("V7-empty-chain", says="has no chain")
@@ -544,7 +552,7 @@ def _(r):
 
 
 @case("V16-fenced-heading", says="missing section 'Done when'")
-def _(r): sub(r / f"{S}image-refine/SKILL.md", "\n## Done when\n",
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "\n## Done when\n",
               "\n```text\n## Done when\n```\n")
 
 
@@ -555,7 +563,7 @@ def _(r): sub(r / f"{S}image-review/SKILL.md", "<!-- deliver:sizing -->\n",
 
 @case("V17-duplicated", says="duplicated")
 def _(r):
-    f = r / f"{S}image-refine/SKILL.md"
+    f = r / f"{S}image-generate/SKILL.md"
     t = f.read_text(encoding="utf-8")
     block = t[t.index("<!-- deliver:values -->"):t.index("<!-- /deliver:values -->")]
     f.write_text(t + "\n" + block + "<!-- /deliver:values -->\n", encoding="utf-8")
@@ -567,7 +575,7 @@ def _(r): sub(r / f"{S}_image/CONTRACT.md", "(`imgfacts.py`)", "(`strip.py`)")
 
 @case("V29-nested", says="has no 'Purpose:'")
 def _(r):
-    sub_dir = r / f"{S}image-deliver/reference/formats"
+    sub_dir = r / f"{S}image-generate/reference/formats"
     sub_dir.mkdir()
     (sub_dir / "avif.md").write_text("<!-- image:deferred -->\nAVIF.\n", encoding="utf-8")
 
@@ -584,9 +592,9 @@ def _(r): (r / f"{S}image-review/playbooks/root").symlink_to("../../..")
 def _(r):
     # A Markdown link resolves from its own page; read from the skill root it
     # made a page the link does not reach look linked.
-    (r / f"{S}image-prompt/reference/orphan.md").write_text(
+    (r / f"{S}image-generate/reference/orphan.md").write_text(
         "<!-- image:deferred -->\n", encoding="utf-8")
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nSee [o](reference/orphan.md).\n",
                  encoding="utf-8")
 
@@ -608,9 +616,9 @@ def _(r): sub(r / f"{S}image-review/SKILL.md",
 
 @case("V4-nested-copy", says="playbooks/old/structure.md")
 def _(r):
-    (r / f"{S}image-prompt/playbooks/old").mkdir()
-    shutil.copy(r / f"{S}image-prompt/playbooks/structure.md",
-                r / f"{S}image-prompt/playbooks/old/structure.md")
+    (r / f"{S}image-generate/playbooks/old").mkdir()
+    shutil.copy(r / f"{S}image-generate/playbooks/structure.md",
+                r / f"{S}image-generate/playbooks/old/structure.md")
 
 
 # --- round six: rules that were vacuous on ordinary ways of writing ----------
@@ -618,7 +626,7 @@ def _(r):
 @case("V8-image-syntax", says="links to missing")
 def _(r):
     """Prose outside code still counts once code is set aside."""
-    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+    sub(r / f"{S}image-generate/playbooks/naming.md", "\n## ",
         "\nSee `![alt](hero.png)` and [the old page](gone.md).\n\n## ")
 
 
@@ -629,7 +637,7 @@ def _(r): sub(r / "image-registry/fixtures.yaml", "- ask: \"we need a hero pictu
 
 @case("V11-packs", says="packs_needed_above")
 def _(r): sub(r / "image-registry/harness.yaml", "packs_needed_above: 20",
-              "packs_needed_above: 3")
+              "packs_needed_above: 1")
 
 
 @case("V15-writes", says="writes: False")
@@ -659,41 +667,41 @@ def _drop_line(path: Path, start: str) -> None:
     path.write_text("".join(kept), encoding="utf-8")
 
 
-@case("V24-routing-row", says="has no table row for image-deliver")
-def _(r): _drop_line(r / f"{S}_image/ROUTING.md", "| `image-deliver` |")
+@case("V24-routing-row", says="has no table row for image-generate")
+def _(r): _drop_line(r / f"{S}_image/ROUTING.md", "| `image-generate` |")
 
 
-@case("V24-readme-row", says="README.md has no table row for image-prompt")
-def _(r): _drop_line(r / "README.md", "| [`image-prompt`]")
+@case("V24-readme-row", says="README.md has no table row for image-generate")
+def _(r): _drop_line(r / "README.md", "| [`image-generate`]")
 
 
 @case("V8-list-items", says="links to missing gone.md")
 def _(r):
     """A lone backtick in one list item does not pair with one in the next."""
-    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+    sub(r / f"{S}image-generate/playbooks/naming.md", "\n## ",
         "\n- Press the ` key to toggle.\n- See [guide](gone.md) and use `x` here.\n\n## ")
 
 
 @case("V25-case")
-def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# Imagen 4 reads text worse — ")
+def _(r): sub(r / f"{S}image-generate/playbooks/structure.md", "# ", "# Imagen 4 reads text worse — ")
 
 
 @case("V25-gpt")
-def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# on gpt-5 — ")
+def _(r): sub(r / f"{S}image-generate/playbooks/structure.md", "# ", "# on gpt-5 — ")
 
 
 @case("V25-month")
-def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# checked in August 2026 — ")
+def _(r): sub(r / f"{S}image-generate/playbooks/structure.md", "# ", "# checked in August 2026 — ")
 
 
 @case("V25-slash")
-def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# held in 2026/08 — ")
+def _(r): sub(r / f"{S}image-generate/playbooks/structure.md", "# ", "# held in 2026/08 — ")
 
 
 @case("V26-shape", says="is not a mapping")
 def _(r): sub(r / "image-registry/capabilities.yaml",
-              "    - what: \"wording the request the model actually receives\"\n      go: image-prompt",
-              "    - image-prompt")
+              "    - what: \"producing the corrected image\"\n      go: image-generate",
+              "    - image-generate")
 
 
 @case("V34-copy", says="holds a copy of strip.py")
@@ -714,19 +722,19 @@ def quiet(name):
 
 @quiet("a heading that names formats is not an enumeration")
 def _(r):
-    f = r / f"{S}image-deliver/reference/export-targets.md"
+    f = r / f"{S}image-generate/reference/export-targets.md"
     f.write_text(f.read_text(encoding="utf-8") + "\n# PNG | WEBP\n\n# Output: PNG | WEBP\n"
                  "\n  # Output: PNG | WEBP\n", encoding="utf-8")   # indented, still a heading
 
 
 @quiet("a heading quoted in a fence opens no section")
-def _(r): sub(r / f"{S}image-refine/SKILL.md", "## Verify with\n",
+def _(r): sub(r / f"{S}image-generate/SKILL.md", "## Verify with\n",
               "## Verify with\n\n```markdown\n## Edit log\n```\n")
 
 
 @quiet("a marker in double-backtick code is quoted too")
 def _(r):
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\nWrite ``#" + "TODO(agent): <action>`` with a class.\n",
                  encoding="utf-8")
@@ -761,7 +769,7 @@ def _(r):
 
 @quiet("a marker inside a code span that runs across lines is quoted")
 def _(r):
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\nA span can run on: `first line\n#" + "TODO(agent): <action>\nand close` here.\n",
                  encoding="utf-8")
@@ -770,7 +778,7 @@ def _(r):
 @case("V22-after-multiline-span", says="residual class")
 def _(r):
     # The span closes, and a live marker after it on the same paragraph is live.
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\nA span `runs\non` and then #" + "TODO(agent): fix this\n",
                  encoding="utf-8")
@@ -780,7 +788,7 @@ def _(r):
 def _(r):
     # A heading is a block of its own: a backtick it leaves open cannot pair
     # with one in the paragraph below and hide the marker between them.
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\n## A heading with a stray `\n#" + "TODO(agent): fix\nand a line with `\n",
                  encoding="utf-8")
@@ -788,7 +796,7 @@ def _(r):
 
 @quiet("a code span inside a block quote runs across its quoted lines")
 def _(r):
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\n> A span `starts\n> #" + "TODO(agent): example\n> closes` here\n",
                  encoding="utf-8")
@@ -798,14 +806,14 @@ def _(r):
 def _(r):
     # A `>` with nothing after it is a blank line inside the quote: the
     # paragraphs either side cannot pair backticks across it.
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\n> one `\n>\n> #" + "TODO(agent): fix `\n", encoding="utf-8")
 
 
 @quiet("a quoted marker is talked about, not left behind")
 def _(r):
-    f = r / f"{S}image-prompt/playbooks/structure.md"
+    f = r / f"{S}image-generate/playbooks/structure.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\nA marker reads `#" + "TODO(agent): <action>` in a document.\n",
                  encoding="utf-8")
@@ -813,7 +821,7 @@ def _(r):
 
 @quiet("an image link quoted as code, a link title and angle brackets are not missing files")
 def _(r):
-    sub(r / f"{S}image-prompt/playbooks/structure.md", "\n## ",
+    sub(r / f"{S}image-generate/playbooks/structure.md", "\n## ",
         "\nWrite alt text as `![alt](hero.png)`; see [this](exclusions.md \"Exclusions\") "
         "and [that](<exclusions.md>).\n\n```md\n[an example](not-here.md)\n```\n\n## ")
 
@@ -834,35 +842,35 @@ def _(r):
 @case("V8-quoted-fence", says="links to missing gone.md")
 def _(r):
     """A fence left open inside a quote closes with the quote."""
-    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+    sub(r / f"{S}image-generate/playbooks/naming.md", "\n## ",
         "\n> ```\n> example\n\nSee [guide](gone.md).\n\n## ")
 
 
 @case("V8-nested-quoted-fence", says="links to missing gone.md")
 def _(r):
     """A fence left open two quotes deep closes when the inner quote does."""
-    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+    sub(r / f"{S}image-generate/playbooks/naming.md", "\n## ",
         "\n> > ```\n> > example\n> See [guide](gone.md).\n\n## ")
 
 
 @case("V8-quote-depth", says="links to missing gone.md")
 def _(r):
     """A backtick one quote deep does not pair with one two quotes deep."""
-    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+    sub(r / f"{S}image-generate/playbooks/naming.md", "\n## ",
         "\n> Press ` to toggle.\n> > See [guide](gone.md) and `x`.\n\n## ")
 
 
 @case("V8-thematic-break", says="links to missing gone.md")
 def _(r):
     """A thematic break ends a quoted paragraph; it is no lazy continuation."""
-    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+    sub(r / f"{S}image-generate/playbooks/naming.md", "\n## ",
         "\n> Press ` to toggle.\n***\nSee [guide](gone.md) and `x`.\n\n## ")
 
 
 @case("V8-html-block", says="links to missing gone.md")
 def _(r):
     """An HTML comment interrupts a quoted paragraph; it is no lazy continuation."""
-    sub(r / f"{S}image-deliver/playbooks/naming.md", "\n## ",
+    sub(r / f"{S}image-generate/playbooks/naming.md", "\n## ",
         "\n> Press ` to toggle.\n<!-- end quote -->\nSee [guide](gone.md) and `x`.\n\n## ")
 
 
@@ -952,7 +960,7 @@ def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
 @case("V37-capitalised", says="leans on codex")
 def _(r):
     """A sentence that opens with the tool's name still leans on it."""
-    f = r / f"{S}image-deliver/reference/alt-text.md"
+    f = r / f"{S}image-generate/reference/alt-text.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nThe defaults follow Codex's imagegen skill.\n",
                  encoding="utf-8")
 
@@ -965,7 +973,7 @@ def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
 @case("V7-not-a-mapping", says="not a mapping")
 def _(r):
     f = r / "image-registry/routes.yaml"
-    f.write_text(f.read_text(encoding="utf-8") + "\nquick: [image-prompt, image-generate]\n",
+    f.write_text(f.read_text(encoding="utf-8") + "\nquick: [image-generate, image-review]\n",
                  encoding="utf-8")
 
 
@@ -989,22 +997,22 @@ def _(r): sub(r / f"{S}image-generate/playbooks/batching.md", "\n## ",
 def _(r):
     """YAML reads `16:9` as 969; every rule used to stop on a traceback."""
     sub(r / "image-registry/capabilities.yaml",
-        "signals: [generation prompt, prompt wording,",
-        "signals: [generation prompt, prompt wording, 16:9,")
+        "signals: [art style, image brief,",
+        "signals: [art style, image brief, 16:9,")
 
 
 @case("V4-unused-definition", says="exclusions.md is not linked from Decide first")
 def _(r):
     """A definition nothing uses renders as nothing; it is not a link."""
-    f = r / f"{S}image-prompt/SKILL.md"
-    sub(f, "[exclusions](playbooks/exclusions.md) —", "exclusions —")
+    f = r / f"{S}image-generate/SKILL.md"
+    sub(f, "[exclusions](playbooks/exclusions.md)", "exclusions")
     sub(f, "\n## Always", "\n[exclusions]: playbooks/exclusions.md\n\n## Always")
 
 
 @quiet("a reference link resolves against a definition anywhere in the page")
 def _(r):
-    f = r / f"{S}image-prompt/SKILL.md"
-    sub(f, "[exclusions](playbooks/exclusions.md) —", "[exclusions][ex] —")
+    f = r / f"{S}image-generate/SKILL.md"
+    sub(f, "[exclusions](playbooks/exclusions.md)", "[exclusions][ex]")
     f.write_text(f.read_text(encoding="utf-8") + "\n[ex]: playbooks/exclusions.md\n",
                  encoding="utf-8")
 
@@ -1020,8 +1028,8 @@ def _(r): sub(r / "image-registry/routes.yaml",
 
 @case("V21-substring", says="names no evidence grade")
 def _(r): sub(r / f"{S}image-generate/SKILL.md",
-              "(`measured` mechanical facts,\nnot a visual inspection)",
-              "(mechanical facts;\na candidate left uninspected supports nothing)")
+              "off the file (`measured`), not off the request",
+              "off the file, not off the request; one left uninspected supports nothing")
 
 
 @quiet("the set's own directories are not skills that do not exist")
@@ -1034,7 +1042,7 @@ def _(r):
 
 @quiet("a backticked glob that matches, and a path with an anchor or a line")
 def _(r):
-    f = r / f"{S}image-prompt/reference/sizes.md"
+    f = r / f"{S}image-generate/reference/sizes.md"
     f.write_text(f.read_text(encoding="utf-8")
                  + "\nEvery `reference/*.md` page carries the four headers; the numbers"
                    " are in `registry/harness.yaml#generators` and"
@@ -1043,7 +1051,7 @@ def _(r):
 
 @case("V19-glob-matches-nothing", says="reference/*.txt")
 def _(r):
-    f = r / f"{S}image-prompt/reference/sizes.md"
+    f = r / f"{S}image-generate/reference/sizes.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nSee `reference/*.txt`.\n",
                  encoding="utf-8")
 
@@ -1052,22 +1060,22 @@ def _(r):
 @quiet("a `**` inside a name is read as a shell reads it, not as a traceback")
 def _(r):
     # Python 3.11's pathlib raised on it, and every rule after V19 went unrun.
-    f = r / f"{S}image-prompt/reference/sizes.md"
+    f = r / f"{S}image-generate/reference/sizes.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nSee `reference/**.md`.\n",
                  encoding="utf-8")
 
 
 @case("V19-glob-starred-name-unmatched", says="reference/**.txt")
 def _(r):
-    f = r / f"{S}image-prompt/reference/sizes.md"
+    f = r / f"{S}image-generate/reference/sizes.md"
     f.write_text(f.read_text(encoding="utf-8") + "\nSee `reference/**.txt`.\n",
                  encoding="utf-8")
 
 
 @quiet("a shortcut reference link followed by a colon is a link")
 def _(r):
-    f = r / f"{S}image-prompt/SKILL.md"
-    sub(f, "[exclusions](playbooks/exclusions.md) —", "[exclusions]: what to avoid —")
+    f = r / f"{S}image-generate/SKILL.md"
+    sub(f, "[exclusions](playbooks/exclusions.md)", "[exclusions]: what to avoid")
     f.write_text(f.read_text(encoding="utf-8")
                  + "\n[exclusions]: playbooks/exclusions.md\n", encoding="utf-8")
 
@@ -1113,20 +1121,20 @@ def _(r): (r / f"{S}_image/ROUTING.md").rename(r / f"{S}_image/ROUTES.md")
 
 
 @case("V22-class-inside-word", says="residual class")
-def _(r): _append(r, f"{S}image-prompt/playbooks/structure.md",
+def _(r): _append(r, f"{S}image-generate/playbooks/structure.md",
                   "\n#" + "TODO(agent): pick the width — UNBLOCKED once review is in\n")
 
 
 @case("V25-us-date")
-def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# checked October 26, 2026 — ")
+def _(r): sub(r / f"{S}image-generate/playbooks/structure.md", "# ", "# checked October 26, 2026 — ")
 
 
 @case("V25-dall-e-dot")
-def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# DALL·E 3 reads text worse — ")
+def _(r): sub(r / f"{S}image-generate/playbooks/structure.md", "# ", "# DALL·E 3 reads text worse — ")
 
 
 @case("V25-flux-dot")
-def _(r): sub(r / f"{S}image-prompt/playbooks/structure.md", "# ", "# on FLUX.1 — ")
+def _(r): sub(r / f"{S}image-generate/playbooks/structure.md", "# ", "# on FLUX.1 — ")
 
 
 @quiet("a break, an underline, a comment or an item that cannot interrupt ends no list")

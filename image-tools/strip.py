@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Remove what should not ship from a generated image, and nothing else.
 
-`image-deliver/reference/colour-and-metadata.md` fixes the policy: strip camera
+`image-generate/reference/colour-and-metadata.md` fixes the policy: strip camera
 fields, location, timestamps, comments and embedded thumbnails; keep the colour
 profile, the alpha channel, and any provenance block the project decided to
 carry. This applies it.

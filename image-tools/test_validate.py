@@ -452,7 +452,15 @@ def _(r):
 
 @case("V27-nested", says="outside the repo")
 def _(r):
-    (r / f"{S}image-generate/playbooks/leak.md").symlink_to("/etc/hostname")
+    # A file that exists on every OS, outside the repo copy (/etc/hostname is Linux-only).
+    outside = r.parent / "outside.md"
+    outside.write_text("# outside\n", encoding="utf-8")
+    (r / f"{S}image-generate/playbooks/leak.md").symlink_to(outside)
+
+
+@case("V27-dangling-md", says="broken symlink")
+def _(r):
+    (r / f"{S}image-generate/playbooks/gone.md").symlink_to("../_nowhere.md")
 
 
 @case("V38-comment", says="MAYBE")

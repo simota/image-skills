@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import errno
 import io
 import json
 import os
@@ -48,7 +49,9 @@ class CatalogTests(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.TemporaryDirectory()
         self.addCleanup(self.scratch.cleanup)
-        self.root = Path(self.scratch.name)
+        # The real path: catalog refuses an output path through a symlink, and on
+        # macOS the temporary directory sits under /var, a symlink to /private/var.
+        self.root = Path(self.scratch.name).resolve()
         self.assets = self.root / "assets"
         self.assets.mkdir()
         self.out = self.root / "reports" / "asset-catalog.html"
@@ -284,8 +287,13 @@ class CatalogTests(unittest.TestCase):
     def test_non_utf8_filename_preserves_source_and_existing_catalogue(self):
         name = os.fsencode(self.assets) + b"/bad-\xff.png"
         original = png(16, 8)
-        with open(name, "wb") as image:
-            image.write(original)
+        try:
+            with open(name, "wb") as image:
+                image.write(original)
+        except OSError as exc:
+            if exc.errno != errno.EILSEQ:
+                raise
+            self.skipTest("the filesystem only stores UTF-8 names (e.g. macOS APFS)")
         self.out.parent.mkdir()
         self.out.write_text("previous catalogue", encoding="utf-8")
         result = self.run_catalog(extra=["--replace"])

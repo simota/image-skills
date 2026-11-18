@@ -281,6 +281,9 @@ def link_target(raw: str) -> str:
 
 
 def read(p: Path) -> str:
+    # A symlink to nothing has no text; V27 reports it, so no other rule crashes on it.
+    if p.is_symlink() and not p.exists():
+        return ""
     return p.read_text(encoding="utf-8")
 
 

@@ -18,6 +18,7 @@ handmade JPEG is a photograph.
 """
 from __future__ import annotations
 
+import errno
 import contextlib
 import io
 import json
@@ -1744,20 +1745,28 @@ def test_round_seven(tmp: Path) -> None:
 
     # A name from a zip made elsewhere: not UTF-8, and still a name to report,
     # under a stdout as strict as a UTF-8 desktop locale makes it.
+    # A filesystem that only stores UTF-8 names (macOS APFS) refuses to create
+    # one, so such a name cannot reach the tools there and the case is skipped.
     odd = d / os.fsdecode(b"caf\xe9.png")
-    odd.write_bytes(png(8, 8))
-    strict = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="strict")
-    real = sys.stdout
-    sys.stdout = strict
     try:
-        for tool, args in (("strip", [str(odd)]), ("imgfacts", [str(odd)])):
-            try:
-                check(f"{tool} reports a file whose name is not UTF-8",
-                      (strip if tool == "strip" else imgfacts).main(args), 0)
-            except UnicodeEncodeError:
-                failures.append(f"  {tool} crashed printing a name that is not UTF-8")
-    finally:
-        sys.stdout = real
+        odd.write_bytes(png(8, 8))
+    except OSError as exc:
+        if exc.errno != errno.EILSEQ:
+            raise
+        odd = None
+    if odd is not None:
+        strict = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="strict")
+        real = sys.stdout
+        sys.stdout = strict
+        try:
+            for tool, args in (("strip", [str(odd)]), ("imgfacts", [str(odd)])):
+                try:
+                    check(f"{tool} reports a file whose name is not UTF-8",
+                          (strip if tool == "strip" else imgfacts).main(args), 0)
+                except UnicodeEncodeError:
+                    failures.append(f"  {tool} crashed printing a name that is not UTF-8")
+        finally:
+            sys.stdout = real
 
     # recipe: a recipe still names its file in another checkout.
     proj = d / "proj"
@@ -2816,7 +2825,9 @@ def main() -> int:
     noise = io.StringIO()
     with tempfile.TemporaryDirectory() as d, \
             contextlib.redirect_stdout(noise), contextlib.redirect_stderr(noise):
-        tmp = Path(d)
+        # The real path: on macOS /var is a symlink to /private/var, and the tools
+        # record resolved paths, so expectations must start from the same place.
+        tmp = Path(d).resolve()
         test_imgfacts(tmp)
         test_legality()
         test_nearest_legal_at_the_edge()
